@@ -104,9 +104,10 @@ function enter(client, code, name) {
   let color = 0; while (used.has(color)) color++;
   room.players.set(client.id, { name, color, client });
   room.emptySince = 0;
+  if (!room.host || !room.players.has(room.host)) room.host = client.id;
   client.room = code;
   client.send({
-    t: 'joined', code, id: client.id, color, level: room.level, phase: room.phase,
+    t: 'joined', code, id: client.id, host: room.host, color, level: room.level, phase: room.phase,
     players: [...room.players].filter(([id]) => id !== client.id).map(([id, p]) => ({ id, name: p.name, color: p.color })),
     collected: [...room.collected]
   });
@@ -152,10 +153,10 @@ function handle(client, m) {
       break;
     }
     case 's': // player state, relayed to the rest of the room
-      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0 }, client.id);
+      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0 }, client.id);
       break;
     case 'fx': // visual-only effects (attacks)
-      if (room) broadcast(room, { t: 'fx', id: client.id, k: m.k | 0, x: +m.x || 0, y: +m.y || 0, f: m.f | 0 }, client.id);
+      if (room) broadcast(room, { t: 'fx', id: client.id, k: m.k | 0, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, f: m.f | 0 }, client.id);
       break;
     case 'col': { // something was collected / defeated: first one wins
       if (!room || (m.l | 0) !== room.level) return;
@@ -187,6 +188,15 @@ function handle(client, m) {
       broadcast(room, { t: 'ready', n: room.ready.size, of: room.players.size });
       checkProgress(room);
       break;
+    // beat-em-up sync: the host runs the enemies, everyone else reports hits/thefts to it
+    case 'es': if (room && client.id === room.host) broadcast(room, m, client.id); break;
+    case 'eshot': case 'kill': if (room) broadcast(room, m, client.id); break;
+    case 'hit': case 'steal': {
+      if (!room) return;
+      const h = room.players.get(room.host);
+      if (h) h.client.send({ ...m, id: client.id });
+      break;
+    }
     case 'emote':
       if (room) broadcast(room, { t: 'emote', id: client.id, e: m.e | 0 }, client.id);
       break;
@@ -200,6 +210,7 @@ function leave(client) {
   if (!room) return;
   room.players.delete(client.id); room.fin.delete(client.id); room.ready.delete(client.id);
   broadcast(room, { t: 'pl', id: client.id });
+  if (room.host === client.id && room.players.size) { room.host = room.players.keys().next().value; broadcast(room, { t: 'host', id: room.host }); }
   if (room.players.size === 0) room.emptySince = Date.now(); // kept 2 min so people can reconnect
   else checkProgress(room);
 }

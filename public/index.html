@@ -55,8 +55,9 @@
     </div>
     <div id="err"></div>
     <div class="help">
-      MOVE: ARROWS/AD &nbsp; JUMP + FLOAT: SPACE (TAP IN AIR)<br>
-      ATTACK: X &nbsp; RUN: SHIFT &nbsp; WEAPON: Q / 1-5<br>
+      MOVE: ARROWS / WASD (ALL 4 WAYS) &nbsp; RUN: SHIFT<br>
+      ATTACK: X (3-HIT COMBO) &nbsp; JUMP: SPACE (TAP AGAIN TO FLOAT)<br>
+      WEAPON: Q / 1-5 &nbsp; 
       INVENTORY: I &nbsp; MUNCHIES: C &nbsp; EMOTES: 7-0 &nbsp; MUSIC: M<br>
       <a id="reset" style="color:#6a6080;cursor:pointer">RESET SAVE</a>
     </div>
@@ -64,7 +65,7 @@
 </div>
 
 <div id="touch">
-  <div class="grp"><button data-k="left">◀</button><button data-k="right">▶</button></div>
+  <div class="grp" style="display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(2,52px);gap:4px"><span></span><button data-k="up" style="width:52px;height:52px">▲</button><span></span><button data-k="left" style="width:52px;height:52px">◀</button><button data-k="down" style="width:52px;height:52px">▼</button><button data-k="right" style="width:52px;height:52px">▶</button></div>
   <div class="grp"><button data-k="inv" class="alt" style="width:44px;height:44px;font-size:11px;align-self:flex-end">INV</button><button data-k="attack" class="alt">B</button><button data-k="jump" class="gold">A</button></div>
 </div>
 

@@ -1,6 +1,8 @@
-# KUSH QUEST: Road to the Farm (v0.4)
+# KUSH QUEST: Road to the Farm (v0.5, beat-em-up)
 
 Cozy retro co-op platformer starring 4 stoner homies (Rasta, Snapback, Bucket Hat, Afro) swinging oversized weapons: Giant Joint, Giant Lighter, Mega Bong, Dab Tool, Giant Grinder. Up to 4 friends online. Save up hash coins to buy your own pot farm.
+
+**Style:** a co-op street brawler like TMNT, Streets of Rage or Castle Crashers. Walk up, down, left and right, clear each fight area, then keep moving.
 
 **The mission:** each mission, get **COOKED** (50%+ on the meter, from nugs + smoke rings) and reach the **SMOKE SPOT** at the end.
 Every smoke spot gets you closer to the farm. Reach 6 smoke spots and save up 1500 hash coins to buy **THE POT FARM**.
@@ -17,9 +19,9 @@ Your progress saves in your browser.
 ## Controls
 | | Keyboard | Phone |
 |---|---|---|
-| Move | Arrows / A D | < > |
-| Jump / Float (tap jump in the air) | Space / W / Z | A |
-| Attack (while floating = exhale puff) | X / J | B |
+| Move (all 4 directions) | Arrows / WASD | D-pad |
+| Jump / Float (tap jump again in the air) | Space / Z | A |
+| Attack, 3-hit combo (while floating = smoke blast) | X / J / K | B |
 | Run | Shift | |
 | Switch weapon | Q or 1-5 | |
 | Inventory | I / Tab | INV |
@@ -27,7 +29,7 @@ Your progress saves in your browser.
 | Emotes | 7 8 9 0 | |
 | Pause (solo) / Music | P / M | |
 
-At the smoke spot, press **Enter** to call the crew (20 second timer for everyone else). Co-op: you can stand on a friend's head.
+At the smoke spot, press **Enter** to call the crew (20 second timer for everyone else).
 
 ## Run it on your PC
 Install Node.js LTS (https://nodejs.org), then double-click **start.bat**.

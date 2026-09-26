@@ -16,6 +16,8 @@ Legendary stoners hang out at checkpoints and share wisdom (and a gift).
 **Head Shop** (between missions): weapons (Giant Lighter, Mega Bong, Dab Tool, Giant Grinder), armor (Hoodie, Tie-Dye Vest, Rasta Crown), Stash Pouch (anti-theft), Munchies, Pre-Rolls, Golden Leaves, and the Farm.
 Your progress saves in your browser.
 
+**Music:** adaptive soundtrack: a bouncy 8-bit theme on the map, laid-back lo-fi chiptune while exploring, and 8-bit + 174 BPM drum & bass (breakbeats, reese bass, chip arps) whenever a fight locks you in.
+
 ## How it works
 1. **Story intro** (first time), then the **World Map**: walk the path like Mario and pick a stop.
    Every stop looks like its level: 1-1 The Park, 1-2 The Beach, 1-3 Suburbia, Head Shop, 1-4 Downtown, 1-5 Misty Woods, 1-6 Buzzkill HQ, and the Pot Farm.

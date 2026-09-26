@@ -87,25 +87,87 @@ const SFX = {
   tick: () => tone(660, 0.03, 'square', 0.04),
   buy: () => { tone(1047, 0.08, 'square', 0.05); tone(1568, 0.2, 'square', 0.05, 0.08); },
 };
-// bouncy, cozy loop (C - Am - F - G) with a dreamy melody
+// ---- ADAPTIVE SOUNDTRACK ----
+// map: bouncy 8-bit theme | exploring: laid-back lo-fi chiptune | fights: 8-bit + drum & bass at 174 bpm
+function kick(when, vol = 0.5) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(150, when); o.frequency.exponentialRampToValueAtTime(42, when + 0.14);
+  g.gain.setValueAtTime(vol, when); g.gain.exponentialRampToValueAtTime(0.001, when + 0.22);
+  o.connect(g).connect(master); o.start(when); o.stop(when + 0.25);
+}
+function snare(when, vol = 0.2) {
+  const s = AC.createBufferSource(), g = AC.createGain(), f = AC.createBiquadFilter();
+  s.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = 1800; f.Q.value = 0.8;
+  g.gain.setValueAtTime(vol, when); g.gain.exponentialRampToValueAtTime(0.001, when + 0.16);
+  s.connect(f).connect(g).connect(master); s.start(when); s.stop(when + 0.18);
+  const o = AC.createOscillator(), g2 = AC.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(220, when); o.frequency.exponentialRampToValueAtTime(120, when + 0.08);
+  g2.gain.setValueAtTime(vol * 0.6, when); g2.gain.exponentialRampToValueAtTime(0.001, when + 0.1); o.connect(g2).connect(master); o.start(when); o.stop(when + 0.12);
+}
+function reese(freq, when, dur, vol = 0.09) { // detuned saw bass through a moving filter
+  const f = AC.createBiquadFilter(), g = AC.createGain();
+  f.type = 'lowpass'; f.Q.value = 6; f.frequency.setValueAtTime(260, when); f.frequency.linearRampToValueAtTime(900, when + dur * 0.5); f.frequency.linearRampToValueAtTime(300, when + dur);
+  g.gain.setValueAtTime(vol, when); g.gain.setValueAtTime(vol, when + dur * 0.85); g.gain.exponentialRampToValueAtTime(0.001, when + dur);
+  f.connect(g).connect(master);
+  for (const d of [-9, 9]) { const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq; o.detune.value = d; o.connect(f); o.start(when); o.stop(when + dur + 0.02); }
+}
+const SONGS = {
+  map: { bpm: 112, div: 2, steps: 8,
+    chords: [[60, 64, 67], [65, 69, 72], [67, 71, 74], [60, 64, 67]],
+    bass: [[48, 55, 52, 55, 48, 55, 52, 55], [41, 48, 45, 48, 41, 48, 45, 48], [43, 50, 47, 50, 43, 50, 47, 50], [48, 55, 52, 55, 48, 43, 45, 47]],
+    lead: [[72, -1, 76, 79, 76, -1, 72, 74], [77, -1, 81, -1, 79, 77, 76, -1], [79, -1, 74, -1, 71, 74, 79, 77], [76, 74, 72, -1, 67, -1, 72, -1]] },
+  calm: { bpm: 84, div: 2, steps: 8,
+    chords: [[65, 69, 72, 76], [64, 67, 71, 74], [62, 65, 69, 72], [60, 64, 67, 71]],
+    bass: [[41, -1, -1, 48, -1, -1, 45, -1], [40, -1, -1, 47, -1, -1, 43, -1], [38, -1, -1, 45, -1, -1, 41, -1], [36, -1, -1, 43, -1, 40, -1, 43]],
+    lead: [[76, -1, -1, 77, 76, -1, 72, -1], [74, -1, -1, -1, 71, -1, 67, -1], [72, -1, 74, -1, 76, -1, 77, -1], [79, -1, -1, -1, 76, -1, -1, -1]] },
+  fight: { bpm: 174, div: 4, steps: 16,
+    roots: [45, 41, 43, 40],
+    arp: [[69, 72, 76, 81], [65, 69, 72, 77], [67, 71, 74, 79], [64, 68, 71, 76]] },
+};
+let musicMode = 'map';
+function wantedMusic() {
+  if (state === 'map' || state === 'story') return 'map';
+  if (state === 'play' && lvl && lvl.locked) return 'fight';
+  return 'calm';
+}
 function startMusic() {
-  const step = 60 / 96 / 2;
-  const chords = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]];
-  const bass = [[48, -1, 55, -1, 48, 52, 55, 52], [45, -1, 52, -1, 45, 48, 52, 48], [41, -1, 48, -1, 41, 45, 48, 45], [43, -1, 50, -1, 43, 47, 50, 53]];
-  const mel = [[76, -1, 79, 76, 72, -1, 74, 76], [72, -1, -1, 69, 72, -1, 76, -1], [77, -1, 76, 74, 72, -1, 69, 72], [74, -1, 71, -1, 67, -1, -1, -1]];
-  let next = AC.currentTime + 0.1, i = 0;
+  let next = AC.currentTime + 0.1, i = 0, bar = 0;
   setInterval(() => {
-    while (next < AC.currentTime + 0.3) {
-      if (musicOn) {
-        const bar = Math.floor(i / 8) % 4, s = i % 8, section = Math.floor(i / 32) % 2, dt = next - AC.currentTime;
-        if (bass[bar][s] > 0) tone(midi(bass[bar][s]), step * 0.9, 'triangle', 0.12, dt);
-        if (s % 2 === 1) chords[bar].forEach(n => tone(midi(n), step * 0.4, 'square', 0.014, dt));
-        noise(s % 2 ? 0.04 : 0.02, s % 2 ? 0.04 : 0.015, next);
-        if (section === 1 && mel[bar][s] > 0) tone(midi(mel[bar][s]), step * 1.3, 'square', 0.022, dt);
+    while (next < AC.currentTime + 0.25) {
+      const song = SONGS[musicMode], step = 60 / song.bpm / song.div, s = i % song.steps, dt = next - AC.currentTime;
+      if (s === 0) { // change songs only on the downbeat
+        const want = wantedMusic();
+        if (want !== musicMode) { musicMode = want; i = 0; bar = 0; continue; }
       }
-      next += step; i++;
+      if (musicOn) {
+        const b = bar % 4;
+        if (musicMode === 'fight') {
+          // two-step drum & bass break
+          if (s === 0 || s === 10) kick(next, 0.55);
+          if (s === 4 || s === 12) snare(next, 0.22);
+          if (s === 7 || s === 15) snare(next, 0.06);
+          if (bar % 4 === 3 && s >= 12) snare(next, 0.12);
+          noise(0.025, s % 2 ? 0.035 : 0.02, next, 8000);
+          // rolling reese bass
+          const root = song.roots[b];
+          if (s === 0) reese(midi(root), next, step * 6, 0.1);
+          if (s === 6) reese(midi(root + (b === 3 ? 3 : 7)), next, step * 4, 0.08);
+          if (s === 10) reese(midi(root), next, step * 6, 0.1);
+          // 8-bit arp screaming over the top
+          const arp = song.arp[b];
+          tone(midi(arp[s % 4] + (bar % 8 >= 4 ? 12 : 0)), step * 0.8, 'square', 0.022, dt);
+          if (s % 4 === 0) tone(midi(arp[0] - 12), step * 3, 'square', 0.02, dt);
+        } else {
+          const calm = musicMode === 'calm';
+          if (song.bass[b][s] > 0) tone(midi(song.bass[b][s]), step * (calm ? 2.4 : 0.9), 'triangle', calm ? 0.13 : 0.12, dt);
+          if (calm) { if (s === 0) kick(next, 0.28); if (s === 4) snare(next, 0.07); if (s % 2 === 1) noise(0.03, 0.015, next, 7000); if (s === 2 || s === 6) song.chords[b].forEach(n => tone(midi(n), step * 1.6, 'triangle', 0.018, dt)); }
+          else { if (s % 4 === 0) kick(next, 0.3); if (s % 4 === 2) snare(next, 0.08); if (s % 2 === 1) song.chords[b].forEach(n => tone(midi(n), step * 0.4, 'square', 0.015, dt)); noise(0.02, 0.02, next, 8000); }
+          const lead = song.lead[b][s];
+          if (lead > 0 && (!calm || bar % 8 >= 4)) tone(midi(lead), step * (calm ? 1.8 : 0.9), calm ? 'triangle' : 'square', calm ? 0.035 : 0.025, dt);
+        }
+      }
+      next += step; i++; if (i % song.steps === 0) bar++;
     }
-  }, 50);
+  }, 40);
 }
 
 // ============================================================

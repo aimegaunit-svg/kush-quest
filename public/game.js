@@ -701,7 +701,11 @@ const ARMORS = [
   { id: 'vest', name: 'TIE-DYE VEST', icon: 'vest', hp: 2, price: 170, desc: '+2 MAX HEARTS' },
   { id: 'crown', name: 'RASTA CROWN', icon: 'crown', hp: 3, price: 300, desc: '+3 MAX HEARTS' },
 ];
-const FARM_PRICE = 1500, SPOTS_TO_FARM = 5;
+// v1.1 B1: the Farm node now sits after the last world (Buzzkill HQ / Mr. Killjoy), matching the brief's
+// story beat ("then the Astral Plane after the ending") - so SPOTS_TO_FARM is now the full 49-level total,
+// not just world 1. (Can't reference TOTAL_LEVELS here, it's declared later - kept as a literal in sync with
+// WORLD_DEF's level counts: 6+7+8+9+9+10.) Anyone who already owns save.farm keeps it regardless.
+const FARM_PRICE = 1500, SPOTS_TO_FARM = 49;
 // ---- Farm Hub (Phase 7): 4 plots growing passive-buff strains, + a farm pet ----
 const STRAINS = [
   { id: 'sunny', name: 'SUNNY HAZE', desc: '+10% HASH COINS' },
@@ -1055,16 +1059,71 @@ Object.assign(THEMES, {
   vault: variantTheme('hq', 'THE VAULT', '#1a1a2a', 0.5, ['guard', 'suit', 'guard', 'guard', 'raccoon']),
   penthouse: variantTheme('city', 'THE PENTHOUSE', '#ff3a4a', 0.35, ['suit', 'guard', 'suit', 'guard', 'karen']),
 });
-const WORLDS = [
-  { name: 'ROAD TO THE FARM', levels: ['park', 'beach', 'suburb', 'city', 'hq'], map: { seed: 1337, tint: null } },
-  { name: 'INTO THE WILD', levels: ['woods', 'nightwoods', 'swamp', 'mountain', 'station'], map: { seed: 2024, tint: ['#1e4a2a', 0.25] } },
-  { name: 'COASTLINE CHAOS', levels: ['sunset', 'boardwalk', 'pier', 'island', 'resort'], map: { seed: 777, tint: ['#ffb070', 0.2] } },
-  { name: 'NEON NIGHTS', levels: ['neon', 'alley', 'club', 'rooftops', 'casino'], map: { seed: 4200, tint: ['#1a0a3a', 0.5] } },
-  { name: 'BUZZKILL TOWER', levels: ['lobby', 'labs', 'factory', 'vault', 'penthouse'], map: { seed: 9001, tint: ['#3a3a48', 0.4] } },
+// ============================================================
+//  v1.1 Part B1: 6 worlds, growing level counts, per-world mini-boss + boss + secret slot.
+//  Table (brief v1.1 B1): World / Levels / Mini-boss at / Boss at / +1 secret
+//   1 Park 6/3/6   2 Beach 7/4/7   3 Suburbia 8/4/8   4 Downtown 9/5/9   5 Misty Woods 9/5/9   6 Buzzkill HQ 10/5/10
+//  = 49 main levels + 6 secret levels (one per world, appended after n=48 as n=49..54).
+//  SIMPLIFICATION: hand-painting 6 fully distinct biomes x up to 10 levels each was out of scope for one
+//  session, so each world reuses that base theme's existing palette-tinted variant reskins (already built
+//  for the old 5-world "remix tour"), cycling through them to fill the level count. Same level number always
+//  gets the same theme (deterministic), just not always a *unique* piece of art.
+// ============================================================
+const VARIANTS_OF = {
+  park: ['park', 'island'],
+  beach: ['beach', 'sunset', 'pier'],
+  suburb: ['suburb', 'boardwalk', 'rooftops'],
+  city: ['city', 'neon', 'alley', 'factory', 'penthouse'],
+  woods: ['woods', 'nightwoods', 'swamp', 'mountain'],
+  hq: ['hq', 'station', 'resort', 'club', 'casino', 'lobby', 'labs', 'vault'],
+};
+// mini-boss / boss are 1-indexed level numbers in the brief's table; converted to 0-indexed here.
+const WORLD_DEF = [
+  { name: 'THE PARK', base: 'park', count: 6, miniAt: 2, bossAt: 5, mini: 'PARK RANGER PETE', boss: 'RANGER RICK', map: { seed: 1337, tint: null } },
+  { name: 'THE BEACH', base: 'beach', count: 7, miniAt: 3, bossAt: 6, mini: 'BEACH PATROL BARB', boss: 'LIFEGUARD LANCE', map: { seed: 777, tint: ['#ffb070', 0.2] } },
+  { name: 'SUBURBIA', base: 'suburb', count: 8, miniAt: 3, bossAt: 7, mini: 'NEIGHBORHOOD WATCH NED', boss: 'HOA PRESIDENT PAM', map: { seed: 2024, tint: ['#1e4a2a', 0.15] } },
+  { name: 'DOWNTOWN', base: 'city', count: 9, miniAt: 4, bossAt: 8, mini: 'BEAT COP BRUTUS', boss: 'NARC DRONE SWARM', map: { seed: 4200, tint: ['#1a0a3a', 0.5] } },
+  { name: 'MISTY WOODS', base: 'woods', count: 9, miniAt: 4, bossAt: 8, mini: 'TRAIL WARDEN TESS', boss: 'THE FOREST NARC', map: { seed: 9002, tint: ['#0e2418', 0.35] } },
+  { name: 'BUZZKILL HQ', base: 'hq', count: 10, miniAt: 4, bossAt: 9, mini: 'FLOOR MANAGER FRANK', boss: 'MR. KILLJOY', map: { seed: 9001, tint: ['#3a3a48', 0.4] } },
 ];
-const LEVELS_PER_WORLD = 5, TOTAL_LEVELS = WORLDS.length * LEVELS_PER_WORLD;
-const themeKeyFor = n => { const w = WORLDS[Math.floor(n / LEVELS_PER_WORLD) % WORLDS.length]; return w.levels[n % LEVELS_PER_WORLD]; };
-const worldOf = n => Math.floor(n / LEVELS_PER_WORLD);
+const WORLDS = WORLD_DEF.map(w => ({
+  name: w.name, map: w.map, miniAt: w.miniAt, bossAt: w.bossAt, miniName: w.mini, bossName: w.boss,
+  levels: Array.from({ length: w.count }, (_, i) => VARIANTS_OF[w.base][i % VARIANTS_OF[w.base].length]),
+  secretTheme: VARIANTS_OF[w.base][VARIANTS_OF[w.base].length - 1],
+}));
+// one short cutscene per world transition (index = the world you're ENTERING), fired once per save in
+// startLevel(). Index 0 (The Park) is skipped - that's the intro, already handled by the story sequence.
+const WORLD_CUTSCENES = [
+  null,
+  [{ name: 'GRANDMA KUSH', text: 'RANGER RICK IS DOWN. NICE WORK, KIDDOS.' }, { name: 'GRANDMA KUSH', text: "NOW LET'S HIT THE BEACH BEFORE BUZZKILL CORP DOES." }],
+  [{ name: 'GRANDMA KUSH', text: 'LANCE FOLDED LIKE A LAWN CHAIR. ONWARD!' }, { name: 'GRANDMA KUSH', text: 'SUBURBIA IS NEXT - WATCH OUT FOR THE HOA.' }],
+  [{ name: 'GRANDMA KUSH', text: 'PAM AND HER BYLAWS CAN GO SIT ON A CACTUS.' }, { name: 'GRANDMA KUSH', text: 'DOWNTOWN IS CRAWLING WITH NARC DRONES NOW. STAY SHARP.' }],
+  [{ name: 'GRANDMA KUSH', text: 'THAT DRONE SWARM DIDNT STAND A CHANCE.' }, { name: 'GRANDMA KUSH', text: 'THE MISTY WOODS ARE NEXT. SOMETHING IN THERE HUNTS BY SMELL.' }],
+  [{ name: 'GRANDMA KUSH', text: 'THE FOREST NARC IS TOAST. ONE PLACE LEFT.' }, { name: 'GRANDMA KUSH', text: 'BUZZKILL HQ. KILLJOY HIMSELF. LETS FINISH THIS.' }],
+];
+const WORLD_START = (() => { const a = [0]; for (const w of WORLDS) a.push(a[a.length - 1] + w.levels.length); return a; })();
+const TOTAL_LEVELS = WORLD_START[WORLDS.length]; // 49 main levels
+const SECRET_BASE = TOTAL_LEVELS; // secret levels are n = 49..54, one per world, in world order
+const TOTAL_LEVELS_WITH_SECRETS = TOTAL_LEVELS + WORLDS.length;
+const isSecretLevel = n => n >= SECRET_BASE && n < TOTAL_LEVELS_WITH_SECRETS;
+const worldOf = n => {
+  if (isSecretLevel(n)) return n - SECRET_BASE;
+  for (let w = 0; w < WORLDS.length; w++) if (n < WORLD_START[w + 1]) return w;
+  return WORLDS.length - 1;
+};
+const levelInWorld = n => isSecretLevel(n) ? WORLDS[worldOf(n)].levels.length : n - WORLD_START[worldOf(n)];
+const themeKeyFor = n => { const w = worldOf(n); return isSecretLevel(n) ? WORLDS[w].secretTheme : WORLDS[w].levels[levelInWorld(n)]; };
+// level TYPE tag (brief v1.1 B1 "level variety"): assigned deterministically per level number so every world
+// mixes at least 4 of the 6 types. GAUNTLET/ESCORT/CHASE are implemented as light variants of the standard
+// BRAWL flow rather than bespoke mechanics (see buildLevel/updateZones) - documented simplification.
+const LEVEL_TYPES = ['BRAWL', 'GAUNTLET', 'HAZARD', 'BRAWL', 'CHASE', 'BRAWL', 'ESCORT', 'HAZARD', 'BRAWL', 'GAUNTLET'];
+function levelType(n) {
+  if (isSecretLevel(n)) return 'SECRET';
+  const w = worldOf(n), li = levelInWorld(n), wd = WORLDS[w];
+  if (li === wd.bossAt) return 'BOSS';
+  if (li === wd.miniAt) return 'MINIBOSS';
+  return LEVEL_TYPES[li % LEVEL_TYPES.length];
+}
 
 // ---- skills: every boss teaches one ----
 const SKILLS = {
@@ -1094,34 +1153,26 @@ const SKILLS = {
   sprint: { name: 'MUNCHIES RUN', desc: 'YOU MOVE 20% FASTER' },
   ultimate: { name: 'THE ULTIMATE HIGH', desc: 'AT 100% COOKED PRESS THE TOKE KEY: A BLAST THAT HITS EVERYTHING ON SCREEN' },
 };
-// one boss per level; every 5th is a MEGA boss
-const BOSSES = [
-  ['RANGER RICK', 'cop', 'cherry', 'THIS PARK HAS A STRICT NO FUN POLICY!'],
-  ['LIFEGUARD LARRY', 'cop', 'charge', 'NO RUNNING! NO SMOKING! NO CHILLING!'],
-  ['HOA PRESIDENT KAREN', 'karen', 'throw', 'YOUR VIBES VIOLATE BYLAW 42!'],
-  ['OFFICER DONUT', 'cop', 'roll', 'I SMELL SOMETHING... AND IT AINT MY DONUTS.'],
-  ['THE REGIONAL MANAGER', 'karen', 'toke', 'I OWN THIS WHOLE REGION. YOUR FARM IS NEXT.', true],
-  ['BIGFOOT RANGER', 'ranger', 'pound', 'THESE WOODS ARE A DRUG FREE ZONE.'],
-  ['OWL-EYED WARDEN', 'ranger', 'heart1', 'WHO... WHO... WHO SAID YOU COULD CHILL?'],
-  ['SWAMP RAT KING', 'rat', 'hotbox', 'SQUEEEAK! YOUR STASH IS MINE!'],
-  ['SNOW KAREN', 'suit', 'embers', 'I WILL FREEZE YOUR VIBES SOLID.'],
-  ['HEAD RANGER HANK', 'ranger', 'puffpass', 'THE WILD BELONGS TO BUZZKILL CORP NOW.', true],
-  ['BOARDWALK BANDIT', 'raccoon', 'finisher', 'NICE COINS. SHAME IF SOMEONE... TOOK THEM.'],
-  ['SHERIFF SANDY', 'cop', 'magnet', 'THIS BEACH AINT BIG ENOUGH FOR THE TWO OF US.'],
-  ['PIER PIRATE RAT', 'rat', 'twothrow', 'ARRR, HAND OVER YER HASH!'],
-  ['CRUISE DIRECTOR KAREN', 'suit', 'heart2', 'THIS ISLAND IS MEMBERS ONLY!'],
-  ['THE RESORT MOGUL', 'suit', 'breath', 'EVERY BEACH WILL BE A BUZZKILL BEACH.', true],
-  ['BOUNCER BRUTUS', 'guard', 'rage', 'YOU AINT ON THE LIST.'],
-  ['ALLEY CAT RAT', 'rat', 'rollsmoke', 'THIS IS MY ALLEY, STONER.'],
-  ['VIP KAREN', 'suit', 'crit', 'DO YOU KNOW WHO I AM?!'],
-  ['ROOFTOP SNIPER COP', 'guard', 'heart3', 'I CAN SEE YOUR SMOKE FROM UP HERE.'],
-  ['THE NIGHT CHIEF', 'guard', 'bongrip', 'THE CITY NEVER SLEEPS... AND NEITHER DO MY COPS.', true],
-  ['HR DIRECTOR', 'suit', 'regen', 'THIS WILL GO ON YOUR PERMANENT RECORD.'],
-  ['SECURITY CHIEF', 'guard', 'combo', 'NOBODY GETS PAST SECURITY.'],
-  ['LAB RAT PRIME', 'rat', 'heart4', 'I WAS BRED TO HATE FUN.'],
-  ['THE AUDITOR', 'suit', 'sprint', 'I HAVE AUDITED YOUR VIBES. THEY FAILED.'],
-  ['BUZZKILL CEO', 'suit', 'ultimate', 'I AM THE BUZZKILL. EVERY BUZZ ENDS WITH ME.', true],
-];
+// ---- v1.1 B1: every level still ends in a fight against a named "boss" of that fight, exactly like the
+// pre-B1 game did for all 25 of its levels (unchanged core loop - see buildLevel). What changes is WHICH
+// name/skill/HP-scale a level number gets: the 6 world-ending bosses and 6 mid-world mini-bosses from the
+// brief's table are hardcoded; every other level gets a deterministic, procedurally-picked "captain" fight
+// (same seed -> same name/kind/skill every time, per the recipe requirement in item 2 of the brief).
+// bossDataFor(n) replaces the old static BOSSES[] array/lookup.
+const SKILL_ORDER = Object.keys(SKILLS);
+const MEGA_SKILLS = ['toke', 'puffpass', 'breath', 'bongrip', 'regen', 'ultimate']; // one big unlock per world boss
+const CAPTAIN_TITLES = ['SERGEANT', 'CAPTAIN', 'CHIEF', 'DEPUTY', 'INSPECTOR', 'WARDEN', 'FOREMAN', 'SUPERVISOR', 'MANAGER', 'DIRECTOR'];
+const CAPTAIN_NAMES = ['BOB', 'RICK', 'STEVE', 'DOUG', 'GARY', 'LARRY', 'KAREN', 'PAM', 'LINDA', 'CAROL'];
+function seededPick(n, salt, arr) { let s = (n * 7919 + salt * 104729 + 1) >>> 0; s = (s * 1103515245 + 12345) >>> 0; return arr[s % arr.length]; }
+function bossDataFor(n) {
+  const w = worldOf(n), li = levelInWorld(n), wd = WORLDS[w], theme = THEMES[themeKeyFor(n)];
+  if (isSecretLevel(n)) return [wd.name + ' STASH GUARDIAN', seededPick(n, 1, theme.enemies), seededPick(n, 2, SKILL_ORDER), 'YOU FOUND MY SECRET SPOT?!', false, false];
+  if (li === wd.bossAt) return [wd.bossName, seededPick(n, 0, theme.enemies), MEGA_SKILLS[w % MEGA_SKILLS.length], wd.bossName + " WON'T LET YOU THROUGH THIS EASY.", true, false];
+  if (li === wd.miniAt) return [wd.miniName, seededPick(n, 0, theme.enemies), seededPick(n, 3, SKILL_ORDER), wd.miniName.toUpperCase() + ' BLOCKS THE WAY.', false, true];
+  const kind = seededPick(n, 0, theme.enemies);
+  const name = seededPick(n, 4, CAPTAIN_TITLES) + ' ' + seededPick(n, 5, CAPTAIN_NAMES);
+  return [name, kind, seededPick(n, 6, SKILL_ORDER), name + ' STEPS UP.', false, false];
+}
 const hasSkill = id => (save.skills || []).includes(id);
 
 
@@ -1139,7 +1190,7 @@ const sy = (z, h = 0) => FLOOR_Y + z - h;        // world (z,h) -> screen y (fee
 const MISSION_LOOT = ['resin', 'hoodie', 'resin', 'vest', 'resin', 'crown', 'pouch'];
 function missionName(n, remix) {
   const th = THEMES[themeKeyFor(n)];
-  return ['WORLD ' + (worldOf(n) % WORLDS.length + 1) + '-' + (n % LEVELS_PER_WORLD + 1), th.name + (n >= TOTAL_LEVELS || remix ? ' REMIX' : '')];
+  return ['WORLD ' + (worldOf(n) + 1) + '-' + (levelInWorld(n) + 1), th.name + (n >= TOTAL_LEVELS || remix ? ' REMIX' : '')];
 }
 let LEN = 0;
 function buildLevel(n, remix) {
@@ -1177,9 +1228,9 @@ function buildLevel(n, remix) {
       enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, hp, maxHp: hp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60 + Math.floor(rand() * 60), flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0 });
     }
     if (zi === zoneCount - 1) { // the boss arrives after its crew
-      const bd = BOSSES[n % BOSSES.length], mega = !!bd[4], crewN = Net.online ? remotes.size + 1 : 1, bhp = Math.round((14 + n * 3) * (mega ? 2.2 : 1) * (1 + 0.4 * (crewN - 1)));
+      const bd = bossDataFor(n), mega = !!bd[4], mini = !!bd[5], crewN = Net.online ? remotes.size + 1 : 1, bhp = Math.round((14 + n * 3) * (mega ? 2.2 : mini ? 1.5 : 1) * (1 + 0.4 * (crewN - 1)));
       ids.push(enemies.length);
-      const boss = { id: enemies.length, kind: bd[1], ai: BASE_AI[bd[1]] || bd[1], boss: true, mega, bname: bd[0], skill: bd[2], quote: bd[3], zone: zi, hp: bhp, maxHp: bhp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 90, flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0, summons: [] };
+      const boss = { id: enemies.length, kind: bd[1], ai: BASE_AI[bd[1]] || bd[1], boss: true, mega, mini, bname: bd[0], skill: bd[2], quote: bd[3], zone: zi, hp: bhp, maxHp: bhp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 90, flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0, summons: [] };
       enemies.push(boss);
       for (let k = 0; k < 8; k++) { boss.summons.push(enemies.length); const kind = pick(theme.enemies); enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, reserve: true, hp: 1 + (VARIANT_HP[kind] || 0), maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
     }
@@ -1236,7 +1287,7 @@ function loadSlot(i) {
   save.throws = { papers: 0, bombs: 0, smoke: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
   save.farmPlots = save.farmPlots && save.farmPlots.length === 4 ? save.farmPlots : [null, null, null, null]; save.pet = save.pet || null; save.dailyDate = save.dailyDate || '';
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
-  if (!Array.isArray(save.skills)) save.skills = BOSSES.slice(0, Math.min(save.spots || 0, BOSSES.length)).map(b => b[2]);
+  if (!Array.isArray(save.skills)) save.skills = Array.from({ length: Math.min(save.spots || 0, TOTAL_LEVELS) }, (_, i) => SKILL_ORDER[i % SKILL_ORDER.length]);
   save.cores = { rasta: 1, snapback: 1, bucket: 1, afro: 1, ...(save.cores || {}) };
   save.resin = save.resin || 0; save.seeds = save.seeds || 0; save.wild = save.wild || null;
   // v1.1 A4: preroll/gold were dropped from ITEMS (trimmed to munchie+brownie+soda) - if an old save had
@@ -1260,6 +1311,21 @@ function loadSlot(i) {
     });
     save.migratedV11 = true;
   }
+  // v1.1 B1 one-time migration: save.spots used to be a flat progress counter over the OLD 5-world x
+  // 5-level = 25-level structure. B1 reworks that into 6 worlds of 6/7/8/9/9/10 = 49 levels, so an old
+  // save's raw spots number means something different now (it would over- or under-unlock levels if left
+  // as-is). Per the brief's global rule ("old per-world completion unlocks the matching world's first
+  // level"), map however many OLD worlds were fully finished onto the same number of NEW worlds' worth of
+  // unlock, landing on that new world's first level - simple, monotonic, never loses save.farm/coins/gear.
+  if (!save.migratedB1) {
+    if ((save.spots || 0) > 0) {
+      const OLD_LEVELS_PER_WORLD = 5, OLD_WORLD_COUNT = 5;
+      const oldWorldsBeaten = Math.min(OLD_WORLD_COUNT, Math.floor(save.spots / OLD_LEVELS_PER_WORLD));
+      save.spots = WORLD_START[Math.min(oldWorldsBeaten, WORLDS.length)];
+    }
+    save.migratedB1 = true;
+  }
+  save.spots = Math.min(save.spots || 0, TOTAL_LEVELS);
 }
 loadSlot(1);
 // Core weapon level for the currently-selected homie (Net.color/save.character index into CORE_HOMIE), 1-10.
@@ -1303,21 +1369,15 @@ function startLevel(n) {
   crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; // v1.1 A5: reset the crew-lives pool + checkpoint for the new level
   if (n === 0 && save.spots === 0) me.tipT = 900;
   persist();
-  if (n === LEVELS_PER_WORLD && !save.sawMidpoint) {
-    save.sawMidpoint = true; persist();
-    showDialogue([
-      { name: 'GRANDMA KUSH', text: 'SWEETIES, BUZZKILL CORP JUST MADE AN OFFER ON MY FARM.' },
-      { name: 'GRANDMA KUSH', text: "THEY WANT TO PAVE IT INTO A PARKING LOT FOR MR. KILLJOY'S NEW OFFICE." },
-      { name: 'GRANDMA KUSH', text: "WE GOTTA BEAT THEM TO IT. KEEP STACKING THOSE HASH COINS." },
-    ]);
-  }
-  if (n === LEVELS_PER_WORLD * (WORLDS.length - 1) && !save.sawKilljoy) {
-    save.sawKilljoy = true; persist();
-    showDialogue([
-      { name: 'MR. KILLJOY', text: "WELL WELL. LOOK WHO MADE IT TO MY TOWER." },
-      { name: 'MR. KILLJOY', text: "GRANDMA KUSH'S LITTLE FARM IS ALREADY MINE ON PAPER." },
-      { name: 'MR. KILLJOY', text: 'CLIMB ALL YOU WANT. THE PAPERWORK SIGNS ITSELF AT SUNSET.' },
-    ]);
+  // v1.1 B1 item 5: a short cutscene when you finish a world's boss and step into the next world, gated so
+  // it only ever plays once per save (save.sawWorldCut[]). Placeholder story beats + one crew line per
+  // transition, exactly as scoped ("they don't need to be beautifully written, just present and functional").
+  if (n > 0) {
+    const w = worldOf(n);
+    if (w > 0 && levelInWorld(n) === 0 && !isSecretLevel(n) && !(save.sawWorldCut || []).includes(w)) {
+      save.sawWorldCut = save.sawWorldCut || []; save.sawWorldCut.push(w); persist();
+      showDialogue(WORLD_CUTSCENES[w] || [{ name: 'GRANDMA KUSH', text: 'ONWARD TO ' + WORLDS[w].name + '.' }]);
+    }
   }
   for (const r of remotes.values()) { r.tx = -1000; r.x = -1000; }
   for (const c of Net.pendingCollected) applyCollected(c.id, c.l);
@@ -3167,14 +3227,22 @@ function explode(s) {
 //  WORLD MAP (procedural, dithered, weirdly realistic 8-bit terrain)
 // ============================================================
 const MW = 400;
-// each world's map has the same road layout; the stops look like that world's areas
+// each world's map is a wavy road of that world's level nodes (count varies 6-10, brief v1.1 B1), with a
+// Head Shop node early on and a Hotbox Highway node placed right after the mid-world mini-boss. The last
+// world (Buzzkill HQ) leads to the Farm instead of a gate to the next world.
 function mapNodes(w) {
-  const L = k => ({ kind: 'level', n: w * LEVELS_PER_WORLD + k });
-  return [
-    { ...L(0), x: 84, y: 138 }, { ...L(1), x: 70, y: 70 }, { ...L(2), x: 140, y: 104 }, { kind: 'shop', x: 184, y: 142 },
-    { ...L(3), x: 226, y: 100 }, { ...L(4), x: 312, y: 134, mega: true },
-    w === 0 ? { kind: 'farm', x: 350, y: 82 } : { kind: 'gate', to: (w + 1) % WORLDS.length, x: 350, y: 82 },
-  ];
+  const wd = WORLDS[w], count = wd.levels.length;
+  const x0 = 56, x1 = MW - 70, y0 = 62, amp = 44;
+  const px = i => x0 + (count > 1 ? (i / (count - 1)) * (x1 - x0) : 0);
+  const py = i => y0 + 40 + Math.sin((count > 1 ? i / (count - 1) : 0) * Math.PI * 2.3) * amp * 0.5 + (i % 2 ? 6 : -6);
+  const nodes = [];
+  for (let k = 0; k < count; k++) {
+    nodes.push({ kind: 'level', n: WORLD_START[w] + k, x: Math.round(px(k)), y: Math.round(py(k)), mega: k === wd.bossAt, mini: k === wd.miniAt });
+    if (k === 1) nodes.push({ kind: 'shop', x: Math.round(px(k) + 10), y: Math.round(py(k) + 22) });
+    if (k === wd.miniAt) nodes.push({ kind: 'hotbox', x: Math.round((px(k) + px(Math.min(count - 1, k + 1))) / 2), y: Math.round(Math.min(py(k), py(Math.min(count - 1, k + 1))) - 18) });
+  }
+  nodes.push(w === WORLDS.length - 1 ? { kind: 'farm', x: MW - 40, y: 82 } : { kind: 'gate', to: w + 1, x: MW - 40, y: 82 });
+  return nodes;
 }
 let curWorld = 0, MAP_NODES = mapNodes(0);
 const maxWorld = () => Math.min(WORLDS.length - 1, worldOf(Math.min(save.spots, TOTAL_LEVELS - 1)));
@@ -3184,8 +3252,9 @@ const mapCache = {};
 function useMap(w) { if (!mapCache[w]) { const nodesWas = MAP_NODES; MAP_NODES = mapNodes(w); const c = buildMapCanvas(w); mapCache[w] = { c, water: mapWater, roads: mapRoads }; MAP_NODES = nodesWas; } mapCanvas = mapCache[w].c; mapWater = mapCache[w].water; mapRoads = mapCache[w].roads; return mapCanvas; }
 function nodeUnlocked(nd) {
   if (nd.kind === 'level') return nd.n <= save.spots;
-  if (nd.kind === 'gate') return save.spots >= (curWorld + 1) * LEVELS_PER_WORLD;
+  if (nd.kind === 'gate') return save.spots >= WORLD_START[curWorld + 1];
   if (nd.kind === 'shop') return true;
+  if (nd.kind === 'hotbox') return save.spots >= WORLD_START[curWorld] + WORLDS[curWorld].miniAt;
   return save.spots >= SPOTS_TO_FARM;
 }
 function buildMapCanvas(w = 0) {
@@ -3245,7 +3314,10 @@ function buildMapCanvas(w = 0) {
     for (const [x, y] of pts) { g.fillStyle = '#5a5870'; g.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3); }
     pts.forEach(([x, y], k) => { if (k % 4 < 2) dot(Math.round(x), Math.round(y), '#e8c84a'); });
   }
-  if (w > 0) { // other worlds: each stop gets a little cluster that looks like its area
+  if (true) { // v1.1 B1: every world is now a single biome across all its levels (was: world 0 only was a
+              // hand-painted multi-biome "tour" map; that no longer fits, so all 6 worlds use this generic
+              // per-node cluster art, keyed off each level's theme). SIMPLIFICATION: less bespoke than the
+              // old world-0 art, but correct for any level count and still legible per-theme.
     MAP_NODES.forEach(nd => {
       if (nd.kind !== 'level') return;
       const base = THEMES[themeKeyFor(nd.n)].base || themeKeyFor(nd.n), x = nd.x, y = nd.y - 12;
@@ -3296,8 +3368,9 @@ function buildMapCanvas(w = 0) {
 }
 function nodeLabel(nd) {
   if (nd.kind === 'shop') return 'HEAD SHOP';
-  if (nd.kind === 'gate') return nd.to === 0 ? 'BACK HOME' : 'ON TO WORLD ' + (nd.to + 1) + ': ' + WORLDS[nd.to].name;
+  if (nd.kind === 'gate') return 'ON TO WORLD ' + (nd.to + 1) + ': ' + WORLDS[nd.to].name;
   if (nd.kind === 'farm') return 'THE POT FARM';
+  if (nd.kind === 'hotbox') return 'HOTBOX HIGHWAY';
   return missionName(nd.n)[0] + ' ' + missionName(nd.n)[1];
 }
 // ---- Online lobby: shown right after create/join, before the map ----
@@ -3375,6 +3448,11 @@ function updateMap() {
       const nd = MAP_NODES[mapSel];
       if (nd.kind === 'level') { if (Net.online) Net.send({ t: 'pick', n: nd.n }); else go(() => startLevel(nd.n)); SFX.cp(); }
       else if (nd.kind === 'shop') go(openShop);
+      // v1.1 B1: the Hotbox Highway node exists on the map (right after the mid-world mini-boss) but isn't
+      // wired to an actual transit mini-game in this session - the transit-game files (drive.js etc.) are
+      // being built on a parallel branch. Clicking it here just shows an informational banner so the node
+      // is real and navigable without crashing or double-building someone else's in-progress work.
+      else if (nd.kind === 'hotbox') { SFX.tick(); banner = { t: 150, a: 'HOTBOX HIGHWAY', b: 'COMING SOON - A TRANSIT MINI-GAME BETWEEN HERE AND THE BOSS' }; }
       else if (nd.kind === 'gate') { go(() => { setWorld(nd.to); mapSel = 0; Net.send({ t: 'mapsel', i: 0, w: curWorld }); }); }
       else if (nd.kind === 'farm') {
         if (save.farm) { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }
@@ -3468,12 +3546,12 @@ function drawMap_() {
   // stops
   MAP_NODES.forEach((nd, i) => {
     const open = nodeUnlocked(nd), done = nd.kind === 'level' && nd.n < save.spots, sel = i === mapSel;
-    const col = nd.kind === 'shop' ? '#c070ff' : nd.kind === 'gate' ? '#7ac8ff' : nd.kind === 'farm' ? (save.farm ? '#7fe07a' : '#ffd84a') : done ? '#7fe07a' : nd.mega && open ? '#ff5a6a' : open ? '#ffd84a' : '#8a809a';
+    const col = nd.kind === 'shop' ? '#c070ff' : nd.kind === 'hotbox' ? '#5affd0' : nd.kind === 'gate' ? '#7ac8ff' : nd.kind === 'farm' ? (save.farm ? '#7fe07a' : '#ffd84a') : done ? '#7fe07a' : nd.mega && open ? '#ff5a6a' : nd.mini && open ? '#ff9a5a' : open ? '#ffd84a' : '#8a809a';
     const r = sel ? 5 + (frame % 30 < 15 ? 1 : 0) : 4;
     ctx.fillStyle = 'rgba(20,16,40,.4)'; ctx.fillRect(nd.x - r + 1, nd.y + r - 1, r * 2, 2);
     ctx.fillStyle = P.k; circle(nd.x, nd.y, r + 1); ctx.fillStyle = col; circle(nd.x, nd.y, r); ctx.fillStyle = '#ffffff'; ctx.fillRect(nd.x - 2, nd.y - 3, 2, 1);
     if (!open) { ctx.fillStyle = P.k; ctx.fillRect(nd.x - 1, nd.y - 1, 3, 3); }
-    if (nd.kind === 'level') { if (open) drawStr((nd.n % LEVELS_PER_WORLD + 1) + '', nd.x - 1, nd.y - 2, P.k, 1); if (done) text('+', nd.x + 6, nd.y - 9, '#c8ffa0'); if (nd.mega) text('MEGA', nd.x, nd.y + 8, '#ff5a6a', 1, 'center'); }
+    if (nd.kind === 'level') { if (open) drawStr((levelInWorld(nd.n) + 1) + '', nd.x - 1, nd.y - 2, P.k, 1); if (done) text('+', nd.x + 6, nd.y - 9, '#c8ffa0'); if (nd.mega) text('MEGA', nd.x, nd.y + 8, '#ff5a6a', 1, 'center'); if (nd.mini) text('MINI', nd.x, nd.y + 8, '#ff9a5a', 1, 'center'); }
     if (nd.kind === 'gate') text('WORLD ' + (nd.to + 1), nd.x, nd.y + 8, '#7ac8ff', 1, 'center');
   });
   const nd = MAP_NODES[mapSel], bob = Math.floor(frame / 15) % 2;
@@ -3500,11 +3578,12 @@ function drawMap_() {
   text(nodeLabel(nd), 6, H - 36, '#ffd84a', 1);
   if (nd.kind === 'level') {
     const th = THEMES[themeKeyFor(nd.n)];
-    const bd = BOSSES[nd.n % BOSSES.length];
-    text(nd.n < save.spots ? 'CLEARED - REPLAY FOR COINS' : (bd[4] ? 'MEGA BOSS: ' : 'BOSS: ') + bd[0] + '  -  TEACHES: ' + SKILLS[bd[2]].name, 6, H - 27, nd.n < save.spots ? '#c8ffa0' : bd[4] ? '#ff8a8a' : '#ffffff');
-    text('WATCH OUT:', 6, H - 16, '#b0a8c0');
-    [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 50 + i * 12, H - 4 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
+    const bd = bossDataFor(nd.n);
+    text(nd.n < save.spots ? 'CLEARED - REPLAY FOR COINS' : (bd[4] ? 'MEGA BOSS: ' : bd[5] ? 'MINI-BOSS: ' : 'BOSS: ') + bd[0] + '  -  TEACHES: ' + SKILLS[bd[2]].name, 6, H - 27, nd.n < save.spots ? '#c8ffa0' : bd[4] ? '#ff8a8a' : bd[5] ? '#ff9a5a' : '#ffffff');
+    text('TYPE: ' + levelType(nd.n) + '   WATCH OUT:', 6, H - 16, '#b0a8c0');
+    [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 90 + i * 12, H - 4 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
   } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 27, '#ffffff');
+  else if (nd.kind === 'hotbox') text('A TRANSIT MINI-GAME NODE (NOT YET WIRED UP THIS SESSION)', 6, H - 27, '#ffffff');
   else text(save.farm ? 'YOU OWN IT. HOME SWEET HOME' : 'COSTS ' + FARM_PRICE + ' HASH COINS. YOU HAVE ' + save.coins, 6, H - 27, '#ffffff');
   drawChat();
   if (banner) { R(ctx, 'rgba(42,24,56,.85)', 0, 70, W, 30); text(banner.a, W / 2, 74, '#ff8a8a', 2, 'center'); text(banner.b, W / 2, 90, '#fff', 1, 'center'); }
@@ -3644,7 +3723,7 @@ function drawBrief() {
   text('1. GET COOKED TO 50% - NUGS, SMOKE RINGS, KNOCKOUTS', 40, 72, '#ffffff');
   text('2. BEAT EACH WAVE OF BUZZKILLS', 40, 82, '#ffffff');
   text('3. CHILL AT THE SMOKE SPOT AT THE END', 40, 92, '#ffffff');
-  { const bd = BOSSES[lvl.n % BOSSES.length]; text((bd[4] ? 'MEGA BOSS: ' : 'BOSS: ') + bd[0] + ' - BEAT HIM TO LEARN ' + SKILLS[bd[2]].name, 40, 104, bd[4] ? '#ff8a8a' : '#e4b3ff'); }
+  { const bd = bossDataFor(lvl.n); text((bd[4] ? 'MEGA BOSS: ' : bd[5] ? 'MINI-BOSS: ' : 'BOSS: ') + bd[0] + ' - BEAT HIM TO LEARN ' + SKILLS[bd[2]].name, 40, 104, bd[4] ? '#ff8a8a' : bd[5] ? '#ff9a5a' : '#e4b3ff'); }
   const fresh = [...new Set(th.enemies)].find(k => !save.met.includes(k) && k !== 'mouse' && k !== 'squirrel' && k !== 'cop');
   const NEW_TIP = {
     karen: ['KAREN', '#ff9ab8', ['THROWS PURSES FROM AFAR. JUMP THEM (SPACE)', 'THEN RUSH HER WHILE SHE CATCHES HER BREATH.', 'ROLLING PAPERS (K) HIT HER FROM RANGE!']],

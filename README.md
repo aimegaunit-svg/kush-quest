@@ -1,4 +1,4 @@
-# KUSH QUEST: Road to the Farm (v0.8)
+# KUSH QUEST (v0.9)
 
 Cozy retro co-op platformer starring 4 stoner homies (Rasta, Snapback, Bucket Hat, Afro) swinging oversized weapons: Giant Joint, Giant Lighter, Mega Bong, Dab Tool, Giant Grinder. Up to 4 friends online. Save up hash coins to buy your own pot farm.
 
@@ -17,6 +17,17 @@ Legendary stoners hang out at checkpoints and share wisdom (and a gift).
 Your progress saves in your browser.
 
 **Music:** adaptive soundtrack: a bouncy 8-bit theme on the map, laid-back lo-fi chiptune while exploring, and 8-bit + 174 BPM drum & bass (breakbeats, reese bass, chip arps) whenever a fight locks you in.
+
+## Worlds, bosses + skills
+5 worlds x 5 levels. Every level ends with a boss who teaches a new skill; every 5th is a MEGA boss.
+1. **Road to the Farm**: Park, Beach, Suburbia, Downtown, Buzzkill HQ (mega: Regional Manager teaches HIT A TOKE)
+2. **Into the Wild**: Misty Woods, Midnight Woods, Skunk Swamp, Snowy Peaks, Ranger Station
+3. **Coastline Chaos**: Sunset Beach, Boardwalk, Pier at Night, Hidden Island, Luxury Resort
+4. **Neon Nights**: Neon Strip, Back Alley, The Club, Rooftops, High Roller Casino
+5. **Buzzkill Tower**: Lobby, Sobriety Labs, Factory, The Vault, The Penthouse (final: Buzzkill CEO)
+
+Skills include Light the Cherry (burning joint), Charged Swing (hold swing), Throwing, Dodge Roll (Shift + Space), Hit a Toke (V: smoke screen), Ground Pound, Hotbox, Embers, Puff Puff Pass (healing smoke), Dragon Breath (hold V), Giant Bong Rip, Ultimate High (V at 100% cooked) and more.
+The Pot Farm (1500 coins) opens after World 1. Q/E switch worlds on the map.
 
 ## How it works
 1. **Story intro** (first time), then the **World Map**: walk the path like Mario and pick a stop.

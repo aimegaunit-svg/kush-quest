@@ -1125,9 +1125,13 @@ function buildLevel(n) {
   const endX = zones[zoneCount - 1].x0 + ZW;
   coinLine(endX + 30, 34, 6); item('ring', endX + 130, 20, 10); item('ring', endX + 150, 44, 10);
   const spot = { x: LEN - 150, w: 60 };
+  // chest loot pool: seeded random pick, biased toward gear you don't have yet instead of a fixed n%len sequence
+  const owned = new Set([...save.weapons, ...save.armor, ...(save.pouch ? ['pouch'] : [])]);
+  const lootPool = MISSION_LOOT.filter(id => !owned.has(id));
+  const chestLoot = (lootPool.length ? lootPool : MISSION_LOOT)[Math.floor(rand() * (lootPool.length ? lootPool.length : MISSION_LOOT.length))];
 
   return {
-    n, themeKey, theme, name: missionName(n), items, props, enemies, zones, deco, legend, spot,
+    n, themeKey, theme, name: missionName(n), items, props, enemies, zones, deco, legend, spot, chestLoot,
     zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: []
   };
 }
@@ -1243,7 +1247,7 @@ function breakProp(p, remote) {
   if (p.kind === 'chest') openChest(p);
 }
 function openChest(c) {
-  const loot = MISSION_LOOT[lvl.n % MISSION_LOOT.length];
+  const loot = lvl.chestLoot || MISSION_LOOT[lvl.n % MISSION_LOOT.length];
   SFX.power(); shake = 5;
   if (loot === 'papers' || loot === 'bombs') {
     save.throws[loot] = (save.throws[loot] || 0) + (loot === 'papers' ? 15 : 6); save.throwSel = loot; persist();

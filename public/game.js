@@ -71,15 +71,22 @@ function flushText() {
 // ============================================================
 let AC = null, master = null, musicOn = true, noiseBuf = null;
 function initAudio() {
-  if (AC) return;
+  if (AC) { if (AC.state === 'suspended') AC.resume().catch(() => {}); return; }
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
+    // iOS Safari sometimes hands back a context that's still "suspended" even when created
+    // inside a real tap/click handler (startGame() is always called from one) - resume it
+    // explicitly rather than assuming the gesture alone unlocked it.
+    if (AC.state === 'suspended') AC.resume().catch(() => {});
     master = AC.createGain(); master.gain.value = settings.sfx; master.connect(AC.destination);
     noiseBuf = AC.createBuffer(1, AC.sampleRate * 0.2, AC.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     startMusic();
   } catch (e) { AC = null; }
 }
+// belt-and-suspenders: any early tap/click before startGame() (or a later backgrounding on iOS
+// that re-suspends the context) tries to resume it too, from inside a trusted gesture handler.
+['touchend', 'mousedown', 'keydown'].forEach(ev => addEventListener(ev, () => { if (AC && AC.state === 'suspended') AC.resume().catch(() => {}); }, { passive: true }));
 function tone(freq, dur, type = 'square', vol = 0.06, when = 0, slide = 0) {
   if (!AC) return;
   const t = AC.currentTime + when, o = AC.createOscillator(), g = AC.createGain();
@@ -324,18 +331,29 @@ function drawChat() {
   }
 }
 addEventListener('blur', () => { for (const k in K) K[k] = false; });
-cv.addEventListener('mousedown', e => {
-  if (!running) return; e.preventDefault();
-  const r = cv.getBoundingClientRect(), gx = (e.clientX - r.left) / r.width * W, gy = (e.clientY - r.top) / r.height * H;
+function canvasTapDown(clientX, clientY, button) {
+  if (!running) return;
+  const r = cv.getBoundingClientRect(), gx = (clientX - r.left) / r.width * W, gy = (clientY - r.top) / r.height * H;
   const r0 = hotAt(gx, gy); if (r0) { r0.click && r0.click(); return; }
   if (menu || state === 'results' || invOpen) return;
   if (state === 'story') { K.enterPressed = true; return; }
   if (state === 'map') { mapClick(gx, gy); return; }
   if (state === 'brief') { K.enterPressed = true; return; }
-  if (e.button === 0) press('attack', true); else if (e.button === 2) K.throwPressed = true;
-});
+  if (button === 0) press('attack', true); else if (button === 2) K.throwPressed = true;
+}
+cv.addEventListener('mousedown', e => { e.preventDefault(); canvasTapDown(e.clientX, e.clientY, e.button); });
 addEventListener('mouseup', e => { if (e.button === 0) press('attack', false); });
 cv.addEventListener('contextmenu', e => e.preventDefault());
+// Touch: don't rely on the browser's synthetic-mouse-from-tap fallback (unreliable once
+// touch-action:none is set on the canvas/ancestors, which we need to stop scroll/zoom from
+// eating the gesture) - drive the same tap logic straight from real touch events instead.
+cv.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0]; if (!t) return;
+  canvasTapDown(t.clientX, t.clientY, 0);
+}, { passive: false });
+cv.addEventListener('touchend', e => { e.preventDefault(); press('attack', false); }, { passive: false });
+cv.addEventListener('touchcancel', e => { press('attack', false); }, { passive: false });
 cv.addEventListener('mousemove', e => {
   const r = cv.getBoundingClientRect(); mouseG = { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
   const h = hotAt(mouseG.x, mouseG.y); if (h && h.hover) h.hover();
@@ -4153,6 +4171,9 @@ function onNet(m) {
 // ============================================================
 const $ = id => document.getElementById(id);
 try { $('name').value = localStorage.getItem('kq_name') || ''; } catch (e) {}
+// on a phone, the on-screen keyboard can cover a focused input sitting low in the menu panel -
+// nudge it into view once the keyboard has had a moment to open.
+['name', 'code'].forEach(id => { const el = $(id); if (el) el.addEventListener('focus', () => setTimeout(() => { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 300)); });
 function getName() {
   const n = ($('name').value || 'STONER').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').slice(0, 10) || 'STONER';
   try { localStorage.setItem('kq_name', n); } catch (e) {}

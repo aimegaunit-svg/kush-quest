@@ -1351,7 +1351,15 @@ function loadSlot(i) {
   // touch anything below - that's the signal a save is from before Core-level caps existed at all, so it
   // should start generously uncapped (10) rather than at the new-save tutorial cap (3). Must be read before
   // the `if (!save.migratedV11)` block further down flips it to true for a genuinely brand-new save too.
-  const hadMigratedV11Already = !!save.migratedV11;
+  // BUGFIX: `save.migratedV11 === true` can only ever be true for a save that already went through THIS
+  // exact migration once before - it can never be true for a save from before A1/A2 existed at all (those
+  // saves never had the field, so it reads undefined, exactly like a fresh save). That made a real old
+  // save with actual old-economy progress (e.g. `wlv:{bong:3}`, several `weapons` unlocked) indistinguishable
+  // from a brand-new save here, so it got locked to the tutorial cap of 3 even though the migration below
+  // immediately seeds a core level (from the old wlv) that's already ABOVE that cap. Detect "this save has
+  // real pre-v1.1 progress" directly from the legacy fields instead of the migratedV11 flag.
+  const hadOldProgress = (save.weapons || []).length > 1 || Object.keys(save.wlv || {}).length > 0 || (save.spots || 0) > 0;
+  const hadMigratedV11Already = !!save.migratedV11 || (!save.migratedV11 && hadOldProgress);
   save.throws = { papers: 0, bombs: 0, smoke: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
   save.farmPlots = save.farmPlots && save.farmPlots.length === 4 ? save.farmPlots : [null, null, null, null]; save.pet = save.pet || null; save.dailyDate = save.dailyDate || '';
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
@@ -1380,7 +1388,13 @@ function loadSlot(i) {
     if (bankedResin > 0) save.resin += bankedResin;
     CORE_HOMIE.forEach(h => {
       const oldId = CORE_WEAPON_ID[h];
-      const oldLv = (save.wlv && save.wlv[oldId]) || 1; // old flat weapon level, 1-3
+      // BUGFIX: `(save.wlv && save.wlv[oldId]) || 1` defaulted to 1 for a save with NO old wlv entry at all
+      // (i.e. every brand-new save, since this whole migration block runs once for every save regardless of
+      // whether there was anything to migrate) - and 1 * 2 = 2, so every fresh save silently started every
+      // homie's Core level at 2 instead of defaultSave()'s intended 1. Only apply the old-level mapping when
+      // an old wlv entry for this weapon actually existed; otherwise leave the core at whatever it already is.
+      if (!save.wlv || !(oldId in save.wlv)) return;
+      const oldLv = save.wlv[oldId] || 1; // old flat weapon level, 1-3
       save.cores[h] = Math.max(save.cores[h] || 1, Math.min(10, oldLv * 2)); // map old 1-3 range onto new 1-10 range
     });
     save.migratedV11 = true;

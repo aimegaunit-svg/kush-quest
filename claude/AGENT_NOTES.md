@@ -849,3 +849,51 @@ mechanics themselves are generic (keyed off `levelType(n)`, not World 1-specific
 everywhere; what's still open per-world is checking each world's own mix plays right and, for HAZARD
 specifically, actually seeing the intensified version in play since it doesn't land in World 1's rotation.
 Next: Step 7 (Grades and progress display, Brief v1.1 B4/B5).
+
+## STEP 7 (FIX_STEPS.md): Grades and progress display (Brief v1.1 B4/B5) - landed and verified
+No grading system existed anywhere in the codebase before this (flagged as net-new back in the original
+B1 planning notes below) - this designs and lands it, plus the B4/B5 save/UI items that depend on it.
+
+1. **S/A/B/C grades.** `computeGrade(n, {frames, livesLost, secretFound, coinsEarned, bestCombo})` in
+   `game.js`: a weighted 0-100 score (time 30%, crew lives lost 25%, this level's own hidden secret found
+   15%, coins collected 15%, best combo 15%) mapped to S>=90/A>=75/B>=55/else C. Par time scales with the
+   level's own zone count rather than a fixed number. Wired into `toResults()`: `lvl.startFrame`/
+   `lvl.livesStart`/`lvl.secretFoundThisRun` are captured at level start (`startLevel`/
+   `restartLevelOutOfLives`) and updated live (`breakProp` sets `secretFoundThisRun` the same moment it
+   reveals the world's secret exit - one hidden prop now does double duty, matching the brief's "secrets
+   found" wording for both). The results screen shows "GRADE X" (with a "!" the moment it's a new best).
+2. **Best grade saved per level + shown on map nodes.** `save.grades{levelN: 'S'|'A'|'B'|'C'}`,
+   `saveBestGrade()` only ever upgrades (verified: B then S then C leaves it at S). The map's per-level
+   node now draws its saved grade letter, color-coded, next to the level number.
+3. **World select % complete + secrets found.** The map header (next to the world name) now shows
+   "beaten/total · SECRET ✓|?" for whichever world is currently shown, computed from `save.spots` and
+   `save.secretsFound` (both already existed from B1/Step 6).
+4. **Save slots.** Already showed world/level (`progressLabel`) and coins from an earlier session; added
+   overall % complete (`spots/TOTAL_LEVELS`) to that same line.
+5. **Real "Killjoy beaten" flag.** Was `save.spots >= SPOTS_TO_FARM(49)` everywhere (a shortcut, not a
+   real flag, per this step's own instruction to replace it) - now `save.killjoyBeaten`, set the instant
+   Buzzkill HQ's world boss (`e.mega && worldOf(lvl.n) === WORLDS.length-1`) dies in `onKill()`, the exact
+   same "runs identically on every client, no new network message" pattern the Seed-grant fix already
+   used. `nodeUnlocked()`'s farm branch and the shop's `itemStatus('farm')` LOCKED check both swapped over.
+   Old saves with `spots>=49` already migrate `killjoyBeaten:true` so nobody who already finished the game
+   gets newly locked out of a farm they could already afford.
+6. **Astral Plane unlock.** `astralUnlocked()` = every world's boss level (`WORLD_START[w]+WORLDS[w].bossAt`)
+   has a saved grade of exactly `'S'`. The Astral Plane content itself is Step 8's job (not built yet) -
+   this just computes and surfaces the condition, with a small status line on the farm hub screen once
+   Killjoy's beaten ("ASTRAL PLANE: UNLOCKED..."), so the condition is visible/testable before Step 8 exists.
+
+**Check status**: verified with real Playwright runs. `computeGrade` sanity-checked with a clean/fast/
+secret-found/high-combo input (grades S) vs. a slow/hurt/no-secret/low-combo input (grades C).
+`saveBestGrade` confirmed to upgrade but never downgrade. A full real playthrough of 1-1 (brute-force
+cleared via debug hooks, same method as Step 6's playthrough test) reached `toResults()` and produced a
+real saved grade matching the results screen's own grade. Farm-gate check: seeded `spots:49` with
+`killjoyBeaten:false` and confirmed the shop still reports LOCKED (proving it's no longer reading
+`spots`), then flipped the real flag and confirmed it unlocks. Astral-unlock check: false before any S
+grades, true once all 6 world-boss levels are graded S, and false again the instant one of those six drops
+to A - confirms it's a live check against the saved grades, not a one-way latch. Re-ran the Step 6
+playthrough/mechanic regression and the Step 2 online carry-over regression - both still pass, zero
+console/page errors anywhere. `node --check` clean on `game.js` and `server.js`.
+
+Pushed to `main`. Next: Step 8 (Content that finishes the story - the Astral Plane level + THE PARANOIA
+boss + ending beats; the Astral Plane needs the transit agent for the harder/trippier Bong Rocket variant,
+per FIX_STEPS.md's own note - everything else in Step 8 is this session's).

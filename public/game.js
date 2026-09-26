@@ -1449,7 +1449,7 @@ try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.g
 // key used as the save.cores{} key; CORE_WEAPON_ID maps that key to the existing WEAPONS[] id it reuses/skins.
 const CORE_HOMIE = ['rasta', 'snapback', 'bucket', 'afro'];
 const CORE_WEAPON_ID = { rasta: 'puff', snapback: 'bong', bucket: 'grinder', afro: 'lighter' };
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [] }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [], grades: {}, killjoyBeaten: false }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
@@ -1475,6 +1475,11 @@ function loadSlot(i) {
   save.cores = { rasta: 1, snapback: 1, bucket: 1, afro: 1, ...(save.cores || {}) };
   save.resin = save.resin || 0; save.seeds = save.seeds || 0; save.wild = save.wild || null;
   save.secretsFound = Array.isArray(save.secretsFound) ? save.secretsFound : []; // v1.2 (Step 6.3)
+  // v1.2 (Step 7): grades-per-level + the real Killjoy-beaten flag. A save that already had spots>=49
+  // (all main levels beaten) under the old shortcut clearly already beat Killjoy under it - migrate that
+  // straight to the real flag rather than re-locking a save that's already earned the farm.
+  save.grades = save.grades && typeof save.grades === 'object' ? save.grades : {};
+  if (save.killjoyBeaten == null) save.killjoyBeaten = (save.spots || 0) >= TOTAL_LEVELS;
   // v1.1 A2: save.coreCap is the per-save cap on how high ANY core can currently be leveled (separate from
   // save.cores[homie] itself - see coreLevel()/shopEntries()). Never lower it once set. A save that already
   // had migratedV11 (i.e. existed before this cap system landed, possibly with cores already leveled past
@@ -1578,6 +1583,7 @@ function startLevel(n) {
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
   banner = null;
   crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; // v1.1 A5: reset the crew-lives pool + checkpoint for the new level
+  lvl.startFrame = frame; lvl.livesStart = crewLives; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): grade inputs
   if (n === 0 && save.spots === 0) me.tipT = 900;
   persist();
   // v1.1 B1 item 5: a short cutscene when you finish a world's boss and step into the next world, gated so
@@ -1657,7 +1663,7 @@ function breakProp(p, remote) {
   spawnDrops(p);
   if (!remote) { SFX.stomp(); collect(p.id); }
   if (p.kind === 'chest') openChest(p);
-  if (p.kind === 'secret') foundSecretExit(); // v1.2 (Step 6.3): the hidden door/wall that reveals that world's secret level on the map
+  if (p.kind === 'secret') { foundSecretExit(); if (lvl) lvl.secretFoundThisRun = true; } // v1.2 (Step 6.3/7.1): reveals the world's secret level AND counts toward this level's grade
 }
 // v1.2 (Step 6.3): breaking the 'secret' prop in ANY level of a world reveals that world's SECRET map node
 // (see mapNodes()/nodeUnlocked()) - one hidden exit per world, exactly as the brief describes.
@@ -1771,6 +1777,7 @@ function restartLevelOutOfLives() {
   lvl = buildLevel(n, lvl.remix);
   me = makePlayer();
   crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; camX = 0;
+  lvl.startFrame = frame; lvl.livesStart = crewLives; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): restart resets the grade window too
   // v1.2 fix (Step 1.2): send the actual reset lives count so non-host clients apply the real number
   // instead of a hardcoded 5 (which drifted from this formula the moment it stopped always being 5).
   if (isHost()) Net.send({ t: 'wipe', l: n, n: crewLives });
@@ -2009,6 +2016,10 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
     // network message at all: dropping the old `by === Net.id` gate means every player's own local onKill
     // call awards their own local save.seeds, all from the same synchronized e.mega/lvl.n/frame state.
     if (e.mega) save.seeds = (save.seeds || 0) + 1;
+    // v1.2 (Step 7.5): a real "Killjoy beaten" flag instead of inferring it from save.spots>=SPOTS_TO_FARM -
+    // set the instant the LAST world's boss (Buzzkill HQ's Mr. Killjoy) dies, runs identically on every
+    // client for the same reason the Seed grant above does (onKill() is itself the synced event).
+    if (e.mega && worldOf(lvl.n) === WORLDS.length - 1) save.killjoyBeaten = true;
   }
   puff(e.x, sy(e.z) - 10, 8, ['#ffffff', '#e8e4f4', '#c8ffa0'], 1.4); bleed(e.x, e.z, e.h, 8, e.vx > 0 ? 1 : -1);
   const zn = lvl.zones[lvl.zi];
@@ -2516,6 +2527,27 @@ function sitDown() {
   finInfo = { t: 150, n: 1, of: remotes.size + 1, hurried: false };
   Net.send({ t: 'fin', l: lvl.n });
 }
+// v1.2 (Step 7.1): S/A/B/C grade from time, crew lives lost, whether this level's own hidden secret was
+// found, coins collected, and best combo - a weighted 0-100 score, tuned against World 1's real level
+// lengths/coin totals (see Step 6's logged 50-107 coins/level and this level's own zone count for pacing).
+function computeGrade(n, { frames, livesLost, secretFound, coinsEarned, bestCombo }) {
+  const zoneCount = lvl && lvl.zones ? lvl.zones.length : 6;
+  const parFrames = 900 + zoneCount * 480; // ~15s intro + ~8s/zone at 60fps - a generous par, not a speedrun target
+  const timeScore = Math.max(0, Math.min(100, 100 - (frames - parFrames) / parFrames * 60));
+  const livesScore = livesLost <= 0 ? 100 : livesLost === 1 ? 65 : livesLost === 2 ? 30 : 0;
+  const secretScore = secretFound ? 100 : 35;
+  const coinsScore = Math.max(0, Math.min(100, coinsEarned / 80 * 100));
+  const comboScore = Math.max(0, Math.min(100, bestCombo * 9));
+  const total = timeScore * 0.3 + livesScore * 0.25 + secretScore * 0.15 + coinsScore * 0.15 + comboScore * 0.15;
+  return total >= 90 ? 'S' : total >= 75 ? 'A' : total >= 55 ? 'B' : 'C';
+}
+const GRADE_RANK = { S: 4, A: 3, B: 2, C: 1 };
+// v1.2 (Step 7.6): "an S grade on all 6 world bosses" - checked against the saved per-level best grades.
+function astralUnlocked() { return WORLDS.every((w, i) => save.grades && save.grades[WORLD_START[i] + w.bossAt] === 'S'); }
+function saveBestGrade(n, grade) { // v1.2 (Step 7.2): the best grade earned for a level is kept, never overwritten by a worse replay
+  save.grades = save.grades || {};
+  if (!save.grades[n] || GRADE_RANK[grade] > GRADE_RANK[save.grades[n]]) save.grades[n] = grade;
+}
 function toResults() {
   if (state === 'results') return;
   const made = state === 'sitting';
@@ -2526,8 +2558,16 @@ function toResults() {
   let dailyBonus = 0;
   if (made && lvl.daily && save.dailyDate !== todayStr()) { dailyBonus = 200; save.dailyDate = todayStr(); addCoins(dailyBonus); }
   save.stats.kills += me.kills; save.stats.bestCombo = Math.max(save.stats.bestCombo, me.best);
+  let grade = null, isNewBest = false;
+  if (made) {
+    const livesLost = Math.max(0, (lvl.livesStart == null ? crewLives : lvl.livesStart) - crewLives);
+    grade = computeGrade(lvl.n, { frames: frame - (lvl.startFrame || frame), livesLost, secretFound: !!lvl.secretFoundThisRun, coinsEarned: me.earned, bestCombo: me.best });
+    const prevBest = save.grades && save.grades[lvl.n];
+    saveBestGrade(lvl.n, grade);
+    isNewBest = !prevBest || GRADE_RANK[grade] > GRADE_RANK[prevBest];
+  }
   persist();
-  results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, dailyBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs };
+  results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, dailyBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs, grade, isNewBest };
   state = 'results'; shopSel = 0; hurryT = 0; banner = null;
 }
 
@@ -3573,7 +3613,7 @@ function itemStatus(it) {
   if (it.kind === 'item' && save.pouch) return 'OWNED';
   if (it.kind === 'use' && save[it.id] >= itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0)) return 'MAX ' + (itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0));
   if (it.kind === 'coreup') { if (coreLevel() >= 10) return 'MAXED'; if (it.capReached) return 'LOCKED'; }
-  if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (save.spots < SPOTS_TO_FARM) return 'LOCKED'; }
+  if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (!save.killjoyBeaten) return 'LOCKED'; } // v1.2 (Step 7.5)
   if (it.kind === 'ready') return readyInfo && readyInfo.me ? 'WAITING ' + readyInfo.n + '/' + readyInfo.of : '';
   return null;
 }
@@ -3600,6 +3640,9 @@ function drawFarmHub() {
   R(ctx, '#2a4a1e', 0, 0, W, H);
   text('THE FARM', W / 2, 6, '#ffd84a', 2, 'center');
   text('4 PLOTS GROW STRAINS THAT GIVE PASSIVE BUFFS - CLICK TO CYCLE', W / 2, 22, '#c8ffa0', 1, 'center');
+  // v1.2 (Step 7.6): Astral Plane unlock condition - S grade on all 6 world bosses. The Astral Plane
+  // content itself is Step 8's job; this just surfaces whether the condition is currently met.
+  if (astralUnlocked()) text('ASTRAL PLANE: UNLOCKED (S ON EVERY WORLD BOSS)', W / 2, 30, '#e4b3ff', 1, 'center');
   const list = farmHubEntries();
   for (let i = 0; i < 4; i++) {
     const y = 34 + i * 16, id = save.farmPlots[i], s = STRAINS.find(st => st.id === id);
@@ -3703,6 +3746,8 @@ function drawShop() {
   if (r.shopOnly) { text('THE HEAD SHOP', W / 2, 6, '#c8ffa0', 2, 'center'); text('SPEND COINS ON GEAR... OR SAVE THEM FOR THE FARM', W / 2, 24, '#ffffff', 1, 'center'); }
   else {
   text(r.made ? 'SMOKE SPOT ' + (lvl.n + 1) + ' REACHED!' : 'MISSION OVER', W / 2, 4, r.made ? '#c8ffa0' : '#ff8a8a', 2, 'center');
+  // v1.2 (Step 7.1/7.2): show this run's grade + a "NEW BEST!" callout when it raised the saved best
+  if (r.made && r.grade) { const gCol = { S: '#ffd84a', A: '#c8ffa0', B: '#7ac8ff', C: '#b0a8c0' }[r.grade]; text('GRADE ' + r.grade + (r.isNewBest ? '!' : ''), W - 6, 4, gCol, 2, 'right'); }
   text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA +25%!' : '') + (r.dailyBonus ? '   DAILY BONUS +' + r.dailyBonus + '!' : ''), W / 2, 18, '#ffffff', 1, 'center');
   }
   drawMap(38);
@@ -3881,7 +3926,7 @@ function nodeUnlocked(nd) {
   if (nd.kind === 'gate') return save.spots >= WORLD_START[curWorld + 1];
   if (nd.kind === 'shop') return true;
   if (nd.kind === 'hotbox') return save.spots >= WORLD_START[curWorld] + WORLDS[curWorld].miniAt;
-  return save.spots >= SPOTS_TO_FARM;
+  return save.killjoyBeaten; // v1.2 (Step 7.5): a real flag instead of inferring "Killjoy beaten" from save.spots>=SPOTS_TO_FARM
 }
 function buildMapCanvas(w = 0) {
   const c = document.createElement('canvas'); c.width = MW; c.height = H; const g = c.getContext('2d');
@@ -4274,7 +4319,14 @@ function drawMap_() {
     ctx.fillStyle = 'rgba(20,16,40,.4)'; ctx.fillRect(nd.x - r + 1, nd.y + r - 1, r * 2, 2);
     ctx.fillStyle = P.k; circle(nd.x, nd.y, r + 1); ctx.fillStyle = col; circle(nd.x, nd.y, r); ctx.fillStyle = '#ffffff'; ctx.fillRect(nd.x - 2, nd.y - 3, 2, 1);
     if (!open) { ctx.fillStyle = P.k; ctx.fillRect(nd.x - 1, nd.y - 1, 3, 3); }
-    if (nd.kind === 'level') { if (open) drawStr((levelInWorld(nd.n) + 1) + '', nd.x - 1, nd.y - 2, P.k, 1); if (done) text('+', nd.x + 6, nd.y - 9, '#c8ffa0'); if (nd.mega) text('MEGA', nd.x, nd.y + 8, '#ff5a6a', 1, 'center'); if (nd.mini) text('MINI', nd.x, nd.y + 8, '#ff9a5a', 1, 'center'); }
+    if (nd.kind === 'level') {
+      if (open) drawStr((levelInWorld(nd.n) + 1) + '', nd.x - 1, nd.y - 2, P.k, 1);
+      if (done) text('+', nd.x + 6, nd.y - 9, '#c8ffa0');
+      if (nd.mega) text('MEGA', nd.x, nd.y + 8, '#ff5a6a', 1, 'center'); if (nd.mini) text('MINI', nd.x, nd.y + 8, '#ff9a5a', 1, 'center');
+      // v1.2 (Step 7.2): the best grade earned for this level, shown right on its map node
+      const g = save.grades && save.grades[nd.n];
+      if (g) text(g, nd.x + 6, nd.y + 2, { S: '#ffd84a', A: '#c8ffa0', B: '#7ac8ff', C: '#b0a8c0' }[g], 1, 'center');
+    }
     if (nd.kind === 'gate') text('WORLD ' + (nd.to + 1), nd.x, nd.y + 8, '#7ac8ff', 1, 'center');
   });
   const nd = MAP_NODES[mapSel], bob = Math.floor(frame / 15) % 2;
@@ -4291,6 +4343,9 @@ function drawMap_() {
   // header + info panel across the full width
   R(ctx, 'rgba(26,16,38,.85)', 0, 0, W, 24);
   text('WORLD ' + (curWorld + 1) + ' - ' + WORLDS[curWorld].name, 6, 5, '#c8ffa0');
+  // v1.2 (Step 7.3): world select - % complete + secrets found for the world currently shown on the map
+  { const beaten = Math.min(WORLDS[curWorld].levels.length, Math.max(0, save.spots - WORLD_START[curWorld])), pct = Math.round(beaten / WORLDS[curWorld].levels.length * 100);
+    text(beaten + '/' + WORLDS[curWorld].levels.length + ' · SECRET ' + (save.secretsFound.includes(curWorld) ? '✓' : '?'), W - 82, 5, '#b0a8c0', 1, 'right'); }
   if (maxWorld() > 0) { const ax = Math.round(W / 2 + 30); hot(ax, 2, 12, 12, () => { setWorld(curWorld - 1); SFX.tick(); Net.send({ t: 'mapsel', i: mapSel, w: curWorld }); }); hot(ax + 14, 2, 12, 12, () => { setWorld(curWorld + 1); SFX.tick(); Net.send({ t: 'mapsel', i: mapSel, w: curWorld }); }); text('< >', ax + 1, 5, curWorld < maxWorld() ? '#ffd84a' : '#8a809a'); }
   { const bx = Math.round(W / 2 - 22); R(ctx, '#4a3a60', bx, 2, 44, 12); R(ctx, '#c8ffa0', bx, 2, 44, 1); text('MENU', W / 2, 5, '#ffffff', 1, 'center'); hot(bx, 2, 44, 12, () => openMenu()); }
   ctx.drawImage(COIN, W - 76, 3); text(save.coins + ' / ' + FARM_PRICE, W - 4, 5, '#ffd84a', 1, 'right');
@@ -4722,8 +4777,9 @@ function renderSlots() {
   for (let i = 1; i <= SLOT_COUNT; i++) {
     const d = readSlot(i), b = document.createElement('button');
     b.className = d ? 'slot' : 'slot empty';
+    // v1.2 (Step 7.4): save slots show world/level (already did), coins, and now overall % complete too
     b.innerHTML = d
-      ? '<b>SAVE ' + i + '</b><span>' + progressLabel(d.spots || 0) + ' &middot; ' + (d.coins || 0) + ' HASH COINS' + (d.farm ? ' &middot; FARM OWNER' : '') + '</span><small>CONTINUE' + (d.played ? ' &middot; LAST PLAYED ' + new Date(d.played).toLocaleDateString() : '') + '</small>'
+      ? '<b>SAVE ' + i + '</b><span>' + progressLabel(d.spots || 0) + ' (' + Math.round(Math.min(d.spots || 0, TOTAL_LEVELS) / TOTAL_LEVELS * 100) + '%) &middot; ' + (d.coins || 0) + ' HASH COINS' + (d.farm ? ' &middot; FARM OWNER' : '') + '</span><small>CONTINUE' + (d.played ? ' &middot; LAST PLAYED ' + new Date(d.played).toLocaleDateString() : '') + '</small>'
       : '<b>SAVE ' + i + '</b><span>EMPTY</span><small>NEW GAME</small>';
     b.onclick = () => chooseSlot(i);
     box.appendChild(b);
@@ -4803,5 +4859,7 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   coreTier, formName, weaponDef, CORE_FORMS, attack, get shots() { return shots; }, coreLevel, WEAPONS,
   // v1.2 (Step 6) debug hooks: level-type gameplay + secret exits, for the automated per-world playthrough test.
   TYPE_GOAL, foundSecretExit, hostUpdate, applyHazards, nodeUnlocked, get checkpoint() { return checkpoint; },
-  breakProp, get particles() { return particles; } };
+  breakProp, get particles() { return particles; },
+  // v1.2 (Step 7) debug hooks: grades, Killjoy-beaten, Astral-unlock, for the automated seeded-save check.
+  computeGrade, saveBestGrade, astralUnlocked, get crewLivesStart() { return lvl && lvl.livesStart; } };
 })();

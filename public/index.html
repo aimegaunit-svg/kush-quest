@@ -37,6 +37,10 @@
   #names { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   #names button { width:auto; margin:0; padding:8px 10px; font-size:9px; background:#3a2a58; box-shadow:0 3px 0 #20143a; }
   #names button.on { background:#3fae5a; box-shadow:0 3px 0 #1d6b2c; }
+  #chars { display:flex; gap:6px; }
+  #chars button { width:auto; flex:1; margin:0; padding:8px 4px; font-size:8px; background:#3a2a58; box-shadow:0 3px 0 #20143a; }
+  #chars button.on { background:#7a2fc0; box-shadow:0 3px 0 #4a1a7a; }
+  #chars button.taken { opacity:.4; }
   .del { display:block; text-align:right; font-size:7px; color:#8a6a80; cursor:pointer; margin:6px 0 2px; }
   #err { color:#ff6b6b; font-size:10px; min-height:14px; margin-top:14px; line-height:1.6; }
   .help { font-size:8px; color:#9f8fc0; margin-top:22px; line-height:2; }
@@ -59,6 +63,9 @@
     </div>
     <div id="modePanel" style="display:none">
       <div id="slotLabel" class="sub" style="color:#c8ffa0;font-size:9px;margin:-12px 0 6px"></div>
+      <label>PICK YOUR HOMIE</label>
+      <div id="chars"></div>
+      <div id="charPerk" class="sub" style="color:#e4b3ff;font-size:8px;margin:2px 0 14px;text-align:left"></div>
       <label for="name">YOUR NAME</label>
       <input id="name" maxlength="10" placeholder="STONER" autocomplete="off">
       <div id="names"></div>

@@ -269,7 +269,7 @@ addEventListener('keydown', e => {
     if (a === 'throw') { K.throwPressed = true; return; }
     if (a === 'toke') { K.toke = true; return; }
     if (a === 'throwsel') { const i = THROWS.findIndex(t => t.id === save.throwSel); save.throwSel = THROWS[(i + 1) % THROWS.length].id; persist(); popup(me.x - 20, sy(me.z) - 34, THROWS.find(t => t.id === save.throwSel).name, '#fff6b0'); return; }
-    const em = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[c]; if (em !== undefined) { emote(em); return; }
+    const em = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[c]; if (em !== undefined) { emote(em + (K.run ? 4 : 0)); return; }
   }
   if (['left', 'right', 'up', 'down', 'jump', 'attack', 'run', 'enter'].includes(a)) { e.preventDefault(); press(a, true); }
 });
@@ -326,7 +326,7 @@ document.querySelectorAll('#touch button').forEach(b => {
     if (['left', 'right', 'up', 'down'].includes(k)) K.nav = k;
     if (k === 'inv') { if (state !== 'results' && state !== 'story') invOpen = !invOpen; return; }
     if (k === 'pause') { gpDispatch('Escape', true); return; }
-    if (k === 'emote') { if (state === 'play') emote((touchEmoteI = (touchEmoteI + 1) % 4)); return; }
+    if (k === 'emote') { if (state === 'play') emote((touchEmoteI = (touchEmoteI + 1) % EMOTES.length)); return; }
     if (k === 'weapon' || k === 'quick' || k === 'throw') { gpDispatch(settings.keys[k === 'throw' ? 'throw' : k], true); return; }
     if (state === 'map' || state === 'lobby' || state === 'story' || invOpen) { if (k === 'jump' || k === 'attack') K.enterPressed = true; return; }
     if (state === 'results') { if (k === 'left' || k === 'up') K.upPressed = true; else if (k === 'right' || k === 'down') K.downPressed = true; else K.enterPressed = true; return; }
@@ -376,6 +376,12 @@ const LOOKS = [
     hat: ['hhhhhh', 'hhhhhhhhhh', 'hhhhhhhhhhhh', 'hhhhhhhhhhhh'], side: 'E' },
 ];
 const SHIRTS = LOOKS.map(l => l.pal.b === '#ffffff' ? '#ff5a6a' : l.pal.b);
+const CHAR_PERKS = [
+  { perk: 'perkHeart', line: '+1 MAX HEART. CHILL AND STURDY.' },
+  { perk: 'perkSpeed', line: '+10% MOVE SPEED. HYPE AND FAST.' },
+  { perk: 'perkCoins', line: '+15% HASH COINS. PARANOID BUT LUCKY.' },
+  { perk: 'perkThrow', line: '+1 THROW DAMAGE, +1 MUNCHIE CARRIED. BIG HEART, BIG APPETITE.' },
+];
 function homieRows(look, pose) {
   const side = look.side, wrap = (inner, sd = side) => C16(sd ? sd + 'k' + inner + 'k' + sd : 'k' + inner + 'k');
   const face = [wrap('ssssssss'), wrap('sSssssSs'), wrap('skssssks'), wrap('ssskksss', null), C16('kssssssk')];
@@ -711,7 +717,7 @@ const LEGENDS = [
   { name: 'DJ DANK', tip: 'CALL THE CREW WITH ENTER AT THE SMOKE SPOT', gift: 'coins' },
   { name: 'COUCH BROS', tip: 'DUDE... WHERE DID WE PARK THE COUCH?', gift: 'heal' },
 ].map((l, i) => ({ ...l, img: sprite(LEGEND_ROWS, { ...P, ...LEGEND_PAL[i % LEGEND_PAL.length] }) }));
-const EMOTES = ['420!', 'NICE!', 'HELP!', 'LOL'];
+const EMOTES = ['420!', 'NICE!', 'HELP!', 'LOL', 'PASS IT', 'COME HERE', 'WAIT', 'GG'];
 // ============================================================
 //  TILES + THEMES (pastel, rounded, bold outlines)
 // ============================================================
@@ -1073,7 +1079,7 @@ function buildLevel(n) {
       enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, hp, maxHp: hp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60 + Math.floor(rand() * 60), flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0 });
     }
     if (zi === zoneCount - 1) { // the boss arrives after its crew
-      const bd = BOSSES[n % BOSSES.length], mega = !!bd[4], bhp = Math.round((14 + n * 3) * (mega ? 2.2 : 1));
+      const bd = BOSSES[n % BOSSES.length], mega = !!bd[4], crewN = Net.online ? remotes.size + 1 : 1, bhp = Math.round((14 + n * 3) * (mega ? 2.2 : 1) * (1 + 0.4 * (crewN - 1)));
       ids.push(enemies.length);
       const boss = { id: enemies.length, kind: bd[1], ai: BASE_AI[bd[1]] || bd[1], boss: true, mega, bname: bd[0], skill: bd[2], quote: bd[3], zone: zi, hp: bhp, maxHp: bhp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 90, flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0, summons: [] };
       enemies.push(boss);
@@ -1124,7 +1130,7 @@ function loadSlot(i) {
 }
 loadSlot(1);
 function persist() { save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
-const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length;
+const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length + (Net.color === 0 ? 1 : 0);
 const weaponDef = () => WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];
 
 // ============================================================
@@ -1194,7 +1200,7 @@ function addCombo(x, y) {
     const bonus = me.combo * (hasSkill('combo') ? 4 : 2); addCoins(bonus); popup(x, y - 10, 'COMBO BONUS +' + bonus, '#c8ffa0');
   }
 }
-function addCoins(k) { save.coins += k; me.earned += k; }
+function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); save.coins += k; me.earned += k; }
 function addCooked(k) {
   const was = me.cooked; me.cooked = Math.max(0, Math.min(100, me.cooked + k));
   if (k > 0 && was < 50 && me.cooked >= 50) { banner = { t: 120, a: 'YOU ARE COOKED!', b: 'THE SMOKE SPOT IS OPEN - KEEP GOING FOR ULTRA' }; SFX.power(); }
@@ -1275,6 +1281,12 @@ function knockedOut() {
     me.down = 480; me.hp = 0; me.vx = me.vz = 0; me.h = 0; me.inv = 999; me.revive = 0; save.stats.deaths++;
     banner = { t: 160, a: 'YOU GOT BEAT UP!', b: 'A HOMIE CAN REVIVE YOU - STAND NEXT TO YOU + HOLD ' + KL('munchie') };
     SFX.hurt(); return;
+  }
+  if (!Net.online && save.munchie > 0) { // solo: a carried munchie auto-revives instead of losing coins
+    save.munchie--; persist(); save.stats.deaths++;
+    me.hp = Math.max(1, Math.ceil(maxHp() / 2)); me.inv = 90; me.combo = 0; me.puffed = false;
+    banner = { t: 150, a: 'AUTO-MUNCHED!', b: 'A CARRIED MUNCHIE SAVED YOU - BACK UP AT HALF HP' };
+    SFX.power(); return;
   }
   return knockedOutFinal();
 }
@@ -1393,9 +1405,15 @@ function hitEnemy(e, dmg, dir, strong, fx = {}) {
 }
 function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (!e.alive || e.state === 5) return;
-  e.hp -= dmg; e.flash = 8;
+  let teamBonus = 0;
+  if (by && e.lastHitBy && e.lastHitBy !== by && frame - (e.lastHitT || -999) < 30) { teamBonus = Math.max(1, Math.ceil(dmg * 0.5)); popup(e.x - 22, sy(e.z) - 30, 'TEAM UP!', '#ffd84a'); SFX.power(); }
+  e.lastHitBy = by; e.lastHitT = frame;
+  e.hp -= dmg + teamBonus; e.flash = 8;
   if (fx.burn) { e.burn = Math.max(e.burn || 0, fx.burn); e.burnBy = by; e.burnT = e.burnT || 36; e.spread = e.spread || fx.sp; }
   if (fx.bleed) { e.bleedN = Math.max(e.bleedN || 0, fx.bleed); e.bleedBy = by; e.bleedT = e.bleedT || 44; }
+  // HOTBOX: burning + stunned at once detonates a smoke burst that hits everything nearby
+  if ((e.burn > 0 || fx.burn) && (e.stunned > 0 || fx.stun) && !(e.hotboxCd > 0)) { e.hotboxCd = 90; hotboxBlast(e, by); }
+  if (e.hotboxCd > 0) e.hotboxCd--;
   if (e.hp <= 0) {
     e.state = 5; e.t = 50; e.vx = dir * 2.6; e.vh = 3;
     Net.send({ t: 'kill', i: e.id, by, st: e.stolen, l: lvl.n });
@@ -1407,8 +1425,20 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
     if (fx.hr) { e.vh = 4; e.vx = dir * 5; e.flying = { by, dir }; }
   }
 }
+function hotboxBlast(center, by) {
+  shake = Math.max(shake, 8); hitstop = Math.max(hitstop, 6); SFX.stomp();
+  puff(center.x, sy(center.z) - 10, 16, ['#ffd84a', '#ff9a3a', '#ffffff', '#c8ffa0'], 2, -0.02);
+  popup(center.x - 20, sy(center.z) - 30, 'HOTBOX!', '#ffd84a');
+  for (const e2 of lvl.enemies) {
+    if (e2 === center || !e2.alive || e2.state === 5 || !e2.spawned) continue;
+    if (Math.abs(e2.x - center.x) > 40 || Math.abs(e2.z - center.z) > 30) continue;
+    damageEnemy(e2, 3, Math.sign(e2.x - center.x) || 1, true, by, {});
+  }
+}
+let crewCombo = 0, crewComboT = 0;
 function onKill(e, by) { // everyone: death effect; the one who landed it gets the goods
   e.state = 5; e.t = Math.max(e.t, 40);
+  if (Net.online) { crewCombo++; crewComboT = 150; if (crewCombo > 0 && crewCombo % 10 === 0) { addCoins(5); popup(e.x - 24, sy(e.z) - 40, 'CREW COMBO x' + crewCombo + '! +5', '#ffd84a'); } }
   if (e.boss) { save.stats.bossesBeaten++; e.t = 90; hitstop = 20; shake = 16; for (const id of e.summons || []) { const a = lvl.enemies[id]; if (a.alive && a.spawned) { a.alive = false; puff(a.x, sy(a.z) - 8, 8, ['#ffffff'], 1); } } banner = { t: 160, a: e.bname + ' DEFEATED!', b: '' }; setTimeout(() => learnSkill(e.skill), 1600); lvl.boss = null; }
   puff(e.x, sy(e.z) - 10, 8, ['#ffffff', '#e8e4f4', '#c8ffa0'], 1.4); bleed(e.x, e.z, e.h, 8, e.vx > 0 ? 1 : -1);
   const zn = lvl.zones[lvl.zi];
@@ -1504,6 +1534,7 @@ function update() {
   frame++;
   if (frame % 600 === 0 && running) { save.stats.playSec += 10; }
   if (banner && --banner.t <= 0) banner = null;
+  if (crewComboT > 0 && --crewComboT <= 0) crewCombo = 0;
   const clearIn = () => { K.jumpPressed = K.enterPressed = K.attackPressed = K.throwPressed = false; K.nav = nextNav(); K.escPressed = false; if (state !== 'results') K.upPressed = K.downPressed = false; };
   if (updateTrans()) { clearIn(); return; }
   if (dialog) { updateDialogue(); clearIn(); return; }
@@ -1591,15 +1622,29 @@ function updatePlayer() {
     return;
   }
   // reviving a downed homie: hold E next to them
+  let nearDown = false;
   if (K.use) for (const [id, r] of remotes) if (r.b & 8 && Math.abs(r.x - me.x) < 18 && Math.abs(r.z - me.z) < 12) {
+    nearDown = true;
     me.reviveT = (me.reviveT || 0) + 1;
     if (me.reviveT % 10 === 0) puff(r.x, sy(r.z) - 8, 3, ['#c8ffa0', '#ffffff'], .6, -0.03);
     if (me.reviveT >= 70) { me.reviveT = 0; Net.send({ t: 'rev', who: id }); addCooked(10); popup(me.x - 20, sy(me.z) - 36, 'PASSED IT! REVIVED', '#c8ffa0'); SFX.power(); }
     break;
   }
   if (!K.use) me.reviveT = 0;
+  // PUFF PUFF PASS: hold E next to an upright homie to share 20% Cooked (10s cooldown)
+  me.passCd = me.passCd || 0; if (me.passCd > 0) me.passCd--;
+  if (K.use && !nearDown && me.passCd <= 0) {
+    let passed = false;
+    for (const [id, r] of remotes) if (!(r.b & 8) && Math.abs(r.x - me.x) < 18 && Math.abs(r.z - me.z) < 12) {
+      me.passT = (me.passT || 0) + 1;
+      if (me.passT % 10 === 0) puff((me.x + r.x) / 2, sy(me.z) - 8, 3, ['#c8ffa0', '#ffffff', '#e4b3ff'], .8, -0.03);
+      if (me.passT >= 40) { me.passT = 0; me.passCd = 600; addCooked(20); Net.send({ t: 'pass', who: id }); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); }
+      passed = true; break;
+    }
+    if (!passed) me.passT = 0;
+  } else me.passT = 0;
   const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1);
-  const mx = (K.run ? 2.1 : 1.3) * spd, mz = (K.run ? 1.3 : 0.9) * spd;
+  const mx = (K.run ? 2.1 : 1.3) * spd * (Net.color === 1 ? 1.1 : 1), mz = (K.run ? 1.3 : 0.9) * spd * (Net.color === 1 ? 1.1 : 1);
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
   if (p.atkT > 6 && p.h === 0) { ix = 0; iz = 0; } // plant your feet while swinging
   if (ix) p.face = ix;
@@ -2459,6 +2504,7 @@ function drawHUD() {
     text(me.combo + 'x COMBO', W / 2, 22, col, 1, 'center');
     if (me.combo >= 10) text('BLAZED!', W / 2, 30, col, 2, 'center');
   }
+  if (Net.online && crewCombo >= 3) text('CREW COMBO x' + crewCombo, W - 4, 27, '#e4b3ff', 1, 'right');
   if (banner && skillPop) banner = null;
   if (banner) {
     const bs = settings.bigText ? 2 : 1;
@@ -2516,7 +2562,7 @@ function itemStatus(it) {
   if (it.kind === 'weapon' && save.weapons.includes(it.id)) return 'OWNED';
   if (it.kind === 'armor' && save.armor.includes(it.id)) return 'OWNED';
   if (it.kind === 'item' && save.pouch) return 'OWNED';
-  if (it.kind === 'use' && save[it.id] >= MAX_ITEM) return 'MAX ' + MAX_ITEM;
+  if (it.kind === 'use' && save[it.id] >= MAX_ITEM + (Net.color === 3 && it.id === 'munchie' ? 1 : 0)) return 'MAX ' + (MAX_ITEM + (Net.color === 3 && it.id === 'munchie' ? 1 : 0));
   if (it.kind === 'upgrade' && wlv(it.id) >= 3) return 'MAXED';
   if (it.kind === 'ammo' && save.throws[it.id] >= 60) return 'FULL';
   if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (save.spots < SPOTS_TO_FARM) return 'LOCKED'; }
@@ -2553,7 +2599,7 @@ function shopConfirm() {
   if (it.kind === 'weapon') { save.weapons.push(it.id); save.weapon = it.id; }
   else if (it.kind === 'armor') save.armor.push(it.id);
   else if (it.kind === 'item') save.pouch = true;
-  else if (it.kind === 'use') save[it.id]++;
+  else if (it.kind === 'use') save[it.id] = Math.min(MAX_ITEM + (Net.color === 3 && it.id === 'munchie' ? 1 : 0), save[it.id] + 1);
   else if (it.kind === 'upgrade') save.wlv[it.id] = wlv(it.id) + 1;
   else if (it.kind === 'ammo') save.throws[it.id] = (save.throws[it.id] || 0) + (it.id === 'papers' ? 10 : 5);
   else if (it.kind === 'farm') { save.farm = true; results.farmScene = true; SFX.flag(); }
@@ -2703,8 +2749,9 @@ function throwItem() {
   const t = THROWS.find(t => t.id === save.throwSel) || THROWS[0];
   if (!(save.throws[t.id] > 0)) { const other = THROWS.find(o => save.throws[o.id] > 0); if (other) { save.throwSel = other.id; return throwItem(); } popup(me.x - 20, sy(me.z) - 34, (save.throws.papers || save.throws.bombs) ? 'OUT OF ' + t.name : 'NO THROWABLES YET', '#ff8a8a'); SFX.bump(); me.throwCd = 20; return; }
   save.throws[t.id]--; me.throwCd = t.id === 'bombs' ? 40 : 16; me.atkT = 8;
-  if (t.id === 'papers') for (const dz of hasSkill('twothrow') ? [-7, 7] : [0]) shots.push({ mine: true, kind: 7, x: me.x + me.face * 8, z: me.z + dz, h: me.h + 10, vx: me.face * 5, life: 45, dmg: 1 + (me.buffs.power > 0 ? 1 : 0), pierce: 2, hit: new Set() });
-  else shots.push({ mine: true, kind: 8, x: me.x + me.face * 6, z: me.z, h: me.h + 14, vx: me.face * 2.4, vh: 3, life: 200, dmg: 3 + (ultra() ? 1 : 0), hit: new Set() });
+  const perkDmg = Net.color === 3 ? 1 : 0;
+  if (t.id === 'papers') for (const dz of hasSkill('twothrow') ? [-7, 7] : [0]) shots.push({ mine: true, kind: 7, x: me.x + me.face * 8, z: me.z + dz, h: me.h + 10, vx: me.face * 5, life: 45, dmg: 1 + (me.buffs.power > 0 ? 1 : 0) + perkDmg, pierce: 2, hit: new Set() });
+  else shots.push({ mine: true, kind: 8, x: me.x + me.face * 6, z: me.z, h: me.h + 14, vx: me.face * 2.4, vh: 3, life: 200, dmg: 3 + (ultra() ? 1 : 0) + perkDmg, hit: new Set() });
   SFX.jump();
   Net.send({ t: 'fx', k: t.id === 'papers' ? 7 : 8, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
 }
@@ -3309,6 +3356,7 @@ function onNet(m) {
     case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0 }); break;
     case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) thiefFlee(e, m.k); } break;
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
+    case 'pass': if (m.who === Net.id) { addCooked(20); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); } break;
     case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'boss': if (m.l === lvl.n) bossIntro(lvl.enemies[m.i]); break;
     case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); break;
@@ -3372,6 +3420,7 @@ function chooseSlot(i) {
   $('slotPanel').style.display = 'none'; $('modePanel').style.display = 'block';
   $('slotLabel').textContent = (readSlot(i) ? 'CONTINUING SAVE ' : 'NEW GAME ON SAVE ') + i;
   $('err').textContent = urlRoom ? 'ENTER YOUR NAME AND PRESS JOIN' : '';
+  selectedChar = save.character || 0; if (typeof renderChars === 'function') renderChars();
 }
 function showSave() {}
 $('back').onclick = () => { $('modePanel').style.display = 'none'; $('slotPanel').style.display = 'block'; renderSlots(); };
@@ -3395,12 +3444,25 @@ async function goOnline(msg) {
   try { await Net.connect(msg); startGame(); }
   catch (e) { $('err').textContent = e.message.toUpperCase(); busy(false); }
 }
-$('solo').onclick = () => { Net.name = getName(); startGame(); };
-$('create').onclick = () => { Net.name = getName(); goOnline({ t: 'create', name: Net.name, level: 0 }); };
+let selectedChar = 0;
+function renderChars() {
+  const box = $('chars'); box.innerHTML = '';
+  LOOKS.forEach((l, i) => {
+    const b = document.createElement('button'); b.textContent = l.name; b.type = 'button';
+    if (i === selectedChar) b.className = 'on';
+    b.onclick = () => { selectedChar = i; save.character = i; persist(); if (!$('name').value || LOOKS.some(x => x.name === $('name').value.toUpperCase())) $('name').value = l.name; renderChars(); renderNames(); };
+    box.appendChild(b);
+  });
+  $('charPerk').textContent = CHAR_PERKS[selectedChar].line;
+}
+selectedChar = save.character || 0;
+renderChars();
+$('solo').onclick = () => { Net.name = getName(); Net.color = selectedChar; startGame(); };
+$('create').onclick = () => { Net.name = getName(); Net.color = selectedChar; goOnline({ t: 'create', name: Net.name, level: 0, color: selectedChar }); };
 $('join').onclick = () => {
   const code = $('code').value.trim().toUpperCase();
   if (code.length < 5) { $('err').textContent = 'ENTER THE 5-LETTER ROOM CODE'; return; }
-  Net.name = getName(); goOnline({ t: 'join', code, name: Net.name });
+  Net.name = getName(); Net.color = selectedChar; goOnline({ t: 'join', code, name: Net.name, color: selectedChar });
 };
 $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('join').click(); });
 if ($('reset')) $('reset').onclick = () => { if ($('reset').dataset.sure) { save = defaultSave(); persist(); showSave(); $('reset').textContent = 'SAVE RESET'; delete $('reset').dataset.sure; } else { $('reset').dataset.sure = 1; $('reset').textContent = 'CLICK AGAIN TO WIPE YOUR SAVE'; } };

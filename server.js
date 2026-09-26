@@ -103,11 +103,12 @@ function broadcast(room, obj, except) {
   for (const [id, p] of room.players) if (id !== except) p.client.send(obj);
 }
 
-function enter(client, code, name) {
+function enter(client, code, name, wantColor) {
   const room = rooms.get(code);
   if (room.players.size >= MAX_PLAYERS) return client.send({ t: 'err', msg: 'Room is full (4 max)' });
   const used = new Set([...room.players.values()].map(p => p.color));
-  let color = 0; while (used.has(color)) color++;
+  let color = (Number.isInteger(wantColor) && wantColor >= 0 && wantColor <= 3 && !used.has(wantColor)) ? wantColor : 0;
+  while (used.has(color)) color++;
   room.players.set(client.id, { name, color, client });
   room.emptySince = 0;
   if (!room.host || !room.players.has(room.host)) room.host = client.id;
@@ -149,14 +150,14 @@ function handle(client, m) {
       if (rooms.size >= MAX_ROOMS) return client.send({ t: 'err', msg: 'Server is full, try again later' });
       const code = makeCode();
       rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'lobby', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0 });
-      enter(client, code, cleanName(m.name));
+      enter(client, code, cleanName(m.name), m.color | 0);
       break;
     }
     case 'join': {
       if (client.room) return;
       const code = String(m.code || '').toUpperCase().trim();
       if (!rooms.has(code)) return client.send({ t: 'err', msg: 'No room ' + code + ' - check the code, or ask your friend for the invite link (their ESC menu)' });
-      enter(client, code, cleanName(m.name));
+      enter(client, code, cleanName(m.name), m.color | 0);
       break;
     }
     case 's': // player state, relayed to the rest of the room
@@ -216,11 +217,11 @@ function handle(client, m) {
     case 'boss': if (room && client.id === room.host) broadcast(room, { t: 'boss', i: m.i | 0, l: m.l | 0 }, client.id); break;
     case 'eshot': if (room && client.id === room.host) broadcast(room, { t: 'eshot', x: +m.x || 0, z: +m.z || 0, vx: Math.max(-4, Math.min(4, +m.vx || 0)), l: m.l | 0 }, client.id); break;
     case 'kill': if (room && client.id === room.host) broadcast(room, { t: 'kill', i: m.i | 0, by: String(m.by).slice(0, 12), st: m.st | 0, l: m.l | 0 }, client.id); break;
-    case 'hit': case 'steal': case 'rev': {
+    case 'hit': case 'steal': case 'rev': case 'pass': {
       if (!room) return;
       const out = { t: m.t, id: client.id, i: m.i | 0, l: m.l | 0, d: Math.max(0, Math.min(12, m.d | 0)), dir: Math.sign(+m.dir || 0), s: m.s ? 1 : 0, k: Math.max(0, Math.min(20, m.k | 0)), who: String(m.who || '').slice(0, 12),
         b: Math.max(0, Math.min(8, m.b | 0)), sp: m.sp ? 1 : 0, st: Math.max(0, Math.min(150, m.st | 0)), bl: Math.max(0, Math.min(8, m.bl | 0)), kb: Math.max(0, Math.min(5, +m.kb || 1)), hr: m.hr ? 1 : 0 };
-      if (m.t === 'rev') broadcast(room, out, client.id);
+      if (m.t === 'rev' || m.t === 'pass') broadcast(room, out, client.id);
       else { const h = room.players.get(room.host); if (h && room.host !== client.id) h.client.send(out); }
       break;
     }

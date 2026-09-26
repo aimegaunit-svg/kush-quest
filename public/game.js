@@ -1067,6 +1067,10 @@ function buildLevel(n) {
   coinLine(90, 30, 5); prop('crate', 200, 14, ['coin', 'coin', 'coin']);
   item('ring', 250, 40, 10);
   let nugCount = 0;
+  // randomize which non-boss zones get the chest / gold crate / hidden secret / ambush, per level (seeded, so it's consistent on replays of the same level)
+  const nonBossCount = zoneCount - 1;
+  const zonePicks = []; while (zonePicks.length < Math.min(4, nonBossCount)) { const z = Math.floor(rand() * nonBossCount); if (!zonePicks.includes(z)) zonePicks.push(z); }
+  const [chestZone, goldZone, secretZone, ambushZone] = [zonePicks[0], zonePicks[1] ?? zonePicks[0], zonePicks[2] ?? zonePicks[0], zonePicks[3] ?? zonePicks[0]];
   for (let zi = 0; zi < zoneCount; zi++) {
     const x0 = 300 + zi * 430;
     const base = (n < 2 ? 7 : 5) + Math.floor(diff * 0.7) + Math.floor(zi / 2);
@@ -1085,11 +1089,12 @@ function buildLevel(n) {
       enemies.push(boss);
       for (let k = 0; k < 8; k++) { boss.summons.push(enemies.length); const kind = pick(theme.enemies); enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, reserve: true, hp: 1 + (VARIANT_HP[kind] || 0), maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
     }
-    zones.push({ x0, ids, base, started: false, cleared: false });
+    zones.push({ x0, ids, base, started: false, cleared: false, ambush: zi === ambushZone });
     // stuff inside each fight area
     prop(rand() < .5 ? 'crate' : 'trash', x0 + 60 + Math.floor(rand() * 180), rz(), [pick(['coin', 'munchie', 'nug', 'brownie', 'soda', 'coin']), 'coin', 'coin']);
-    if (zi === 2) prop('chest', x0 + 150, 20, ['loot']);
-    if (zi === 3) prop('crate', x0 + 220, 40, ['gold']);
+    if (zi === chestZone) prop('chest', x0 + 150, 20, ['loot']);
+    if (zi === goldZone) prop('crate', x0 + 220, 40, ['gold']);
+    if (zi === secretZone) prop('secret', x0 + 40, ZMAX - 8, ['gold', 'nug']);
     // the walk to the next fight: coins, nugs, rings, bonuses
     const gx = x0 + ZW + 10;
     coinArc(gx, rz(), 5);
@@ -1831,6 +1836,7 @@ function hostUpdate() {
     const z = lvl.zones[nz];
     if (!z.started && players.some(p => p.x > z.x0 + 70)) {
       z.started = true; lvl.zi = nz; lvl.locked = true; z.spawnT = 0;
+      if (z.ambush) { banner = { t: 130, a: 'AMBUSH!', b: "THEY'RE COMING FROM BOTH SIDES!" }; SFX.karen(); shake = Math.max(shake, 6); }
       const crew = players.length, need = Math.round(z.base * (1 + 0.55 * (crew - 1)));
       z.ids.filter(i => !lvl.enemies[i].boss).slice(need).forEach(i => { lvl.enemies[i].alive = false; lvl.enemies[i].skipped = true; });
       z.maxOn = 5 + 2 * (crew - 1);
@@ -1844,9 +1850,9 @@ function hostUpdate() {
       if (!z.maxOn) z.maxOn = 5 + 2 * (players.length - 1);
       const nonBoss = waiting.filter(e => !e.boss);
       if (waiting.length && onScreen < z.maxOn && --z.spawnT <= 0 && (nonBoss.length || onScreen <= 2)) {
-        const e = nonBoss[0] || waiting[0], fromLeft = e.id % 3 === 0;
+        const e = nonBoss[0] || waiting[0], fromLeft = z.ambush ? e.id % 2 === 0 : e.id % 3 === 0;
         e.spawned = true; e.x = fromLeft ? Math.min(z.x0 - 20, camX - 20) : Math.max(z.x0 + ZW + 20, camX + W + 20); z.spawnN = (z.spawnN || 0) + 1; e.z = 6 + ((e.id * 37 + z.spawnN * 19) % (ZMAX - 12)); e.dir = fromLeft ? 1 : -1;
-        z.spawnT = onScreen < 2 ? 12 : 34;
+        z.spawnT = z.ambush ? (onScreen < 3 ? 6 : 20) : onScreen < 2 ? 12 : 34;
         if (e.boss) { e.x = z.x0 + ZW + 30; e.dir = -1; e.z = ZMAX / 2; bossIntro(e); Net.send({ t: 'boss', i: e.id, l: lvl.n }); }
       }
       if (!alive.length) { z.cleared = true; lvl.locked = false; banner = { t: 90, a: 'GO GO GO!', b: '' }; SFX.cp(); }
@@ -2172,6 +2178,10 @@ function drawProp(p) {
   else if (p.kind === 'trash') {
     R(ctx, P.k, x - 7, y - 18, 14, 18); R(ctx, '#9aa0b8', x - 6, y - 17, 12, 16); R(ctx, '#c8ccdc', x - 6, y - 17, 3, 16);
     R(ctx, P.k, x - 8, y - 20, 16, 3); R(ctx, '#7a8098', x - 7, y - 19, 14, 1); R(ctx, P.k, x - 4, y - 12, 8, 1);
+  } else if (p.kind === 'secret') {
+    R(ctx, P.k, x - 8, y - 16, 16, 16); R(ctx, '#d9a334', x - 7, y - 15, 14, 14); R(ctx, '#ffe6a0', x - 7, y - 15, 14, 2);
+    R(ctx, P.k, x - 7, y - 9, 14, 1); R(ctx, P.k, x - 1, y - 15, 1, 14); R(ctx, '#8a5024', x - 7, y - 2, 14, 1);
+    if (frame % 40 < 20) { ctx.fillStyle = '#ffd84a'; ctx.fillRect(x - 1, y - 24, 2, 6); ctx.fillRect(x - 2, y - 22, 4, 2); }
   } else {
     R(ctx, P.k, x - 8, y - 16, 16, 16); R(ctx, '#c87a3a', x - 7, y - 15, 14, 14); R(ctx, '#e8a060', x - 7, y - 15, 14, 2);
     R(ctx, P.k, x - 7, y - 9, 14, 1); R(ctx, P.k, x - 1, y - 15, 1, 14); R(ctx, '#8a5024', x - 7, y - 2, 14, 1);

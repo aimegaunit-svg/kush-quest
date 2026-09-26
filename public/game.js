@@ -680,20 +680,40 @@ const WEAPONS = [
   { id: 'grinder', name: 'GRINDER SPIN', icon: 'grinder', dmg: 2, cd: 28, reach: 30, zr: 16, spin: 1, bleed: 2, price: 260, desc: 'SPIKY SPIN ALL AROUND YOU. MAKES THEM BLEED' },
   { id: 'blunt', name: 'BLUNT BAT', icon: 'blunt', dmg: 2, cd: 22, reach: 34, zr: 12, kb: 3, homer: 1, price: 220, desc: 'HOME RUN! LAUNCHES THEM INTO THEIR BUDDIES' },
 ];
-// environmental weapons: temporary melee pickups that replace your weapon for a few uses, then break
-// v1.1 A3 (scoped): this pickup/uses/drop system IS the brief's "Wild weapon" pool - it already ran on a
-// per-pickup "uses" count, which is close enough to the brief's shared-Resin-currency idea to reuse as-is
-// for this pass. Folded the Dab Saber in here per the earlier scoping call (4 old enviro-weapons + Dab
-// Saber = the Wild pool for now). NOT yet done: a persistent save.wild slot (Wild weapons still reset
-// between levels like before) and spending Resin to refill/reroll one from the shop - flagged as follow-up.
+// environmental "Wild" weapons: temporary pickups that replace your weapon while held.
+// v1.1 A3 (real pass): the brief's exact 12 named Wild weapons, each with real distinct stats built from
+// the same {id,dmg,cd,reach,zr,kb,...} shape + special-case flags attack() already branches on
+// (spin/pierce/homer/crit/bleed/stun/burn/blockProj). Ammo is now a shared Resin CHARGE bar instead of a
+// flat "uses" count: `charge` is the max charge (in Resin units) a freshly-picked-up copy starts full at,
+// `cost` is how much charge one swing drains. `infiniteCharge` (Apple Pipe) never drains at all - the
+// brief's "joke weapon". A weapon at 0 charge is NOT dropped - it stays held but attacking just "clicks"
+// (see attack()) until Resin (from enemy kills - see gainResin()) tops it back up. See WILD_POOL_BY_THEME
+// below for which 3-4 worlds each one appears in, per the brief's table.
 const ENV_WEAPONS = {
-  lid: { id: 'lid', name: 'TRASH-CAN LID', dmg: 2, cd: 20, reach: 26, zr: 16, kb: 1, uses: 4, blockProj: true },
-  cone: { id: 'cone', name: 'TRAFFIC CONE', dmg: 2, cd: 26, reach: 42, zr: 14, kb: 1.6, uses: 3 },
-  surfboard: { id: 'surfboard', name: 'SURFBOARD', dmg: 2, cd: 24, reach: 30, zr: 30, kb: 1.2, uses: 4 },
-  chair: { id: 'chair', name: 'OFFICE CHAIR', dmg: 3, cd: 22, reach: 34, zr: 16, kb: 1.8, uses: 3 },
-  dab: { id: 'dab', name: 'DAB SABER', dmg: 2, cd: 10, reach: 46, zr: 8, crit: 0.25, pierce: 1, uses: 5 },
+  bonghammer: { id: 'bonghammer', name: 'BONG HAMMER', dmg: 3, cd: 34, reach: 34, zr: 22, kb: 1.5, spin: 1, stun: 40, cost: 3, charge: 24, desc: 'GROUND-POUND SHOCKWAVE - STUNS EVERYTHING AROUND YOU' },
+  bluntbat: { id: 'bluntbat', name: 'BLUNT BAT', dmg: 2, cd: 22, reach: 34, zr: 12, kb: 3, homer: 1, cost: 2, charge: 20, desc: 'HOME RUN! LAUNCHES THEM INTO THEIR BUDDIES' },
+  rollingpapers: { id: 'rollingpapers', name: 'ROLLING PAPERS', dmg: 2, cd: 16, reach: 44, zr: 10, kb: 1, pierce: 1, cost: 1, charge: 18, desc: 'THROWING-STAR SPREAD THAT PIERCES THE WHOLE LINE' },
+  nugbombs: { id: 'nugbombs', name: 'NUG BOMBS', dmg: 3, cd: 40, reach: 30, zr: 30, kb: 2, spin: 1, cost: 4, charge: 16, desc: 'LOBS A BIG SMOKY EXPLOSION' },
+  dabtorch: { id: 'dabtorch', name: 'DAB TORCH', dmg: 2, cd: 12, reach: 28, zr: 10, kb: 1, burn: 2, cost: 1, charge: 22, desc: 'A SHORT FLAMETHROWER STREAM' },
+  hackysack: { id: 'hackysack', name: 'HACKY SACK', dmg: 1, cd: 14, reach: 24, zr: 14, kb: 0.5, stun: 10, cost: 1, charge: 24, desc: 'JUGGLES THEM FOR COMBOS, BOUNCES RIGHT BACK TO YOU' },
+  leafblower: { id: 'leafblower', name: 'LEAF BLOWER', dmg: 1, cd: 18, reach: 36, zr: 16, kb: 3, cost: 2, charge: 20, desc: 'BLOWS ENEMIES BACK (AND SMOKE CLOUDS AROUND)' },
+  zippoflick: { id: 'zippoflick', name: 'ZIPPO FLICK', dmg: 2, cd: 24, reach: 48, zr: 8, kb: 1, burn: 3, cost: 2, charge: 18, desc: 'A THROWN FLAME - IGNITES SMOKE CLOUDS FROM RANGE' },
+  hookahwhip: { id: 'hookahwhip', name: 'HOOKAH WHIP', dmg: 1, cd: 26, reach: 60, zr: 14, kb: 1, cost: 2, charge: 20, desc: 'HUGE REACH - PULLS ENEMIES IN CLOSE' },
+  lavalampmace: { id: 'lavalampmace', name: 'LAVA LAMP MACE', dmg: 3, cd: 26, reach: 30, zr: 16, kb: 1.5, burn: 1, cost: 3, charge: 18, desc: 'HITS LEAVE HOT GOO PUDDLES BEHIND' },
+  gravitybongcannon: { id: 'gravitybongcannon', name: 'GRAVITY BONG CANNON', dmg: 4, cd: 50, reach: 26, zr: 30, kb: 2.5, spin: 1, cost: 6, charge: 18, desc: 'A SLOW, HUGE SMOKE BLAST' },
+  applepipe: { id: 'applepipe', name: 'APPLE PIPE', dmg: 1, cd: 18, reach: 22, zr: 10, kb: 1, cost: 0, charge: 0, infiniteCharge: true, desc: 'CHEAP AND WEAK. NEVER RUNS OUT (ITS A JOKE, OKAY)' },
 };
-const ENV_BY_THEME = { park: 'lid', beach: 'surfboard', suburb: 'cone', city: 'cone', woods: 'lid', hq: 'chair' };
+// v1.1 A3: per-world Wild-weapon pool (brief's table, minus Astral Plane which doesn't exist in this
+// codebase yet - Gravity Bong Cannon is just available in HQ per the task instructions). A pickup rolls
+// one random id from its theme's pool instead of always the same fixed weapon.
+const WILD_POOL_BY_THEME = {
+  park: ['bonghammer', 'bluntbat', 'rollingpapers', 'applepipe'],
+  beach: ['rollingpapers', 'nugbombs', 'dabtorch', 'hackysack'],
+  suburb: ['bonghammer', 'hackysack', 'leafblower'],
+  city: ['bluntbat', 'zippoflick', 'hookahwhip'],
+  woods: ['nugbombs', 'leafblower', 'zippoflick', 'lavalampmace'],
+  hq: ['dabtorch', 'hookahwhip', 'lavalampmace', 'gravitybongcannon'],
+};
 // v1.1 A2: weapons are no longer individually leveled/bought - each homie's one permanent Core weapon
 // levels 1-10 via save.cores[homie] (see CORE_HOMIE/CORE_WEAPON_ID + coreLevel(), defined near the save
 // code above). wlv() keeps its old (id) signature for every existing call site, but now ignores id and
@@ -1261,7 +1281,7 @@ function buildLevel(n, remix) {
     if (zi === chestZone) prop('chest', x0 + 150, 20, ['loot']);
     if (zi === goldZone) prop('crate', x0 + 220, 40, ['gold']);
     if (zi === secretZone) prop('secret', x0 + 40, ZMAX - 8, ['gold', 'nug']);
-    if (zi === 0) item('envweapon', x0 + 90, rz(), 0, rand() < .15 ? 'dab' : (ENV_BY_THEME[themeKey] || 'lid')); // one Wild-weapon pickup per mission - 15% chance of the rarer Dab Saber
+    if (zi === 0) item('envweapon', x0 + 90, rz(), 0, pick(WILD_POOL_BY_THEME[themeKey] || WILD_POOL_BY_THEME.park)); // one Wild-weapon pickup per mission, randomly rolled from this world's pool
     // the walk to the next fight: coins, nugs, rings, bonuses
     const gx = x0 + ZW + 10;
     coinArc(gx, rz(), 5);
@@ -1307,12 +1327,23 @@ function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_
 function loadSlot(i) {
   SAVE_KEY = 'kq_save_v2_s' + i;
   save = { ...defaultSave(), ...(readSlot(i) || {}) };
+  // v1.1 A2: capture whether this save had ALREADY finished the old (pre-cap) A1/A2 migration before we
+  // touch anything below - that's the signal a save is from before Core-level caps existed at all, so it
+  // should start generously uncapped (10) rather than at the new-save tutorial cap (3). Must be read before
+  // the `if (!save.migratedV11)` block further down flips it to true for a genuinely brand-new save too.
+  const hadMigratedV11Already = !!save.migratedV11;
   save.throws = { papers: 0, bombs: 0, smoke: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
   save.farmPlots = save.farmPlots && save.farmPlots.length === 4 ? save.farmPlots : [null, null, null, null]; save.pet = save.pet || null; save.dailyDate = save.dailyDate || '';
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
   if (!Array.isArray(save.skills)) save.skills = Array.from({ length: Math.min(save.spots || 0, TOTAL_LEVELS) }, (_, i) => SKILL_ORDER[i % SKILL_ORDER.length]);
   save.cores = { rasta: 1, snapback: 1, bucket: 1, afro: 1, ...(save.cores || {}) };
   save.resin = save.resin || 0; save.seeds = save.seeds || 0; save.wild = save.wild || null;
+  // v1.1 A2: save.coreCap is the per-save cap on how high ANY core can currently be leveled (separate from
+  // save.cores[homie] itself - see coreLevel()/shopEntries()). Never lower it once set. A save that already
+  // had migratedV11 (i.e. existed before this cap system landed, possibly with cores already leveled past
+  // 3 under the old free/uncapped economy) starts generously at 10 so it's never locked out of levels it
+  // already reached; only a genuinely brand-new save starts at the tutorial cap of 3.
+  if (save.coreCap == null) save.coreCap = hadMigratedV11Already ? 10 : 3;
   // v1.1 A4: preroll/gold were dropped from ITEMS (trimmed to munchie+brownie+soda) - if an old save had
   // its quick-use slot pointed at either, retarget it so useItem()'s HUD icon lookup never indexes a
   // removed entry. (Checked by literal id here, not ITEMS[...], since ITEMS is declared later in this file
@@ -1358,6 +1389,15 @@ loadSlot(1);
 // Core weapon level for the currently-selected homie (Net.color/save.character index into CORE_HOMIE), 1-10.
 // Replaces the old wlv(weaponDef().id) lookup, which was capped at 3.
 function coreLevel(homieIdx) { const h = CORE_HOMIE[homieIdx != null ? homieIdx : (Net.color || 0)] || CORE_HOMIE[0]; return Math.max(1, Math.min(10, (save.cores && save.cores[h]) || 1)); }
+// v1.1 A2: brief's example cost curve - Lv2 = 60 coins + 10 Resin, each level after ~1.6x the coins + 10
+// more Resin, odd TARGET levels also cost 1 Seed. `lv` is the level upgrading FROM (so target = lv+1).
+// Never called for target > 10 (shopEntries() stops offering the entry at Lv10).
+function coreUpCost(lv) {
+  const target = lv + 1;
+  let coins = 60;
+  for (let t = 3; t <= target; t++) coins = Math.round(coins * 1.6);
+  return { coins, resin: 10 * (target - 1), seeds: target % 2 === 1 ? 1 : 0 };
+}
 function persist() { checkAchv(); save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length + (Net.color === 0 ? 1 : 0) + (save.pet === 'kushling' ? 1 : 0);
 // v1.1 A1/A2: your weapon is fixed by which homie you're playing (no more shop-bought weapon swapping).
@@ -1433,6 +1473,25 @@ function addCombo(x, y) {
   }
 }
 function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; if (lvl && lvl.remix) k = Math.round(k * 1.3); if (farmHas('sunny')) k = Math.round(k * 1.1); if (save.pet === 'sproutly') k = Math.round(k * 1.05); save.coins += k; me.earned += k; save.stats.coinsEarned = (save.stats.coinsEarned || 0) + Math.max(0, k); }
+// v1.1 A3: "Resin drops from knocked-out enemies" (brief) - onKill() calls this for the killer instead of
+// spawning a separate physical pickup entity (simplification, disclosed in AGENT_NOTES/commit message: no
+// new pickup-item type, network sync or animation for it - just an instant grant, same as addCoins()).
+// Per the brief ("Resin goes into the Wild charge first while it's below full, and the rest goes to the
+// player's Resin bank"), a held non-infinite Wild weapon below max charge is topped up first; any leftover
+// (or all of it, if no Wild weapon is held, it's full, or it's the charge-less Apple Pipe) banks as save.resin.
+function gainResin(amt) {
+  if (amt <= 0) return;
+  if (me.envWeapon) {
+    const wdef = ENV_WEAPONS[me.envWeapon.id];
+    if (wdef && !wdef.infiniteCharge) {
+      const room = Math.max(0, wdef.charge - me.envWeapon.charge);
+      const toCharge = Math.min(room, amt);
+      me.envWeapon.charge += toCharge;
+      amt -= toCharge;
+    }
+  }
+  if (amt > 0) save.resin += amt;
+}
 function addCooked(k) {
   if (k > 0 && save.pet === 'puffball') k = Math.round(k * 1.05);
   if (k < 0 && farmHas('chill')) k = Math.round(k * 0.7); // CHILL KUSH: fades 30% slower
@@ -1494,7 +1553,7 @@ function pickUp(it) {
   else if (ITEMS[it.kind] && !(it.kind === 'munchie' && me.hp < maxHp())) { save[it.kind] = Math.min(itemCap(it.kind), (save[it.kind] || 0) + 1); SFX.buy(); popup(x - 16, y - 6, '+1 ' + ITEMS[it.kind].name, '#fff6b0'); persist(); }
   else if (it.kind === 'papers' || it.kind === 'bombs' || it.kind === 'smoke') { const k = it.kind === 'papers' ? 5 : it.kind === 'bombs' ? 2 : 2; save.throws[it.kind] = (save.throws[it.kind] || 0) + k; SFX.buy(); popup(x - 16, y - 6, '+' + k + ' ' + (it.kind === 'papers' ? 'PAPERS' : it.kind === 'bombs' ? 'NUG BOMBS' : 'SMOKE GRENADES'), '#fff6b0'); }
   else if (it.kind === 'gold') { me.star = 540; SFX.star(); shake = 6; banner = { t: 150, a: 'GOLDEN LEAF!', b: 'UNSTOPPABLE - RUN INTO ENEMIES' }; }
-  else if (it.kind === 'envweapon') { me.envWeapon = { id: it.sub, uses: ENV_WEAPONS[it.sub].uses }; popup(x - 24, y - 10, 'PICKED UP ' + ENV_WEAPONS[it.sub].name, '#fff6b0'); SFX.buy(); }
+  else if (it.kind === 'envweapon') { me.envWeapon = { id: it.sub, charge: ENV_WEAPONS[it.sub].charge }; popup(x - 24, y - 10, 'PICKED UP ' + ENV_WEAPONS[it.sub].name, '#fff6b0'); SFX.buy(); }
   else if (it.kind === 'extra') {
     const d = EXTRAS[it.sub];
     addCoins(d.coins); if (d.cooked) addCooked(d.cooked); if (d.buff) me.buffs[d.buff] = d.time;
@@ -1603,7 +1662,7 @@ function selectWeapon(i) {
 // ============================================================
 //  COMBAT
 // ============================================================
-const REACH = {}; for (const w of WEAPONS) REACH[w.id] = w.reach;
+const REACH = {}; for (const w of WEAPONS) REACH[w.id] = w.reach; for (const w of Object.values(ENV_WEAPONS)) REACH[w.id] = w.reach;
 // my hit landed on an enemy: the host applies it, everyone else asks the host
 // ---- smoke powers ----
 const CLOUD_CAP_SELF = 2, CLOUD_CAP_CREW = 6;
@@ -1768,12 +1827,25 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   e.state = 5; e.t = Math.max(e.t, 40);
   if (Net.online) { crewCombo++; crewComboT = 150; if (crewCombo > 0 && crewCombo % 10 === 0) { addCoins(5); popup(e.x - 24, sy(e.z) - 40, 'CREW COMBO x' + crewCombo + '! +5', '#ffd84a'); } }
   if (e.boss) { save.stats.bossesBeaten++; e.t = 90; hitstop = 20; shake = 16; for (const id of e.summons || []) { const a = lvl.enemies[id]; if (a.alive && a.spawned) { a.alive = false; puff(a.x, sy(a.z) - 8, 8, ['#ffffff'], 1); } } banner = { t: 160, a: e.bname + ' DEFEATED!', b: '' }; setTimeout(() => learnSkill(e.skill), 1600); lvl.boss = null; }
+  // v1.1 A2: the Core-weapon level cap only rises at each world's mini-boss (e.mini) and boss (e.mega) - runs
+  // for everyone locally (same e.mini/e.mega/worldOf(lvl.n) on every client, no network sync needed), never
+  // lowers a cap raised by an earlier run. World w (0-5): mini-boss -> cap 4+w, world boss -> cap 5+w, so
+  // World 6's (index 5) boss (Mr. Killjoy) lands exactly on cap 10 as the brief specifies.
+  if (e.boss && (e.mega || e.mini)) {
+    const w = worldOf(lvl.n), newCap = e.mega ? 5 + w : 4 + w;
+    save.coreCap = Math.max(save.coreCap || 3, Math.min(10, newCap));
+    // Seeds: "dropped only by bosses" - scoped to the world boss (mega) fight, not every level's captain
+    // fight or mini-boss, and only for whoever gets kill credit (see gainResin()'s comment on this same
+    // simplification - no new net sync for a per-player-in-co-op seed grant).
+    if (e.mega && by === Net.id) save.seeds = (save.seeds || 0) + 1;
+  }
   puff(e.x, sy(e.z) - 10, 8, ['#ffffff', '#e8e4f4', '#c8ffa0'], 1.4); bleed(e.x, e.z, e.h, 8, e.vx > 0 ? 1 : -1);
   const zn = lvl.zones[lvl.zi];
   if (zn && lvl.locked && zn.ids.every(i => { const o = lvl.enemies[i]; return o === e || !o.alive || o.state === 5 || !o.spawned && o.skipped; }) && zn.ids.filter(i => !lvl.enemies[i].spawned && lvl.enemies[i].alive).length === 0) { hitstop = 14; shake = 10; }
   if (by !== Net.id) return;
   const reward = (e.boss ? (e.mega ? 150 : 60) : { cop: 8, karen: 6, mouse: 2, squirrel: 3 }[e.ai]) + e.stolen;
   addCoins(reward); addCooked(3); me.kills++; addCombo(e.x, sy(e.z) - 30); SFX.stomp();
+  gainResin(e.mega ? 5 : e.mini ? 3 : 1); // v1.1 A3: Resin drops from every knock-out - see gainResin()'s comment on the simplification here
   const KO_LINE = { crab: 'CRACKED!', lawnmower: 'MOWED DOWN!', segway: 'WIPED OUT!', owl: 'GROUNDED!', securitybot: 'SHUT DOWN!' };
   popup(e.x - 14, sy(e.z) - 34, (KO_LINE[e.kind] || { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' }[e.ai]) + ' +' + reward, '#ffffff');
   e.stolen = 0;
@@ -1785,6 +1857,14 @@ function attack(charged) {
     me.puffed = false; me.flaps = 0; SFX.exhale(); me.atkCd = 16; me.atkT = 10;
     shots.push({ mine: true, x: me.x + me.face * 10, z: me.z, h: me.h + 8, vx: me.face * 3.6, life: 26, dmg: 2, kind: 5, hit: new Set() });
     Net.send({ t: 'fx', k: 5, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+    return;
+  }
+  // v1.1 A3: Wild-weapon charge bar. A held Wild weapon below its per-swing cost still "attacks" (so its
+  // cooldown/animation logic below doesn't need touching) but deals no damage and just clicks - the brief's
+  // "does nothing (a 'click' sound) until more Resin is picked up". It stays held (me.envWeapon isn't
+  // cleared) rather than breaking/dropping.
+  if (me.envWeapon && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge && me.envWeapon.charge < ENV_WEAPONS[me.envWeapon.id].cost) {
+    SFX.bump(); me.atkCd = 14; popup(me.x - 14, sy(me.z) - 34, '*CLICK*', '#8a809a');
     return;
   }
   const lunge = K.run && Math.abs(me.vx) > 1.5 && me.h === 0, air = me.h > 6;
@@ -1853,7 +1933,10 @@ function attack(charged) {
   if (w.id === 'lighter' && lv3 && hits) lvl.clouds.push({ x: me.x + me.face * 20, z: me.z, r: 16, t: 150, hot: true, by: Net.id }); // LIGHTER LV3: leaves a burning fire patch
   if (w.id === 'puff') puff(me.x + me.face * 26, sy(me.z, me.h) - 16, 5, ['#ffffff', '#e8e4f4'], .6, -0.02);
   Net.send({ t: 'fx', k: wi, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
-  if (me.envWeapon && hits) { me.envWeapon.uses--; if (me.envWeapon.uses <= 0) { popup(me.x - 20, sy(me.z) - 40, w.name + ' BROKE!', '#ff8a8a'); me.envWeapon = null; SFX.bump(); } }
+  // v1.1 A3: drain the Wild weapon's Resin charge on every swing that actually attacked (the click-check
+  // above already bailed out before this point if there wasn't enough charge), never below 0. It stays
+  // held at 0 charge - no more "BROKE!"/auto-drop; gainResin() (see onKill) tops it back up from kills.
+  if (me.envWeapon && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge) me.envWeapon.charge = Math.max(0, me.envWeapon.charge - ENV_WEAPONS[me.envWeapon.id].cost);
 }
 function updateShots() {
   for (const s of shots) {
@@ -3119,10 +3202,17 @@ let shopTab = 0;
 const SHOP_TABS = ['ALL', 'WEAPONS', 'ARMOR', 'ITEMS', 'AMMO', 'UPGRADES'];
 const SHOP_TAB_OF = { armor: 'ARMOR', item: 'ITEMS', use: 'ITEMS', coreup: 'UPGRADES' };
 function shopEntries(all) {
-  // v1.1 A2: one Core-weapon upgrade entry for whichever homie you're playing, paid in Resin (not coins),
-  // 1-10 levels instead of the old flat 1-3. WEAPON_LV3's flavor text is reused as a "LV3+" milestone note.
-  const w = weaponDef(), lv = coreLevel();
-  const ups = lv >= 10 ? [] : [{ kind: 'coreup', id: w.id, icon: w.icon, name: 'LEVEL UP ' + w.name + ' - LV' + (lv + 1), resinPrice: 8 + lv * 4, desc: lv === 2 ? WEAPON_LV3[w.id] : '+1 DAMAGE AND STRONGER EFFECTS. MAX LV10 (' + lv + '/10)' }];
+  // v1.1 A2: one Core-weapon upgrade entry for whichever homie you're playing, 1-10 levels instead of the
+  // old flat 1-3, paid in coins + Resin (+ a Seed on odd target levels) per the brief's example cost curve
+  // (coreUpCost()), and gated by save.coreCap (raised at each world's mini-boss/boss - see onKill()).
+  // WEAPON_LV3's flavor text is reused as a "LV3+" milestone note.
+  const w = weaponDef(), lv = coreLevel(), capReached = lv >= (save.coreCap || 3);
+  const cost = lv >= 10 ? null : coreUpCost(lv);
+  const ups = lv >= 10 ? [] : [{
+    kind: 'coreup', id: w.id, icon: w.icon, name: 'LEVEL UP ' + w.name + ' - LV' + (lv + 1),
+    coinPrice: cost.coins, resinPrice: cost.resin, seedPrice: cost.seeds, capReached,
+    desc: capReached ? 'LOCKED UNTIL YOU BEAT THE NEXT WORLD MINI-BOSS/BOSS (CAP LV' + save.coreCap + ')' : lv === 2 ? WEAPON_LV3[w.id] : '+1 DAMAGE AND STRONGER EFFECTS. MAX LV10 (' + lv + '/10)',
+  }];
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
   const nav = [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }];
   const armorTier = Math.max(-1, ...save.armor.map(id => ARMORS.findIndex(a => a.id === id))); // ARMOR is an upgrade line now: only the highest tier owned counts (also migrates old saves that stacked several pieces)
@@ -3141,7 +3231,7 @@ function itemStatus(it) {
   if (it.kind === 'armor' && it.owned) return 'OWNED';
   if (it.kind === 'item' && save.pouch) return 'OWNED';
   if (it.kind === 'use' && save[it.id] >= itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0)) return 'MAX ' + (itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0));
-  if (it.kind === 'coreup' && coreLevel() >= 10) return 'MAXED';
+  if (it.kind === 'coreup') { if (coreLevel() >= 10) return 'MAXED'; if (it.capReached) return 'LOCKED'; }
   if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (save.spots < SPOTS_TO_FARM) return 'LOCKED'; }
   if (it.kind === 'ready') return readyInfo && readyInfo.me ? 'WAITING ' + readyInfo.n + '/' + readyInfo.of : '';
   return null;
@@ -3216,10 +3306,12 @@ function shopConfirm() {
     return;
   }
   const st = itemStatus(it);
-  if (st) { SFX.bump(); results.msg = st === 'LOCKED' ? 'REACH ' + SPOTS_TO_FARM + ' SMOKE SPOTS FIRST' : 'CANT BUY THAT'; return; }
-  if (it.kind === 'coreup') { // v1.1 A2: Core-weapon levels are paid in Resin, not coins
+  if (st) { SFX.bump(); results.msg = it.kind === 'coreup' && st === 'LOCKED' ? 'BEAT THE NEXT WORLD MINI-BOSS/BOSS TO RAISE THE CORE CAP' : st === 'LOCKED' ? 'REACH ' + SPOTS_TO_FARM + ' SMOKE SPOTS FIRST' : 'CANT BUY THAT'; return; }
+  if (it.kind === 'coreup') { // v1.1 A2: Core-weapon levels cost coins + Resin (+ a Seed on odd target levels), gated by save.coreCap above
+    if (save.coins < it.coinPrice) { SFX.bump(); results.msg = 'NEED ' + (it.coinPrice - save.coins) + ' MORE HASH COINS'; return; }
     if (save.resin < it.resinPrice) { SFX.bump(); results.msg = 'NEED ' + (it.resinPrice - save.resin) + ' MORE RESIN'; return; }
-    save.resin -= it.resinPrice;
+    if ((save.seeds || 0) < it.seedPrice) { SFX.bump(); results.msg = 'NEED ' + (it.seedPrice - (save.seeds || 0)) + ' MORE SEED (BOSSES DROP THEM)'; return; }
+    save.coins -= it.coinPrice; save.resin -= it.resinPrice; save.seeds -= it.seedPrice;
     save.cores[CORE_HOMIE[Net.color || 0]] = coreLevel() + 1;
     persist(); SFX.buy(); results.msg = weaponDef().name + ' IS NOW LV' + coreLevel() + '!';
     return;
@@ -3280,17 +3372,20 @@ function drawShop() {
   text('Q/E OR CLICK TO SWITCH TABS', W - 6, 60, '#8a809a', 1, 'right');
   // shop list
   text('HEAD SHOP', 8, 68, '#ffd84a', 1);
-  text('COINS ' + save.coins + '   RESIN ' + save.resin, W - 8, 68, '#ffd84a', 1, 'right');
+  text('COINS ' + save.coins + '   RESIN ' + save.resin + '   SEEDS ' + (save.seeds || 0), W - 8, 68, '#ffd84a', 1, 'right');
   const list = shopEntries(), rows = 9, start = Math.max(0, Math.min(shopSel - 4, list.length - rows));
   for (let i = start; i < Math.min(list.length, start + rows); i++) {
     const it = list[i], y = 76 + (i - start) * 10, sel = i === shopSel, st = itemStatus(it);
-    const isResin = it.kind === 'coreup', cost = isResin ? it.resinPrice : it.price, have = isResin ? save.resin : save.coins;
+    // v1.1 A2: Core upgrades cost coins + Resin (+ Seeds on odd target levels), everything else is coins-only
+    const isCoreup = it.kind === 'coreup';
+    const afford = isCoreup ? (save.coins >= it.coinPrice && save.resin >= it.resinPrice && (save.seeds || 0) >= it.seedPrice) : save.coins >= it.price;
+    const costStr = isCoreup ? it.coinPrice + 'c ' + it.resinPrice + 'r' + (it.seedPrice ? ' ' + it.seedPrice + 'seed' : '') : it.price;
     hot(4, y - 1, 190, 10, () => { if (shopSel === i) shopConfirm(); else { shopSel = i; SFX.tick(); } }, () => { shopSel = i; });
     if (sel) { R(ctx, '#4a3a60', 4, y - 1, 190, 10); R(ctx, '#c8ffa0', 4, y - 1, 2, 10); }
     const plain = it.kind === 'ready' || it.kind === 'quit';
     if (!plain) ctx.drawImage(ICONS[it.icon], 8, y - 1, 9, 9);
     text(it.name, plain ? 10 : 20, y + 1, it.kind === 'ready' ? '#c8ffa0' : it.kind === 'quit' ? '#ff9ab8' : st ? '#8a809a' : '#ffffff');
-    if (!plain) text(st || (cost + (isResin ? ' RESIN' : '')), 192, y + 1, st ? '#8a809a' : have >= cost ? '#ffd84a' : '#ff8a8a', 1, 'right');
+    if (!plain) text(st || costStr, 192, y + 1, st ? '#8a809a' : afford ? '#ffd84a' : '#ff8a8a', 1, 'right');
     else if (st) text(st, 192, y + 1, '#e4b3ff', 1, 'right');
   }
   if (start > 0 && frame % 30 < 20) text('^ MORE', 150, 68, '#b0a8c0');
@@ -3301,6 +3396,7 @@ function drawShop() {
   wrap(it.desc, 206, 106, 26, '#ffffff');
   if (it.kind === 'coreup') {
     text('LV ' + coreLevel() + ' -> LV ' + (coreLevel() + 1) + '   +1 DAMAGE', 206, 128, '#7fe07a');
+    if (!it.capReached && coreLevel() < 10) text('COST: ' + it.coinPrice + ' COINS + ' + it.resinPrice + ' RESIN' + (it.seedPrice ? ' + ' + it.seedPrice + ' SEED' : ''), 206, 136, '#c8ffa0');
   } else if (it.kind === 'armor') {
     const curHp = ARMORS.filter(a => save.armor.includes(a.id)).reduce((m, a) => Math.max(m, a.hp), 0), hd = it.hp - curHp;
     text('HEARTS ' + (hd >= 0 ? '+' : '') + hd, 206, 128, hd >= 0 ? '#7fe07a' : '#ff8a8a');
@@ -4241,5 +4337,7 @@ if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint'
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
 window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt,
   // v1.1 B1 debug hooks (used by the automated smoke tests; also handy for future debugging)
-  buildLevel, mapNodes, bossDataFor, levelType, worldOf, levelInWorld, missionName, WORLDS, WORLD_START, TOTAL_LEVELS, isSecretLevel, setWorld, get curWorld() { return curWorld; } };
+  buildLevel, mapNodes, bossDataFor, levelType, worldOf, levelInWorld, missionName, WORLDS, WORLD_START, TOTAL_LEVELS, isSecretLevel, setWorld, get curWorld() { return curWorld; },
+  // v1.1 A2/A3 debug hooks (used by the automated smoke tests for the Core-cost curve + Wild charge economy)
+  shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, get shopSel() { return shopSel; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost };
 })();

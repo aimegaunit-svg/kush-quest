@@ -122,7 +122,8 @@ function enter(client, code, name, wantColor) {
   client.send({
     t: 'joined', code, id: client.id, host: room.host, color, level: room.level, phase: room.phase,
     players: [...room.players].filter(([id]) => id !== client.id).map(([id, p]) => ({ id, name: p.name, color: p.color })),
-    collected: [...room.collected]
+    collected: [...room.collected],
+    transit: room.transit || null // v1.2 fix (Step 2.3): a ride in progress when this player (re)joins
   });
   broadcast(room, { t: 'pj', id: client.id, name, color }, client.id);
   checkProgress(room);
@@ -254,6 +255,18 @@ function handle(client, m) {
     case 'mapsel': // host's cursor on the world map, so the crew can watch
       if (room && client.id === room.host) broadcast(room, { t: 'mapsel', i: m.i | 0, w: m.w | 0 }, client.id);
       break;
+    // v1.2 fix (Step 2.3): host-only. Tracked on the room so a player who (re)joins mid-ride sees it in
+    // their `joined` payload (below) and waits instead of dropping into the map underneath the crew.
+    case 'transit-start':
+      if (!room || client.id !== room.host) return;
+      room.transit = { k: String(m.k || '').slice(0, 8), from: m.from | 0, to: m.to | 0, w: m.w | 0 };
+      broadcast(room, { t: 'transit-start', k: room.transit.k, from: room.transit.from, to: room.transit.to, w: room.transit.w }, client.id);
+      break;
+    case 'transit-end':
+      if (!room || client.id !== room.host) return;
+      room.transit = null;
+      broadcast(room, { t: 'transit-end' }, client.id);
+      break;
     case 'chat': {
       if (!room) return;
       // v1.2 fix (Step 1.7): dedicated chat rate limit (separate from the blanket 120msg/sec socket-level
@@ -286,6 +299,9 @@ function leave(client) {
   room.players.delete(client.id); room.fin.delete(client.id); room.ready.delete(client.id);
   broadcast(room, { t: 'pl', id: client.id });
   if (room.host === client.id && room.players.size) { room.host = room.players.keys().next().value; broadcast(room, { t: 'host', id: room.host }); }
+  // v1.2 fix (Step 2.3): if the host bails mid-ride, nobody will ever send transit-end - clear it so a
+  // future joiner doesn't get stuck waiting forever, and free any live waiters immediately.
+  if (room.transit) { room.transit = null; broadcast(room, { t: 'transit-end' }); }
   if (room.players.size === 0) room.emptySince = Date.now(); // kept 2 min so people can reconnect
   else checkProgress(room);
 }

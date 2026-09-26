@@ -558,3 +558,70 @@ checklist items pass.
 
 Pushed to `main`. Next: Step 2 (online wiring for the vehicle games - `case 'd'` routing, host-broadcasts-
 launch, drop-in, carry-over), which the drive/transit agents need before they can test their games online.
+
+## STEP 2 (FIX_STEPS.md): online wiring for all vehicle games - landed and verified
+
+**Status: done. This is the one the drive/transit agents were waiting on - you can now test Hotbox Highway
+and all 5 world-transition games online.**
+
+1. **Incoming relay routing** (`game.js`, `onNet()`): added `case 'd':`. `{t:'d', k, p, id}` messages now
+   route to the right place: `k === 'dr'` goes to `window.Drive._deliver(id, p)` (Drive is a singleton -
+   it already exposed `_deliver` directly, no extra plumbing needed). Any other `k` (the 5 transit games'
+   2-letter keys - `lr`/`pp`/`mt`/`sb`/`br`) looks up `window.Transit._activeNets[k]._deliver`.
+   `Transit._activeNets` didn't exist before this step - `transit.js` (not ours to edit) never exposes the
+   wrapped net object `makeNet()` builds for each mini-game, so there was no way for `game.js` to reach it
+   to deliver incoming messages. Fixed by monkey-patching `Transit.makeNet` from inside `game.js` (see the
+   comment right above `launchTransit()`) to stash every wrapped net into `Transit._activeNets[gameKey]`
+   the moment it's created - `transit.js` itself is untouched, and the 5 games still attach their own
+   `_deliver` to the exact same object afterward, so the stashed reference sees it too. Verified with a
+   Playwright check: after launching Lazy River (world 0's gate game) in 2 tabs, both clients had
+   `Transit._activeNets.lr._deliver` set to a real function.
+2. **Host broadcasts the launch**: the map's `hotbox`/`gate` click handlers now send `{t:'transit-start',
+   k, from, to, w}` before launching locally (host-only - `updateMap()`'s whole click-handling block is
+   already gated by `canDrive = !Net.online || isHost()`). The actual launch logic was factored out of the
+   click handlers into two new functions, `startHotboxTransit(from,to,worldIdx)` and
+   `startGateTransit(worldIdx)`, so both the host and every crewmate (via the new `case 'transit-start':`
+   in `onNet()`, which calls the same two functions) launch the identical ride. `server.js` relays
+   `transit-start`/`transit-end` (host-only, rejects non-host senders) and also tracks the ride on
+   `room.transit` for point 4 below.
+3. **Carry-over from vehicle games**: `launchTransit()`'s `onDone` now applies `cooked` (a full set,
+   clamped 0-100), `munchies` (an add, capped at 3 like the existing snack-cap pattern), and `buff`
+   (`'cooked10'` = instant +10% Cooked, `'soda10'` = the existing 600-frame soda speed buff) - previously
+   only `coins` was applied. Each client applies its own carry-over locally from its own ride result, since
+   Cooked% etc. are per-player.
+4. **Drop-in during a vehicle game**: a player who (re)joins mid-ride can't launch the ride themselves (they
+   never got the original `transit-start`), so they land on a new minimal `'transit-wait'` state (a
+   "CREW IS DRIVING..." screen, gated out of the main update/draw loop the same way `'transit'` is) instead
+   of dropping into the live map underneath everyone else. `server.js`'s `enter()` now includes
+   `room.transit` (set by point 2, cleared on `transit-end` or if the host disconnects mid-ride - see
+   `leave()`) in the `'joined'` payload, and `startGame()`'s map-phase branch checks `Net.transit` to decide
+   between `openMap()` and `openMap(); state = 'transit-wait'`. The matching `case 'transit-end':` (sent by
+   whichever client's `onDone` fires while `isHost()`) frees anyone stuck on that screen back to the map.
+5. Also forwarded `'pl'` (player left) and `'host'` (host changed) to `window.Drive.onNet(m)` per the drive
+   agent's documented contract in their own header comment, wrapped in try/catch since Drive may not be
+   loaded/running.
+
+**Check status - verified in real 2-3 browser-tab runs against a locally running `server.js` (not just by
+reading the code), per the rule for anything online:**
+- Launched Hotbox Highway from the map in 2 tabs: both clients' `state` became `'transit'` together.
+  PASS.
+- Launched a gate transit (Lazy River, world 0's B3 game) from the map in 2 tabs: same result, both
+  `'transit'` together. PASS. Confirmed `Transit._activeNets.lr._deliver` was a real function on both
+  clients (proof the makeNet hook actually wired the incoming-message path, not just that the game loaded).
+- Simulated each client's own ride finishing (`Drive._debug().opts.onDone({coins, cooked, munchies, buff})`
+  - drive.js's own gameplay/scoring is the drive agent's territory and already tested by them; this only
+  exercises `game.js`'s own onDone wiring) with different values per client: both clients landed back on
+  `state === 'map'`, and each client's own `coins`/`cooked`/`munchie` carried over correctly, including the
+  `buff: 'cooked10'` case (+10 on top of the set `cooked` value). PASS.
+- Drop-in: started a solo-hosted room, launched Hotbox Highway, then had a 3rd browser tab join the SAME
+  room code mid-ride. The joiner landed on `'transit-wait'` immediately (not the map). PASS. When the host's
+  ride finished, both the host and the drop-in joiner ended up on `'map'` together. PASS.
+- `node --check` clean on both `game.js` and `server.js` throughout.
+
+**Known gap, out of scope for this step**: if a *non-host* crewmate is mid-ride when the host disconnects
+(not just when a new player joins), the new host inherits `isHost()` but there's no code that re-broadcasts
+`transit-start` for anyone who wasn't already in the ride - this only matters for the drop-in-while-mid-ride
+case, which is now handled at join time via `room.transit`, not for a host handoff mid-ride. Flagging rather
+than guessing whether that edge case matters for this brief.
+
+Pushed to `main`. Next: Step 5 (Core weapons for real, per Brief v1.1 A2).

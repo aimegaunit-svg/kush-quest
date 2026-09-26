@@ -2097,6 +2097,11 @@ function update() {
   // v1.1 B2/B3: while a transit mini-game (Hotbox Highway or a world-transition game) owns the #transitMount
   // overlay, the main game loop is fully paused - the mini-game runs its own independent rAF loop.
   if (state === 'transit') { clearIn(); return; }
+  // v1.2 fix (Step 2.3): a crewmate who joins mid-ride never got the host's original `transit-start`
+  // broadcast, so they can't launch the mini-game themselves - they just wait here (see the matching
+  // `transit-wait` draw branch) until the host's `transit-end` (sent from launchTransit's onDone) sends
+  // everyone back to the map together.
+  if (state === 'transit-wait') { clearIn(); return; }
   if (updateTrans()) { clearIn(); return; }
   if (dialog) { updateDialogue(); clearIn(); return; }
   if (menu) { updateMenu(); clearIn(); if (!Net.online || !menu) return; }
@@ -3066,8 +3071,14 @@ function drawHazard() {
   }
 }
 function draw() { if (state === 'transit') return; TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
+function drawTransitWait() {
+  ctx.fillStyle = '#1e122c'; ctx.fillRect(0, 0, W, H);
+  text('CREW IS DRIVING...', W / 2, H / 2 - 6, '#e4b3ff', 2, 'center');
+  text('BACK ON THE MAP SOON', W / 2, H / 2 + 12, '#b0a8c0', 1, 'center');
+}
 function drawScene() {
   if (state === 'story') { drawStory(); return; }
+  if (state === 'transit-wait') { draw320(drawTransitWait, '#1e122c'); return; }
   if (state === 'lobby') { draw320(drawLobby); return; }
   if (state === 'map') { drawMap_(); if (invOpen) draw320(drawInventory); return; }
   if (state === 'results' && results && results.shopOnly) { draw320(drawShop, '#1e122c'); return; }
@@ -3812,6 +3823,32 @@ function drawLobby() {
 // until it reports back via onDone. `mod` is one of window.Drive/LazyRiver/PaperPlane/MunchieTruck/
 // SmokeBalloon/BongRocket - all share the same {save,mount,scale,crew,net,onDone} start() contract.
 // `extraOpts` carries game-specific fields (Drive needs {from,to,world,cooked}; the others just {world}).
+// v1.2 fix (Step 2.1): transit.js's makeNet() wraps whatever `net` a mini-game is given into a fresh
+// object keyed by a 2-letter game key (lr/pp/mt/sb/br) and the mini-game then overwrites that wrapped
+// object's `_deliver` with its own incoming-message handler - but that wrapped object only ever lives
+// inside the mini-game's own closure, so game.js (which owns the actual WebSocket and Net.send) has no
+// way to reach it to deliver incoming {t:'d'} relay messages... unless it grabs a reference the moment
+// makeNet() creates it. This wraps Transit.makeNet (without editing transit.js, which isn't game.js's
+// file to touch) so every wrapped net gets stashed in Transit._activeNets[gameKey] - the SAME object the
+// mini-game later attaches its `_deliver` to, so the stashed reference sees that update too. Drive.js
+// doesn't need this trick - it already exposes a top-level `Drive._deliver` singleton (see its own header
+// comment), since only one drive can run at a time.
+if (window.Transit && typeof window.Transit.makeNet === 'function' && !window.Transit.__netHooked) {
+  const origMakeNet = window.Transit.makeNet;
+  window.Transit.makeNet = function (netRaw, gameKey) {
+    const wrapped = origMakeNet(netRaw, gameKey);
+    if (wrapped) { window.Transit._activeNets = window.Transit._activeNets || {}; window.Transit._activeNets[gameKey] = wrapped; }
+    return wrapped;
+  };
+  window.Transit.__netHooked = true;
+}
+// v1.1 B2/B3: launches a transit mini-game (Hotbox Highway, or one of the 5 world-transition games) into
+// the #transitMount overlay, pausing the main loop (see the `state === 'transit'` guards in update()/draw())
+// until it reports back via onDone. `mod` is one of window.Drive/LazyRiver/PaperPlane/MunchieTruck/
+// SmokeBalloon/BongRocket - all share the same {save,mount,scale,crew,net,onDone} start() contract.
+// `extraOpts` carries game-specific fields (Drive needs {from,to,world,cooked}; the others just {world}).
+// v1.2 fix (Step 2.4): onDone's `cooked`/`munchies`/`buff` fields (Drive returns all three; the 5 transit
+// games don't yet - see AGENT_NOTES Step 4.4) are now applied too, not just `coins`.
 function launchTransit(mod, extraOpts, afterBanner, onAfter) {
   if (!mod || typeof mod.start !== 'function') { banner = { t: 120, a: 'RIDE UNAVAILABLE', b: 'THIS MINI-GAME DID NOT LOAD - CHECK THE BROWSER CONSOLE' }; return; }
   const mount = document.getElementById('transitMount');
@@ -3824,10 +3861,19 @@ function launchTransit(mod, extraOpts, afterBanner, onAfter) {
       onDone: (r) => {
         try {
           if (r && typeof r.coins === 'number') { save.coins += Math.max(0, Math.round(r.coins)); }
+          if (r && typeof r.cooked === 'number' && me) me.cooked = Math.max(0, Math.min(100, r.cooked));
+          if (r && typeof r.munchies === 'number' && r.munchies > 0) save.munchie = Math.min(3, (save.munchie || 0) + Math.round(r.munchies));
+          if (r && r.buff === 'cooked10' && me) me.cooked = Math.min(100, me.cooked + 10);
+          else if (r && r.buff === 'soda10' && me) { me.buffs.soda = Math.max(me.buffs.soda || 0, 600); me.buffs.speed = Math.max(me.buffs.speed || 0, 600); }
           persist();
         } catch (e) {}
         mount.style.display = 'none'; mount.innerHTML = '';
         state = 'map';
+        // v1.2 fix (Step 2.2/2.3): tell any crewmate who joined mid-ride (and is stuck on the "CREW IS
+        // DRIVING..." wait screen, since they never got the original transit-start) that it's over, so
+        // they come back to the map instead of waiting forever. Only the host needs to send this - see
+        // the matching `case 'transit-end'` handler and the drop-in wait screen below.
+        if (Net.online && isHost()) Net.send({ t: 'transit-end' });
         if (typeof onAfter === 'function') onAfter();
         banner = { t: 150, a: (afterBanner && afterBanner.a) || 'MADE IT!', b: (r && typeof r.coins === 'number' ? '+' + Math.max(0, Math.round(r.coins)) + ' COINS - ' : '') + ((afterBanner && afterBanner.b) || '') };
         SFX.cp();
@@ -3837,6 +3883,20 @@ function launchTransit(mod, extraOpts, afterBanner, onAfter) {
     mount.style.display = 'none'; mount.innerHTML = ''; state = 'map';
     banner = { t: 150, a: 'RIDE CRASHED', b: String(e && e.message || e).slice(0, 60) };
   }
+}
+// v1.2 fix (Step 2.2): the actual launch logic for each transit trigger, factored out of the map's click
+// handler so both the host (who decides to launch) and every other crewmate (who receives the host's
+// broadcast and must launch the SAME ride locally, with their own local per-player extras like their own
+// Cooked%) can call the same code. Only the host broadcasts; everyone (host included) then calls these.
+function startHotboxTransit(from, to, worldIdx) {
+  const worldBase = (WORLD_DEF[worldIdx] || WORLD_DEF[0]).base;
+  launchTransit(window.Drive, { from, to, world: worldBase, cooked: me ? Math.round(me.cooked) : 0 }, { a: 'MADE IT DOWN THE HIGHWAY!', b: 'BACK ON THE MAP' });
+}
+function startGateTransit(worldIdx) {
+  const game = WORLD_TRANSIT_GAMES[worldIdx], to = worldIdx + 1; // gate nodes always lead to worldIdx+1 - see mapNodes()
+  const advance = () => go(() => { setWorld(to); mapSel = 0; Net.send({ t: 'mapsel', i: 0, w: curWorld }); });
+  if (game) launchTransit(game.mod, { world: game.world }, { a: game.name.toUpperCase() + '!', b: 'WELCOME TO ' + (WORLDS[to] ? WORLDS[to].name : 'THE NEXT WORLD') }, advance);
+  else advance();
 }
 function openMap() {
   state = 'map'; results = null; banner = null; invOpen = false;
@@ -3868,7 +3928,11 @@ function updateMap() {
       else if (nd.kind === 'hotbox') {
         SFX.tick();
         const wd = WORLDS[curWorld], from = WORLD_START[curWorld] + wd.miniAt, to = Math.min(from + 1, WORLD_START[curWorld] + wd.levels.length - 1);
-        launchTransit(window.Drive, { from, to, world: WORLD_DEF[curWorld].base, cooked: me ? Math.round(me.cooked) : 0 }, { a: 'MADE IT DOWN THE HIGHWAY!', b: 'BACK ON THE MAP' });
+        // v1.2 fix (Step 2.2): the host broadcasts the launch so every crewmate runs the SAME ride at
+        // the SAME moment (see the matching `case 'transit-start'` handler below) instead of only the
+        // clicking player driving locally.
+        if (Net.online) Net.send({ t: 'transit-start', k: 'hb', from, to, w: curWorld });
+        startHotboxTransit(from, to, curWorld);
       }
       // v1.1 B3: each world-gate node is also the crew's ride to the next world - a different one-off
       // transit mini-game per world, per the brief's B3 table (Park->Beach: Lazy River, Beach->Suburbia:
@@ -3877,10 +3941,9 @@ function updateMap() {
       // WORLD_DEF). If a world has no entry (shouldn't happen for 0-4) it just falls straight through to
       // the old gate behavior.
       else if (nd.kind === 'gate') {
-        const game = WORLD_TRANSIT_GAMES[curWorld];
-        const advance = () => go(() => { setWorld(nd.to); mapSel = 0; Net.send({ t: 'mapsel', i: 0, w: curWorld }); });
-        if (game) launchTransit(game.mod, { world: game.world }, { a: game.name.toUpperCase() + '!', b: 'WELCOME TO ' + (WORLDS[nd.to] ? WORLDS[nd.to].name : 'THE NEXT WORLD') }, advance);
-        else advance();
+        SFX.tick();
+        if (Net.online) Net.send({ t: 'transit-start', k: 'gate', w: curWorld });
+        startGateTransit(curWorld);
       }
       else if (nd.kind === 'farm') {
         if (save.farm) { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }
@@ -4011,7 +4074,7 @@ function drawMap_() {
     text('TYPE: ' + levelType(nd.n) + '   WATCH OUT:', 6, H - 16, '#b0a8c0');
     [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 90 + i * 12, H - 4 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
   } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 27, '#ffffff');
-  else if (nd.kind === 'hotbox') text('A TRANSIT MINI-GAME NODE (NOT YET WIRED UP THIS SESSION)', 6, H - 27, '#ffffff');
+  else if (nd.kind === 'hotbox') text('HOTBOX HIGHWAY - A CO-OP DRIVING MINI-GAME', 6, H - 27, '#ffffff');
   else text(save.farm ? 'YOU OWN IT. HOME SWEET HOME' : 'COSTS ' + FARM_PRICE + ' HASH COINS. YOU HAVE ' + save.coins, 6, H - 27, '#ffffff');
   drawChat();
   if (banner) { R(ctx, 'rgba(42,24,56,.85)', 0, 70, W, 30); text(banner.a, W / 2, 74, '#ff8a8a', 2, 'center'); text(banner.b, W / 2, 90, '#fff', 1, 'center'); }
@@ -4252,7 +4315,7 @@ function drawInventory() {
 //  NETWORK
 // ============================================================
 const Net = {
-  ws: null, online: false, reconnecting: false, id: 'me', hostId: 'me', code: '', color: 0, name: 'STONER', level: 0, phase: 'play', pendingCollected: [],
+  ws: null, online: false, reconnecting: false, id: 'me', hostId: 'me', code: '', color: 0, name: 'STONER', level: 0, phase: 'play', pendingCollected: [], transit: null,
   send(o) { if (this.online && this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); },
   connect(first) {
     return new Promise((resolve, reject) => {
@@ -4270,6 +4333,7 @@ const Net = {
         clearTimeout(timer);
         this.ws = ws; this.online = true; this.reconnecting = false;
         this.code = m.code; this.color = m.color; this.level = m.level; this.phase = m.phase; this.id = m.id; this.hostId = m.host;
+        this.transit = m.transit || null; // v1.2 fix (Step 2.3): a ride already in progress when we joined - see startGame()
         remotes.clear(); m.players.forEach(addRemote);
         ws.onmessage = e2 => { try { onNet(JSON.parse(e2.data)); } catch (err) { console.error(err); } };
         ws.onerror = null;
@@ -4277,7 +4341,10 @@ const Net = {
         if (running) {
           me.color = m.color; readyInfo = null;
           if (m.phase === 'lobby') openLobby();
-          else if (m.phase === 'map') openMap();
+          // v1.2 fix (Step 2.3): a ride already in progress when this player (re)joins - server.js's
+          // `enter()` includes `m.transit` in this case. There's nothing to launch locally since we
+          // never got the host's original transit-start, so just wait for the host's transit-end.
+          else if (m.phase === 'map') { openMap(); if (m.transit) state = 'transit-wait'; }
           else if (m.phase === 'shop') { if (state !== 'results') toResults(); }
           else {
             if (m.level !== lvl.n || state === 'map' || state === 'results') startLevel(m.level);
@@ -4337,9 +4404,38 @@ function onNet(m) {
     case 'pass': if (m.who === Net.id) { addCooked(20); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); } break;
     case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'boss': if (m.l === lvl.n) bossIntro(lvl.enemies[m.i]); break;
-    case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); break;
+    case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break;
     case 'pj': addRemote(m); popup(camX + W / 2 - 30, 60, m.name + ' JOINED!', '#c8ffa0'); SFX.cp(); break;
-    case 'pl': { const r = remotes.get(m.id); if (r) popup(camX + W / 2 - 30, 60, r.name + ' LEFT', '#b0a8c0'); remotes.delete(m.id); break; }
+    // v1.2 fix (Step 2.2): also forward player-left to Drive - it tracks its own crew list for Hotbox
+    // Highway (drive.js is a singleton that may be running for someone else when this player leaves).
+    case 'pl': { const r = remotes.get(m.id); if (r) popup(camX + W / 2 - 30, 60, r.name + ' LEFT', '#b0a8c0'); remotes.delete(m.id); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break; }
+    // v1.2 fix (Step 2.1): generic relay envelope for the transit mini-games (m.k is a 2-letter game key
+    // like 'lr'/'pp'/'mt'/'sb'/'br') and for Hotbox Highway (m.k === 'dr', matching drive.js's own key).
+    // Drive is a singleton exposing _deliver directly; the 5 transit games' wrapped nets are stashed by
+    // the Transit.makeNet hook above (see launchTransit) since transit.js never exposes them itself.
+    case 'd': {
+      if (m.k === 'dr') { if (window.Drive && window.Drive._deliver) window.Drive._deliver(m.id, m.p); break; }
+      const activeNets = window.Transit && window.Transit._activeNets;
+      const net = activeNets && activeNets[m.k];
+      if (net && net._deliver) net._deliver(m.id, m.p);
+      break;
+    }
+    // v1.2 fix (Step 2.2): the host broadcasts this the instant it launches a ride so every other
+    // crewmate launches the exact same mini-game with the exact same options at the same moment.
+    case 'transit-start': {
+      if (isHost()) break; // the host already launched locally before sending this
+      if (state === 'map') {
+        if (m.k === 'hb') startHotboxTransit(m.from, m.to, m.w);
+        else if (m.k === 'gate') startGateTransit(m.w);
+      } else {
+        // not on the map (mid-level, in a menu, etc.) - can't launch, so just wait for transit-end
+        state = 'transit-wait';
+      }
+      break;
+    }
+    // v1.2 fix (Step 2.3): sent by the host's launchTransit onDone so a crewmate stuck on the
+    // 'transit-wait' screen (joined mid-ride, never got the original transit-start) rejoins the map.
+    case 'transit-end': if (state === 'transit-wait') { state = 'map'; } break;
     case 'col': applyCollected(m.id, m.l); break;
     case 'fin': {
       if (finInfo) finInfo.n = m.n;
@@ -4415,6 +4511,10 @@ function startGame() {
   else if (Net.online && Net.phase === 'shop') { results = { made: false, earned: 0, lost: 0, spotBonus: 0, ultraBonus: 0, cooked: 0, kills: 0, best: 0, msg: 'CREW IS SHOPPING - JOIN THEM' }; state = 'results'; }
   else if (Net.online && Net.phase === 'lobby') openLobby();
   else if (!save.intro && !Net.online) { state = 'story'; storyPage = 0; storyT = 0; }
+  // v1.2 fix (Step 2.3): a ride was already in progress when we joined the room (Net.transit was set
+  // from the 'joined' payload) - there's nothing to launch since we never got the host's transit-start,
+  // so wait on the map screen underneath until the host's transit-end frees everyone.
+  else if (Net.online && Net.transit) { openMap(); state = 'transit-wait'; }
   else openMap();
   if (Net.online) setTimeout(() => { banner = { t: 150, a: 'ROOM CODE: ' + Net.code, b: 'ALWAYS ON THE MAP - ESC TO COPY THE INVITE LINK' }; }, 50);
   requestAnimationFrame(loop);

@@ -972,13 +972,20 @@ function buildLevel(n) {
 // ============================================================
 //  SAVE DATA (each player keeps their own stash + gear)
 // ============================================================
-const SAVE_KEY = 'kq_save_v2';
+let SAVE_KEY = 'kq_save_v2_s1';
+const SLOT_COUNT = 3;
+try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.getItem('kq_save_v2_s1')) localStorage.setItem('kq_save_v2_s1', old); } catch (e) {}
 function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [] }; }
 let save = defaultSave();
-try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && typeof s === 'object') save = { ...defaultSave(), ...s }; } catch (e) {}
-save.throws = { papers: 0, bombs: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0);
-save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
-function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
+function loadSlot(i) {
+  SAVE_KEY = 'kq_save_v2_s' + i;
+  save = { ...defaultSave(), ...(readSlot(i) || {}) };
+  save.throws = { papers: 0, bombs: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0);
+  save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
+}
+loadSlot(1);
+function persist() { save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0);
 const weaponDef = () => WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];
 
@@ -1906,7 +1913,7 @@ function go(fn, exhale) {
 function updateTrans() {
   if (!trans) return false;
   trans.t++;
-  if (!trans.done && trans.t >= trans.dur / 2) { trans.done = true; const f = trans.mid; trans.mid = null; f && f(); }
+  if (!trans.done && trans.t >= trans.dur / 2) { trans.done = true; const f = trans.mid; trans.mid = null; f && f(); K.jumpPressed = K.enterPressed = K.attackPressed = false; K.nav = null; K.navQ = []; }
   if (trans.t >= trans.dur) trans = null;
   return !!trans && trans.t < trans.dur / 2 + 6;
 }
@@ -1993,7 +2000,7 @@ function drawMenu() {
 }
 function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
 function drawScene() {
-  if (state === 'story') { draw320(drawStory, '#2a1838'); return; }
+  if (state === 'story') { drawStory(); return; }
   if (state === 'map') { drawMap_(); if (invOpen) draw320(drawInventory); return; }
   if (state === 'results' && results && results.shopOnly) { draw320(drawShop, '#1e122c'); return; }
   const th = lvl.theme;
@@ -2537,54 +2544,99 @@ function drawMap_() {
 // ============================================================
 //  STORY INTRO
 // ============================================================
+// Animated intro: four little scenes acted out by the real game sprites, with typewriter dialogue.
+// SPACE skips to the next scene, ESC skips the whole intro.
 const STORY = [
-  { title: 'THE CREW', text: 'RASTA, SNAPBACK, BUCKET AND AFRO. BEST HOMIES. THEY HAD THE BEST SMOKE SPOT IN TOWN.' },
-  { title: 'THEN IT HAPPENED', text: 'BUZZKILL CORP BULLDOZED IT. NOW COPS, KARENS AND EVEN THE SQUIRRELS ARE OUT TO HARSH EVERYBODYS BUZZ.' },
-  { title: 'A DREAM', text: 'GRANDMA KUSHS OLD POT FARM IS FOR SALE: ' + FARM_PRICE + ' HASH COINS. A PLACE NOBODY CAN EVER TAKE AWAY.' },
-  { title: 'THE PLAN', text: 'CROSS THE LAND. BEAT THE BUZZKILLS. GET COOKED AT EVERY SMOKE SPOT. STACK HASH COINS. BUY THE FARM!' },
+  { len: 540, lines: [[40, 0, 'BEST SMOKE SPOT IN TOWN. NO CAP.'], [200, 1, 'NOTHING COULD EVER RUIN THIS...'], [360, 3, 'PASS IT LEFT, HOMIE.']] },
+  { len: 560, lines: [[60, 'BUZZKILL CORP', 'THIS PARK IS BUZZKILL CORP PROPERTY NOW!'], [230, 'KAREN', 'I AM CALLING THE MANAGER OF THE PARK!'], [390, 2, 'THEY FLATTENED OUR COUCH, BRO!']] },
+  { len: 520, lines: [[40, 'GRANDMA KUSH', 'MY OLD POT FARM IS FOR SALE, SWEETIES.'], [200, 'GRANDMA KUSH', FARM_PRICE + ' HASH COINS AND IT IS YOURS FOREVER.'], [360, 0, 'A SPOT NOBODY CAN EVER TAKE FROM US...']] },
+  { len: 520, lines: [[40, 3, 'SO WE HIT EVERY SMOKE SPOT ON THE WAY...'], [190, 1, 'BEAT DOWN EVERY BUZZKILL...'], [340, 2, 'STACK HASH COINS AND BUY THE FARM. LETS ROLL!']] },
 ];
+let storyT = 0;
 function updateStory() {
-  if (K.jumpPressed || K.enterPressed || K.attackPressed) { storyPage++; SFX.tick(); }
+  storyT++;
+  const sc = STORY[storyPage];
+  if (K.jumpPressed || K.enterPressed || K.attackPressed) { // finish the current line, or move to the next scene
+    const cur = sc && sc.lines.filter(l => l[0] <= storyT).pop();
+    if (cur && storyT - cur[0] < cur[2].length * 1.5) storyT = cur[0] + cur[2].length * 1.5;
+    else { storyPage++; storyT = 0; SFX.tick(); }
+  }
+  if (sc && storyT > sc.len) { storyPage++; storyT = 0; }
   if ((K.escPressed || storyPage >= STORY.length) && !trans) { save.intro = true; persist(); go(openMap); storyPage = STORY.length; }
   K.escPressed = false;
 }
+function storyStreet(th, cam) {
+  ctx.drawImage(th.sky, 0, 0);
+  drawLayer(th.clouds, 0.1, cam, frame * 0.1, 0); drawLayer(th.far, 0.2, cam, 0, -78); drawLayer(th.near, 0.45, cam, 0, -80);
+  if (!th.floor) th.floor = makeFloor('park', th.tiles);
+  for (let X = -Math.floor(((cam % 64) + 64) % 64); X < W; X += 64) ctx.drawImage(th.floor, X, FLOOR_Y - 12);
+}
+function couch(x, y, flat) {
+  if (flat) { R(ctx, P.k, x, y - 6, 60, 6); R(ctx, '#8a40c8', x + 1, y - 5, 58, 4); return; }
+  R(ctx, P.k, x, y - 22, 60, 22); R(ctx, '#c070ff', x + 1, y - 21, 58, 20); R(ctx, '#e0a8ff', x + 1, y - 21, 58, 3); R(ctx, P.k, x + 4, y - 11, 52, 1);
+}
+function walker(i, x, y, face, moving, frameOff = 0) {
+  const img = PLAYER[i][moving ? 1 + Math.floor((frame + frameOff) / 8) % 2 : 0];
+  draw_(img, x + camX, y, face < 0);
+}
 function drawStory() {
-  const pg = STORY[Math.min(storyPage, STORY.length - 1)], th = THEMES.park;
-  if (storyPage === 0 || storyPage === 1) {
-    ctx.drawImage(th.sky, 0, 0); drawLayer(th.far, 0, 0, 0, -60); drawLayer(th.near, 0, 0, 0, -60);
-    R(ctx, '#ecd0a0', 0, 130, W, 62);
-    if (storyPage === 1) { ctx.fillStyle = 'rgba(255,60,80,.18)'; ctx.fillRect(0, 0, W, H); }
-    // couch + homies
-    const cx = storyPage === 0 ? 110 : 60;
-    R(ctx, P.k, cx, 116, 90, 24); R(ctx, '#c070ff', cx + 1, 117, 88, 22); R(ctx, '#e0a8ff', cx + 1, 117, 88, 3);
-    for (let i = 0; i < 4; i++) ctx.drawImage(PLAYER[i][storyPage === 1 ? 3 : 0], cx + 6 + i * 20, 100 + (storyPage === 1 ? -6 - (i % 2) * 4 : 0));
-    if (storyPage === 0 && frame % 8 === 0) puff(cx + 45, 96, 1, ['#ffffff', '#e8e4f4'], .4, -0.04);
-    if (storyPage === 1) { // bulldozer rolling in + buzzkills
-      const bx = 170 + Math.sin(frame / 10) * 3;
-      R(ctx, P.k, bx, 96, 80, 40); R(ctx, '#ffd84a', bx + 1, 97, 78, 30); R(ctx, P.k, bx + 40, 82, 30, 16); R(ctx, '#8ecbff', bx + 42, 84, 26, 12);
-      R(ctx, P.k, bx - 14, 100, 16, 34); R(ctx, '#9aa0b8', bx - 12, 102, 12, 30);
-      for (let i = 0; i < 4; i++) { R(ctx, P.k, bx + 6 + i * 18, 126, 14, 14); R(ctx, '#5a5a78', bx + 8 + i * 18, 128, 10, 10); }
-      R(ctx, '#ff5a6a', bx + 6, 102, 50, 10); drawStr('BUZZKILL', bx + 12, 105, '#ffffff', 1);
-      ctx.drawImage(ENEMY_IMG.cop[1], 262, 116); ctx.drawImage(ENEMY_IMG.karen[1], 280, 116); ctx.drawImage(ENEMY_IMG.squirrel[0], 24, 128);
+  const sc = Math.min(storyPage, STORY.length - 1), t = storyT, th = THEMES.park, ground = sy(30) - 17;
+  const saved = camX; camX = 0;
+  if (sc === 0) { // the crew strolls in and chills on the couch
+    storyStreet(th, t * 0.2);
+    couch(130, sy(24));
+    for (let i = 0; i < 4; i++) {
+      const target = 128 + i * 15, x = Math.min(target, -30 - i * 22 + t * 1.1), sitting = x >= target;
+      walker(i, x, sitting ? sy(24) - 30 : ground, 1, !sitting, i * 3);
     }
-  } else if (storyPage === 2) {
+    if (t > 140) { const who = Math.floor((t - 140) / 90) % 4, jx = 136 + who * 15; R(ctx, '#ffffff', jx + 9, sy(24) - 22, 8, 2); R(ctx, '#ff9a3a', jx + 17, sy(24) - 22, 2, 2); if (frame % 6 === 0) puff(jx + 18, sy(24) - 24, 1, ['#ffffff', '#e8e4f4'], .3, -0.04); }
+  } else if (sc === 1) { // bulldozer + buzzkills crash the party
+    storyStreet(th, 40);
+    const smash = t > 300, dz = Math.max(170, W + 20 - t * 0.9);
+    couch(130, sy(24), smash);
+    for (let i = 0; i < 4; i++) { const scared = t > 280, x = scared ? 128 + i * 15 - Math.min(80, (t - 280) * 1.4) : 128 + i * 15; walker(i, x, scared ? ground - (Math.abs(Math.sin((t + i * 20) / 8)) * 6) : sy(24) - 30, scared ? -1 : 1, scared); }
+    const bx = dz + (t < 300 ? Math.sin(t / 6) : 0);
+    R(ctx, P.k, bx, sy(30) - 42, 84, 42); R(ctx, '#ffd84a', bx + 1, sy(30) - 41, 82, 32); R(ctx, P.k, bx + 44, sy(30) - 58, 30, 18); R(ctx, '#8ecbff', bx + 46, sy(30) - 56, 26, 14);
+    R(ctx, P.k, bx - 14, sy(30) - 36, 16, 34); R(ctx, '#9aa0b8', bx - 12, sy(30) - 34, 12, 30);
+    for (let k = 0; k < 4; k++) { R(ctx, P.k, bx + 6 + k * 19, sy(30) - 12, 14, 12); R(ctx, '#5a5a78', bx + 8 + k * 19, sy(30) - 10, 10, 8); }
+    R(ctx, '#ff5a6a', bx + 6, sy(30) - 36, 50, 10); text('BUZZKILL', bx + 10, sy(30) - 34, '#ffffff');
+    if (smash && t < 320) shake = 8;
+    if (t > 120) { draw_(ENEMY_IMG.cop[Math.floor(t / 20) % 2], Math.min(W - 40, W + 60 - (t - 120)), sy(40) - 18, true); }
+    if (t > 170) { draw_(ENEMY_IMG.karen[t > 230 && t < 330 ? 1 : 0], Math.min(W - 64, W + 60 - (t - 170)), sy(34) - 18, true); }
+    if (smash && frame % 3 === 0) puff(160, sy(24) - 8, 2, ['#c070ff', '#ffffff', '#e8e0d0'], 1.5);
+  } else if (sc === 2) { // grandma kush shows the farm
     gradient(ctx, ['#9ad8ff', '#aee0ff', '#c2e8ff', '#d6eeff', '#e8f0ff', '#fff6d8', '#fff0c0', '#ffe8a8']);
-    for (let y = 120; y < H; y += 8) { R(ctx, '#7fe07a', 0, y, W, 5); R(ctx, '#5ab860', 0, y + 5, W, 3); }
-    for (let i = 0; i < 12; i++) ctx.drawImage(PLANT, 10 + i * 26, 108 + (i % 2) * 6);
-    R(ctx, P.k, 190, 66, 70, 50); R(ctx, '#e03b3b', 191, 67, 68, 48); for (let k = 0; k < 20; k++) R(ctx, '#8a2020', 188 + k * 1.5, 66 - k, 76 - k * 3, 1);
-    R(ctx, '#ffffff', 216, 90, 18, 26); R(ctx, P.k, 224, 90, 2, 26);
-    R(ctx, P.k, 80, 72, 70, 22); R(ctx, '#ffe0a0', 81, 73, 68, 20); drawStr('FOR SALE', 99, 76, '#6a4428', 1); drawStr(FARM_PRICE + ' COINS', 91, 84, '#6a4428', 1); R(ctx, P.k, 112, 94, 3, 24);
-    ctx.drawImage(LEGENDS[1].img, 160, 100);
-  } else {
+    const pan = Math.min(60, t * 0.25);
+    for (let y = 118; y < H; y += 8) { R(ctx, '#7fe07a', 0, y, W, 5); R(ctx, '#5ab860', 0, y + 5, W, 3); }
+    for (let i = 0; i < 16; i++) ctx.drawImage(PLANT, 10 + i * 26 - pan, 106 + (i % 2) * 6 + Math.sin(frame / 20 + i) * 1);
+    const bx = 220 - pan; R(ctx, P.k, bx, 66, 70, 50); R(ctx, '#e03b3b', bx + 1, 67, 68, 48); for (let k = 0; k < 20; k++) R(ctx, '#8a2020', bx - 2 + k * 1.5, 66 - k, 76 - k * 3, 1); R(ctx, '#ffffff', bx + 26, 90, 18, 26); R(ctx, P.k, bx + 34, 90, 2, 26);
+    R(ctx, P.k, 100 - pan, 70, 72, 24); R(ctx, '#ffe0a0', 101 - pan, 71, 70, 22); text('FOR SALE', 118 - pan, 74, '#6a4428'); text(FARM_PRICE + ' COINS', 110 - pan, 84, '#6a4428'); R(ctx, P.k, 134 - pan, 94, 3, 26);
+    ctx.drawImage(LEGENDS[1].img, 70, 100 + (frame % 40 < 20 ? 0 : 1));
+    for (let i = 0; i < 4; i++) { const x = Math.min(20 + i * 12, -60 + t * 0.8 + i * 12); ctx.drawImage(PLAYER[i][x < 20 + i * 12 ? 1 + Math.floor(frame / 8) % 2 : 0], x, 104); }
+    if (t > 400 && frame % 10 < 5) for (let k = 0; k < 3; k++) R(ctx, '#ff9ab8', 26 + k * 12 + Math.sin(frame / 5 + k) * 2, 94 - (t % 40) / 4, 3, 3);
+  } else { // the journey: the crew walks the world map toward the farm
     if (!mapCanvas) mapCanvas = buildMapCanvas();
-    ctx.drawImage(mapCanvas, -40, 0);
-    for (let i = 0; i < 4; i++) ctx.drawImage(PLAYER[i][Math.floor(frame / 12 + i) % 2 ? 1 : 0], 30 + i * 12, 112);
+    const prog = Math.min(1, t / 440), seg = prog * (MAP_NODES.length - 1), si = Math.min(MAP_NODES.length - 2, Math.floor(seg)), f = seg - si;
+    const a = MAP_NODES[si], b2 = MAP_NODES[si + 1], px = a.x + (b2.x - a.x) * f, py = a.y + (b2.y - a.y) * f;
+    const ox = Math.round(W / 2 - px);
+    ctx.fillStyle = '#1c3a6e'; ctx.fillRect(0, 0, W, H); ctx.drawImage(mapCanvas, ox, 0);
+    for (let i = 0; i < 4; i++) ctx.drawImage(PLAYER[i][1 + Math.floor((frame + i * 4) / 8) % 2], px + ox - 20 + i * 9, py - 22 + (i % 2) * 2);
+    const farm = MAP_NODES[MAP_NODES.length - 1]; if (frame % 30 < 20) text('THE FARM', farm.x + ox - 14, farm.y - 20, '#ffd84a');
   }
-  R(ctx, 'rgba(42,24,56,.92)', 0, 0, W, 22); text(pg.title, W / 2, 4, '#c8ffa0', 2, 'center');
-  R(ctx, 'rgba(42,24,56,.92)', 0, H - 38, W, 38);
-  wrap(pg.text, 8, H - 33, 76, '#ffffff');
-  text('SPACE: NEXT   ESC: SKIP', W - 4, H - 9, '#b0a8c0', 1, 'right');
-  text((storyPage + 1) + '/' + STORY.length, 6, H - 9, '#b0a8c0');
+  camX = saved;
+  // letterbox bars + title + dialogue box with typewriter text
+  R(ctx, '#140c20', 0, 0, W, 18); R(ctx, '#140c20', 0, H - 40, W, 40);
+  text(['THE CREW', 'THEN IT HAPPENED', 'A DREAM', 'THE PLAN'][sc], W / 2, 5, '#c8ffa0', 1, 'center');
+  const line = STORY[sc].lines.filter(l => l[0] <= t).pop();
+  if (line) {
+    const who = typeof line[1] === 'number' ? LOOKS[line[1]].name : line[1], col = typeof line[1] === 'number' ? SHIRTS[line[1]] : '#ff9ab8';
+    const shown = line[2].slice(0, Math.floor((t - line[0]) / 1.5));
+    if (typeof line[1] === 'number') ctx.drawImage(PLAYER[line[1]][0], 6, H - 36);
+    text(who + ':', 26, H - 34, col); text(shown, 26, H - 24, '#ffffff');
+    if (shown.length < line[2].length && frame % 4 === 0) tone(700 + Math.random() * 200, 0.02, 'square', 0.015);
+  }
+  text('SPACE NEXT   ESC SKIP', W - 4, H - 9, '#6a6080', 1, 'right');
+  for (let i = 0; i < STORY.length; i++) R(ctx, i === sc ? '#c8ffa0' : '#4a3a60', 6 + i * 8, H - 8, 6, 3);
 }
 
 // ============================================================
@@ -2779,10 +2831,29 @@ function getName() {
   try { localStorage.setItem('kq_name', n); } catch (e) {}
   return n;
 }
-function showSave() {
-  $('save').textContent = save.spots || save.coins ? 'YOUR STASH: ' + save.coins + ' HASH COINS · SMOKE SPOTS ' + Math.min(save.spots, SPOTS_TO_FARM) + '/' + SPOTS_TO_FARM + (save.farm ? ' · FARM OWNER' : '') : 'NEW GAME - SAVE UP ' + FARM_PRICE + ' HASH COINS FOR YOUR OWN POT FARM';
+let slotSel = 0;
+function renderSlots() {
+  const box = $('slots'); box.innerHTML = '';
+  for (let i = 1; i <= SLOT_COUNT; i++) {
+    const d = readSlot(i), b = document.createElement('button');
+    b.className = d ? 'slot' : 'slot empty';
+    b.innerHTML = d
+      ? '<b>SAVE ' + i + '</b><span>SMOKE SPOTS ' + Math.min(d.spots || 0, SPOTS_TO_FARM) + '/' + SPOTS_TO_FARM + ' &middot; ' + (d.coins || 0) + ' HASH COINS' + (d.farm ? ' &middot; FARM OWNER' : '') + '</span><small>CONTINUE' + (d.played ? ' &middot; LAST PLAYED ' + new Date(d.played).toLocaleDateString() : '') + '</small>'
+      : '<b>SAVE ' + i + '</b><span>EMPTY</span><small>NEW GAME</small>';
+    b.onclick = () => chooseSlot(i);
+    box.appendChild(b);
+    if (d) { const x = document.createElement('a'); x.className = 'del'; x.textContent = 'DELETE SAVE ' + i; x.onclick = () => { if (x.dataset.sure) { localStorage.removeItem('kq_save_v2_s' + i); renderSlots(); } else { x.dataset.sure = 1; x.textContent = 'CLICK AGAIN TO DELETE SAVE ' + i; } }; box.appendChild(x); }
+  }
 }
-showSave();
+function chooseSlot(i) {
+  slotSel = i; loadSlot(i);
+  $('slotPanel').style.display = 'none'; $('modePanel').style.display = 'block';
+  $('slotLabel').textContent = (readSlot(i) ? 'CONTINUING SAVE ' : 'NEW GAME ON SAVE ') + i;
+  $('err').textContent = urlRoom ? 'ENTER YOUR NAME AND PRESS JOIN' : '';
+}
+function showSave() {}
+$('back').onclick = () => { $('modePanel').style.display = 'none'; $('slotPanel').style.display = 'block'; renderSlots(); };
+renderSlots();
 function startGame() {
   initAudio();
   $('menu').style.display = 'none';
@@ -2790,7 +2861,7 @@ function startGame() {
   running = true;
   if (Net.online && Net.phase === 'play') startLevel(Net.level);
   else if (Net.online && Net.phase === 'shop') { results = { made: false, earned: 0, lost: 0, spotBonus: 0, ultraBonus: 0, cooked: 0, kills: 0, best: 0, msg: 'CREW IS SHOPPING - JOIN THEM' }; state = 'results'; }
-  else if (!save.intro && !Net.online) { state = 'story'; storyPage = 0; }
+  else if (!save.intro && !Net.online) { state = 'story'; storyPage = 0; storyT = 0; }
   else openMap();
   if (Net.online) setTimeout(() => { banner = { t: 150, a: 'ROOM CODE: ' + Net.code, b: 'ALWAYS ON THE MAP - ESC TO COPY THE INVITE LINK' }; }, 50);
   requestAnimationFrame(loop);
@@ -2809,9 +2880,9 @@ $('join').onclick = () => {
   Net.name = getName(); goOnline({ t: 'join', code, name: Net.name });
 };
 $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('join').click(); });
-$('reset').onclick = () => { if ($('reset').dataset.sure) { save = defaultSave(); persist(); showSave(); $('reset').textContent = 'SAVE RESET'; delete $('reset').dataset.sure; } else { $('reset').dataset.sure = 1; $('reset').textContent = 'CLICK AGAIN TO WIPE YOUR SAVE'; } };
+if ($('reset')) $('reset').onclick = () => { if ($('reset').dataset.sure) { save = defaultSave(); persist(); showSave(); $('reset').textContent = 'SAVE RESET'; delete $('reset').dataset.sure; } else { $('reset').dataset.sure = 1; $('reset').textContent = 'CLICK AGAIN TO WIPE YOUR SAVE'; } };
 const urlRoom = new URLSearchParams(location.search).get('room');
-if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('err').textContent = 'ENTER YOUR NAME AND PRESS JOIN'; }
+if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
 window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, K, remotes, Net, startLevel, toResults };

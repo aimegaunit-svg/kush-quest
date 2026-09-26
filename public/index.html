@@ -29,6 +29,12 @@
   button.alt { background:#7a2fc0; box-shadow:0 5px 0 #4a1a7a; }
   button.gold { background:#d99a12; box-shadow:0 5px 0 #8a5f06; }
   .row { display:flex; gap:10px; } .row > * { flex:1; }
+  .slot { display:block; text-align:left; background:#3a2a58; box-shadow:0 5px 0 #20143a; padding:12px 14px; }
+  .slot b { display:block; font-size:12px; color:#c8ffa0; margin-bottom:6px; }
+  .slot span { display:block; font-size:9px; color:#fff; line-height:1.6; }
+  .slot small { display:block; font-size:8px; color:#ffd84a; margin-top:6px; }
+  .slot.empty { background:#2a1f40; } .slot.empty span { color:#8a809a; }
+  .del { display:block; text-align:right; font-size:7px; color:#8a6a80; cursor:pointer; margin:6px 0 2px; }
   #err { color:#ff6b6b; font-size:10px; min-height:14px; margin-top:14px; line-height:1.6; }
   .help { font-size:8px; color:#9f8fc0; margin-top:22px; line-height:2; }
   #touch { position:fixed; inset:auto 0 0 0; display:none; justify-content:space-between; padding:14px; z-index:4; pointer-events:none; }
@@ -44,14 +50,21 @@
   <div class="panel">
     <h1>KUSH QUEST</h1>
     <div class="sub">ROAD TO THE FARM</div>
-    <div id="save" class="sub" style="color:#c8ffa0;font-size:8px;margin-top:-18px"></div>
-    <label for="name">YOUR NAME</label>
-    <input id="name" maxlength="10" placeholder="STONER" autocomplete="off">
-    <button id="solo" class="gold">PLAY SOLO</button>
-    <button id="create">CREATE ROOM (ONLINE)</button>
-    <div class="row">
-      <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" style="margin-top:12px">
-      <button id="join" class="alt">JOIN</button>
+    <div id="slotPanel">
+      <div id="slotHint" class="sub" style="color:#c8ffa0;font-size:9px;margin:-12px 0 14px"></div>
+      <div id="slots"></div>
+    </div>
+    <div id="modePanel" style="display:none">
+      <div id="slotLabel" class="sub" style="color:#c8ffa0;font-size:9px;margin:-12px 0 6px"></div>
+      <label for="name">YOUR NAME</label>
+      <input id="name" maxlength="10" placeholder="STONER" autocomplete="off">
+      <button id="solo" class="gold">PLAY SOLO</button>
+      <button id="create">CREATE ROOM (ONLINE)</button>
+      <div class="row">
+        <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" style="margin-top:12px">
+        <button id="join" class="alt">JOIN</button>
+      </div>
+      <button id="back" class="alt" style="background:#4a3a60;box-shadow:0 5px 0 #2a1838">&larr; BACK TO SAVES</button>
     </div>
     <div id="err"></div>
     <div class="help">
@@ -59,7 +72,6 @@
       SWORD: CLICK / J (3-HIT COMBO) &nbsp; THROW: RIGHT-CLICK / K<br>
       SWITCH SWORD: Q / WHEEL &nbsp; SWITCH THROW: R &nbsp; BAG: TAB<br>
       MUNCHIES: E &nbsp; EMOTES: 1-4 &nbsp; MUSIC: M &nbsp; SHOP (ON MAP): H &nbsp; FULLSCREEN: F<br>
-      <a id="reset" style="color:#6a6080;cursor:pointer">RESET SAVE</a>
     </div>
   </div>
 </div>

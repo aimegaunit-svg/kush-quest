@@ -82,6 +82,7 @@
       e.preventDefault();
     }, { passive: false });
     canvas.addEventListener('touchend', () => { joy = null; mouse.down = false; }, { passive: false });
+    canvas.addEventListener('touchcancel', () => { joy = null; mouse.down = false; }, { passive: false });
 
     function pilotAxes() {
       let dx = 0, dy = 0;
@@ -90,7 +91,7 @@
       if (keys.has('w') || keys.has('arrowup')) dy -= 1;
       if (keys.has('s') || keys.has('arrowdown')) dy += 1;
       if (joy) { dx = joy.dx; dy = joy.dy; }
-      const boost = keys.has(' ') || keys.has('shift');
+      const boost = keys.has(' ') || keys.has('shift') || (joy && Math.hypot(joy.dx, joy.dy) > 0.85);
       return { dx, dy, boost };
     }
 
@@ -252,6 +253,16 @@
       ctx.fillStyle = st.fuel < 0.3 ? '#f55' : '#ffd';
       ctx.fillText('Fuel ' + Math.floor(st.fuel * 100) + '%', W - 4, 10);
       ctx.fillText('Hits ' + st.hits, W - 4, 20);
+      if (T.isTouchDevice) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(0, 0, W / 2, H);
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); ctx.setLineDash([]);
+        ctx.textAlign = 'center'; ctx.font = 'bold 8px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText('DRAG TO FLY', W / 4, H - 6);
+        ctx.fillText('TAP+DRAG TO AIM/FIRE', W * 0.75, H - 6);
+        if (joy) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.arc(joy.cx, joy.cy, 16, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(joy.cx + joy.dx * 16, joy.cy + joy.dy * 16, 5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+        ctx.restore();
+      }
     }
 
     function finish() {

@@ -249,6 +249,28 @@
     };
   }
 
+  // ---------------------------------------------------------------------
+  // Touch affordances: every mini-game runs with only invisible tap-zones by default, which
+  // is unusable for a first-time phone player. isTouchDevice lets each game decide whether to
+  // draw its zone labels; drawTouchZones is a shared renderer for "this rectangle of the canvas
+  // does X" labeled bars, semi-transparent so they don't hide the game, brighter while held.
+  // ---------------------------------------------------------------------
+  const isTouchDevice = (typeof window !== 'undefined') && (('ontouchstart' in window) || (navigator && navigator.maxTouchPoints > 0));
+  function drawTouchZones(ctx, zones) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 9px monospace';
+    for (const z of zones) {
+      ctx.fillStyle = z.active ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.11)';
+      ctx.fillRect(z.x, z.y, z.w, z.h);
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+      ctx.strokeRect(z.x + 0.5, z.y + 0.5, z.w - 1, z.h - 1);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(z.label, z.x + z.w / 2, z.y + z.h / 2 + 3);
+    }
+    ctx.restore();
+  }
+
   window.Transit = {
     BASE_W, BASE_H,
     makeCanvas, autoScale,
@@ -258,6 +280,7 @@
     makeSwapPool, makeSwapRunner,
     makeResultsScreen,
     tone, noise,
-    makeNet
+    makeNet,
+    isTouchDevice, drawTouchZones
   };
 })();

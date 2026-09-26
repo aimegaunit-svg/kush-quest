@@ -60,12 +60,33 @@
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
 
+    // ---- touch controls: left half of the canvas = left paddle, right half = right paddle ----
+    const touch = { left: false, right: false, fend: false };
+    function touchZoneAt(x, y) {
+      if (y < H * 0.15) return 'fend';
+      return x < W / 2 ? 'left' : 'right';
+    }
+    function onTouch(e) {
+      e.preventDefault();
+      touch.left = touch.right = touch.fend = false;
+      const r = canvas.getBoundingClientRect();
+      for (const t of e.touches) {
+        const x = (t.clientX - r.left) / r.width * W, y = (t.clientY - r.top) / r.height * H;
+        touch[touchZoneAt(x, y)] = true;
+      }
+    }
+    function onTouchEnd(e) { e.preventDefault(); if (e.touches.length === 0) { touch.left = touch.right = touch.fend = false; } else onTouch(e); }
+    canvas.addEventListener('touchstart', onTouch, { passive: false });
+    canvas.addEventListener('touchmove', onTouch, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
     function myInputs() {
       // Solo: A = left paddle, D = right paddle (also arrow keys as alt).
       // 2p online each seat sends its own single paddle; here we still read both for solo.
-      const left = keys.has('a') || keys.has('arrowleft');
-      const right = keys.has('d') || keys.has('arrowright');
-      const fend = keys.has(' ') || keys.has('f');
+      const left = keys.has('a') || keys.has('arrowleft') || touch.left;
+      const right = keys.has('d') || keys.has('arrowright') || touch.right;
+      const fend = keys.has(' ') || keys.has('f') || touch.fend;
       return { left, right, fend };
     }
 
@@ -248,6 +269,11 @@
       ctx.textAlign = 'right';
       ctx.fillStyle = st.hits >= 2 ? '#f55' : '#ffd';
       ctx.fillText('Hits ' + st.hits + '/3', W - 4, 10);
+      if (T.isTouchDevice) T.drawTouchZones(ctx, [
+        { x: 0, y: H * 0.15, w: W / 2, h: H * 0.85, label: 'PADDLE L', active: touch.left },
+        { x: W / 2, y: H * 0.15, w: W / 2, h: H * 0.85, label: 'PADDLE R', active: touch.right },
+        { x: 0, y: 0, w: W, h: H * 0.15, label: 'FEND OFF', active: touch.fend },
+      ]);
     }
 
     function finish() {
@@ -260,6 +286,10 @@
       cancelAnimationFrame(raf);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      canvas.removeEventListener('touchstart', onTouch);
+      canvas.removeEventListener('touchmove', onTouch);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchEnd);
     }
 
     raf = requestAnimationFrame(loop);

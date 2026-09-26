@@ -670,18 +670,24 @@ const WEAPONS = [
   { id: 'blunt', name: 'BLUNT BAT', icon: 'blunt', dmg: 2, cd: 22, reach: 34, zr: 12, kb: 3, homer: 1, price: 220, desc: 'HOME RUN! LAUNCHES THEM INTO THEIR BUDDIES' },
 ];
 // environmental weapons: temporary melee pickups that replace your weapon for a few uses, then break
+// v1.1 A3 (scoped): this pickup/uses/drop system IS the brief's "Wild weapon" pool - it already ran on a
+// per-pickup "uses" count, which is close enough to the brief's shared-Resin-currency idea to reuse as-is
+// for this pass. Folded the Dab Saber in here per the earlier scoping call (4 old enviro-weapons + Dab
+// Saber = the Wild pool for now). NOT yet done: a persistent save.wild slot (Wild weapons still reset
+// between levels like before) and spending Resin to refill/reroll one from the shop - flagged as follow-up.
 const ENV_WEAPONS = {
   lid: { id: 'lid', name: 'TRASH-CAN LID', dmg: 2, cd: 20, reach: 26, zr: 16, kb: 1, uses: 4, blockProj: true },
   cone: { id: 'cone', name: 'TRAFFIC CONE', dmg: 2, cd: 26, reach: 42, zr: 14, kb: 1.6, uses: 3 },
   surfboard: { id: 'surfboard', name: 'SURFBOARD', dmg: 2, cd: 24, reach: 30, zr: 30, kb: 1.2, uses: 4 },
   chair: { id: 'chair', name: 'OFFICE CHAIR', dmg: 3, cd: 22, reach: 34, zr: 16, kb: 1.8, uses: 3 },
+  dab: { id: 'dab', name: 'DAB SABER', dmg: 2, cd: 10, reach: 46, zr: 8, crit: 0.25, pierce: 1, uses: 5 },
 };
 const ENV_BY_THEME = { park: 'lid', beach: 'surfboard', suburb: 'cone', city: 'cone', woods: 'lid', hq: 'chair' };
 // v1.1 A2: weapons are no longer individually leveled/bought - each homie's one permanent Core weapon
 // levels 1-10 via save.cores[homie] (see CORE_HOMIE/CORE_WEAPON_ID + coreLevel(), defined near the save
 // code above). wlv() keeps its old (id) signature for every existing call site, but now ignores id and
 // always returns the current homie's Core level, since the only weapon ever equipped IS that Core weapon.
-const wlv = id => coreLevel();
+const wlv = id => id === CORE_WEAPON_ID[CORE_HOMIE[Net.color || 0]] ? coreLevel() : 1;
 const WEAPON_LV3 = { // LV3 unique perks, unlocked on the upgrade to LV3
   puff: 'LV3 PERK: BURN LASTS 2X LONGER + HITS SOMETIMES DROP A SMOKE RING',
   lighter: 'LV3 PERK: BURN SPREADS FURTHER + LEAVES A BURNING FIRE PATCH',
@@ -1183,7 +1189,7 @@ function buildLevel(n, remix) {
     if (zi === chestZone) prop('chest', x0 + 150, 20, ['loot']);
     if (zi === goldZone) prop('crate', x0 + 220, 40, ['gold']);
     if (zi === secretZone) prop('secret', x0 + 40, ZMAX - 8, ['gold', 'nug']);
-    if (zi === 0) item('envweapon', x0 + 90, rz(), 0, ENV_BY_THEME[themeKey] || 'lid'); // one environmental weapon pickup per mission
+    if (zi === 0) item('envweapon', x0 + 90, rz(), 0, rand() < .15 ? 'dab' : (ENV_BY_THEME[themeKey] || 'lid')); // one Wild-weapon pickup per mission - 15% chance of the rarer Dab Saber
     // the walk to the next fight: coins, nugs, rings, bonuses
     const gx = x0 + ZW + 10;
     coinArc(gx, rz(), 5);

@@ -142,6 +142,7 @@ function musicTick(dt, key, ultra) {
 const keys = {}, pressed = {};
 let mouse = { x: 0, y: 0, click: false };
 function kd(e) {
+  e.stopPropagation(); // the drive owns the keyboard while it runs (keeps e.g. the results SPACE from reaching the map)
   const k = e.key.toLowerCase(); if (!keys[k]) pressed[k] = true; keys[k] = true;
   if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'tab'].includes(k)) e.preventDefault();
   initAudio();
@@ -269,7 +270,7 @@ function pickDriver(crew, hostId) {
   for (const p of crew) if ((driveCount[p.id] || 0) < (driveCount[best] || 0)) best = p.id;
   return best;
 }
-const nameOf = id => { const p = S.crew.find(c => c.id === id); return p ? p.name : '?'; };
+const nameOf = id => { const p = S.crew.find(c => c.id === id); if (p) { (S.names = S.names || {})[id] = p.name; return p.name; } return (S.names && S.names[id]) || '?'; };
 const mySeat = () => S.seats ? S.seats.indexOf(S.me) : 0;
 
 // ---------------- net ----------------
@@ -352,7 +353,7 @@ function start(opts) {
     if (opts.vehicle && online && isNetHost()) hostStart(opts.vehicle);
   }
   makeCanvas(opts.mount, opts.scale);
-  addEventListener('keydown', kd); addEventListener('keyup', ku); cv.addEventListener('mousedown', md); addEventListener('mousemove', mm);
+  addEventListener('keydown', kd, true); addEventListener('keyup', ku); cv.addEventListener('mousedown', md); addEventListener('mousemove', mm);
   cv.addEventListener('touchstart', ts, { passive: false }); cv.addEventListener('touchend', te, { passive: false });
   last = performance.now(); raf = requestAnimationFrame(loop);
   const handle = { cleanup: () => { if (S && S.handle === handle) stop(); }, _deliver: deliver };
@@ -373,6 +374,7 @@ function hostStart(forceCar) {
 }
 function applyStart(p) {
   S.car = p.car; S.seats = p.seats; S.seed = p.seed;
+  if (p.crew) { S.names = S.names || {}; for (const c of p.crew) S.names[c.id] = c.name; }
   if (p.crew) S.crew = p.crew;
   S.mode = 'card'; S.cardT = 4;
 }
@@ -593,7 +595,7 @@ function applySwap(p) {
   S.banner = { txt: p.ev, sub: 'NEW DRIVER: ' + nameOf(p.seats[0]), col: '#ffd23f', t: 3 };
   if (mine) { loadFull(p.full); S.youDrive = 2.5; }
   S.swapped = true; S.drivers = [S.drivers[0], p.seats[0]];
-  S.auth = mine; S.inq = []; S.out = []; S.tgt = null;
+  S.auth = mine; S.inq = []; S.out = []; S.tgt = null; S.lastSt = S.t; // fresh silence timer for the new driver
 }
 function eventSound(name) {
   let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
@@ -927,7 +929,7 @@ function finish() {
 }
 function stop() {
   engineStop(); cancelAnimationFrame(raf);
-  removeEventListener('keydown', kd); removeEventListener('keyup', ku); removeEventListener('mousemove', mm);
+  removeEventListener('keydown', kd, true); removeEventListener('keyup', ku); removeEventListener('mousemove', mm);
   for (const k in keys) keys[k] = false;
   destroyCanvas(); S = null;
 }

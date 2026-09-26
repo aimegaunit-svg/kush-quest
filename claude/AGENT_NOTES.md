@@ -1,7 +1,7 @@
 # AGENT_NOTES
 
 ## Hotbox Highway / FIX_STEPS Step 3 (drive agent, owns ONLY public/drive.js + public/drive-test.html)
-**Status: solo verified in the browser; online built and waiting on Step 2 before a real multi-tab test.**
+**Status: Step 3 DONE. Verified solo, and online with 2, 3 and 4 real game clients (the actual `index.html`, after Step 2).**
 
 `drive.js` has been rewritten. The old version only drew the road and the HUD. The new one is a full
 game that keeps the same contract: `Drive.start({from,to,world,cooked,crew,save,net,onDone,mount,scale})`
@@ -33,7 +33,7 @@ returns `{cleanup}`, and `Drive.needsDrive()` is unchanged. It draws its own can
   song, and a trippy version at Ultra).
 - Step 3.12: `needsDrive` and `save.drives` use the key `min-max`.
 
-**Online (Step 3.6). Code is written, and a real 2-4 tab test is waiting on Step 2:**
+**Online (Step 3.6). Verified in the real game after Step 2 (Playwright, separate browser contexts, local server.js):**
 - The driver's game runs the drive. It seeds the road, sends 10 snapshots a second, and havoc seats send
   inputs. The swap hands the full state to the new driver. If the driver goes quiet for 2.5 seconds, or
   a `'pl'` message arrives, the room host's game takes over. Driver order: the host drives the first
@@ -48,7 +48,25 @@ returns `{cleanup}`, and `Drive.needsDrive()` is unchanged. It draws its own can
   `cooked` is this player's own Cooked. Each player gets the full `coins` (being busted already took
   10 from everyone).
 
-**Not done yet:** the real multi-tab online test (waiting on Step 2) and the GARAGE (Step 9, after Step 3).
+**Real online test results** (host launches the map's Hotbox node, and every client gets `transit-start`):
+- 3 players: the vote went 2-1 for the Shitbox and every client started together with seats [drv, right, -, left].
+  At the swap the left window became the driver and the drive handed over its full state. The new
+  driver's tab was then closed: the host's game took over within about 2.5 seconds, the drive finished,
+  and the awards named both drivers. Everyone went back to the map with coins and Cooked applied and
+  `save.drives` set.
+- 2 players and 4 players: the swap rotation and handoff work, the drive finishes, and players go back
+  to the map.
+- Two bugs found by this test and fixed: (1) the old driver's silence timer wasn't reset at the swap, so
+  the host "took over" from the real new driver; (2) the SPACE that closes the results also reached
+  `game.js`, which relaunched the drive from the map. The drive now captures keydown while it runs.
+- For the main session: a `game.js` page error ("Cannot read properties of undefined (reading 'x')")
+  showed up on the non-host clients in 2 of 6 online runs. It wasn't from `drive.js` and I couldn't
+  reproduce it reliably. It's probably in the map or remote-player code.
+- Drop-in mid-drive uses Step 2's own "crew is driving" wait screen. `Drive.start({spectate:true})`
+  also exists if you'd rather have late joiners watch the drive.
+
+**Next:** the drive side of the GARAGE (Step 9.4) inside `drive.js` only: reading `save.vanUp` and the
+paint jobs, and showing cosmetics online. The GARAGE tab UI in the shop is `game.js`, so it's the main session's.
 
 ## Session wrap-up: A2-A6 + B1-B3 all landed and merged (main session, latest)
 This session ran 4 subagents in parallel git worktrees (A6 enemy tricks, B1 world/level rebuild, A2/A3

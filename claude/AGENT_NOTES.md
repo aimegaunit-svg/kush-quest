@@ -321,3 +321,45 @@ wiring the `t:'d'` relay/router once it exists) is the one remaining piece, call
    there is no live relay in this checkout to test against yet.
 3. Hook-up into the world-select map / `game.js` transition points is explicitly the main
    session's job (per `PLAN.md` §6), not done here.
+
+---
+
+## Mobile UX fix pass (post-playtest bug reports) — landed, commit d88bbdc
+
+The user actually playtested on an iPhone and reported two real bugs mid-session:
+1. The up/down/left/right d-pad buttons "feel bad" and occasionally trigger iOS's
+   copy/paste-selection callout.
+2. Spamming the attack button on mobile could zoom the page in via the pinch/double-tap
+   gesture, with no way back to normal zoom — described as a must-fix.
+
+**Fixed:**
+- Replaced the 4-button d-pad in `public/index.html` (`#touch` first `.grp`) with a single
+  drag joystick (`#joyBase`/`#joyKnob`). The wiring lives in `public/game.js` right after the
+  `#touch button` pointerdown/pointerup block (grep `virtual joystick`). It reuses the existing
+  `K.left/right/up/down` booleans via `press()` for movement during `play`/`sitting` (8-way via
+  angle sectors, so diagonals work), and the existing single-shot `K.nav` pulse for
+  menu/map/lobby/story/inventory/results screens — zero changes to movement physics or menu
+  cursor code. Verified with Playwright (real `PointerEvent` drag, iPhone 13 emulation): dragging
+  right in `play` moved `me.x` 40 → 83.8 and correctly cleared `K.right` on release.
+- Added document-level zoom prevention in `public/index.html` (inline `<script>` right after the
+  canvas, before the game scripts load): `gesturestart/change/end` preventDefault (Safari pinch),
+  a `touchend` double-tap timing guard (≤350ms), `touchmove` preventDefault for 2+ finger touches,
+  and a `visualViewport` `resize` listener that snaps the meta viewport back to 1x if a zoom ever
+  slips through anyway (belt-and-suspenders — there should never be a stuck-zoomed state now).
+  The old `<meta viewport maximum-scale=1,user-scalable=no>` alone is known to be unreliable on
+  iOS Safari once double-tap/fast-multitouch happens, which matches exactly what the user hit.
+  Verified with Playwright: 6 rapid taps on the attack button, `visualViewport.scale` stayed 1.
+- iOS copy/paste callout suppression (`-webkit-touch-callout:none`, `user-select:none`) was
+  already broadly applied to `button, #touch` in the CSS; the new `#joyBase`/`#joyKnob` carry the
+  same properties so the joystick itself can't reintroduce the issue.
+
+**Not done / scoped out:** no further mobile UX polish beyond these three explicit asks — didn't
+touch the other touch-control buttons (attack/jump/weapon/quick/throw/inv/pause/emote) beyond
+removing the 4 d-pad buttons they used to sit next to.
+
+**Testing:** `node --check public/game.js` (pass), then two Playwright passes — one with iPhone 13
+device emulation driving the full story→map→startLevel→brief→play flow and dragging the joystick
+with real `PointerEvent`s, one on a plain desktop viewport confirming `ArrowRight` keyboard
+movement still works unaffected (x: 40 → 80.1). No new console/page errors in either pass (the
+only reported "error" was the sandbox's own outbound network block on unrelated Google telemetry
+domains — not a game issue). Pushed to `main`; Render auto-deploys from there.

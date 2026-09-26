@@ -1112,13 +1112,13 @@ function buildLevel(n) {
 let SAVE_KEY = 'kq_save_v2_s1';
 const SLOT_COUNT = 3;
 try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.getItem('kq_save_v2_s1')) localStorage.setItem('kq_save_v2_s1', old); } catch (e) {}
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [] }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [] }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
   SAVE_KEY = 'kq_save_v2_s' + i;
   save = { ...defaultSave(), ...(readSlot(i) || {}) };
-  save.throws = { papers: 0, bombs: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0);
+  save.throws = { papers: 0, bombs: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
   if (!Array.isArray(save.skills)) save.skills = BOSSES.slice(0, Math.min(save.spots || 0, BOSSES.length)).map(b => b[2]);
 }
@@ -1153,6 +1153,22 @@ function startLevel(n) {
   banner = null;
   if (n === 0 && save.spots === 0) me.tipT = 900;
   persist();
+  if (n === LEVELS_PER_WORLD && !save.sawMidpoint) {
+    save.sawMidpoint = true; persist();
+    showDialogue([
+      { name: 'GRANDMA KUSH', text: 'SWEETIES, BUZZKILL CORP JUST MADE AN OFFER ON MY FARM.' },
+      { name: 'GRANDMA KUSH', text: "THEY WANT TO PAVE IT INTO A PARKING LOT FOR MR. KILLJOY'S NEW OFFICE." },
+      { name: 'GRANDMA KUSH', text: "WE GOTTA BEAT THEM TO IT. KEEP STACKING THOSE HASH COINS." },
+    ]);
+  }
+  if (n === LEVELS_PER_WORLD * (WORLDS.length - 1) && !save.sawKilljoy) {
+    save.sawKilljoy = true; persist();
+    showDialogue([
+      { name: 'MR. KILLJOY', text: "WELL WELL. LOOK WHO MADE IT TO MY TOWER." },
+      { name: 'MR. KILLJOY', text: "GRANDMA KUSH'S LITTLE FARM IS ALREADY MINE ON PAPER." },
+      { name: 'MR. KILLJOY', text: 'CLIMB ALL YOU WANT. THE PAPERWORK SIGNS ITSELF AT SUNSET.' },
+    ]);
+  }
   for (const r of remotes.values()) { r.tx = -1000; r.x = -1000; }
   for (const c of Net.pendingCollected) applyCollected(c.id, c.l);
   Net.pendingCollected = [];
@@ -1256,14 +1272,14 @@ function hurt(dmg = 1, cookedLoss = 0, fromX) {
 }
 function knockedOut() {
   if (Net.online && remotes.size > 0 && !me.down) {
-    me.down = 480; me.hp = 0; me.vx = me.vz = 0; me.h = 0; me.inv = 999; me.revive = 0;
+    me.down = 480; me.hp = 0; me.vx = me.vz = 0; me.h = 0; me.inv = 999; me.revive = 0; save.stats.deaths++;
     banner = { t: 160, a: 'YOU GOT BEAT UP!', b: 'A HOMIE CAN REVIVE YOU - STAND NEXT TO YOU + HOLD ' + KL('munchie') };
     SFX.hurt(); return;
   }
   return knockedOutFinal();
 }
 function knockedOutFinal() {
-  me.down = 0;
+  me.down = 0; save.stats.deaths++;
   const loss = Math.min(save.coins, 40, Math.max(5, Math.floor(save.coins * 0.1)));
   save.coins -= loss; me.lost += loss;
   me.hp = maxHp(); me.x = camX + W / 2; me.z = ZMAX / 2; me.h = 140; me.vx = me.vz = me.vh = 0; me.inv = 150; me.combo = 0; me.puffed = false;
@@ -1393,7 +1409,7 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
 }
 function onKill(e, by) { // everyone: death effect; the one who landed it gets the goods
   e.state = 5; e.t = Math.max(e.t, 40);
-  if (e.boss) { e.t = 90; hitstop = 20; shake = 16; for (const id of e.summons || []) { const a = lvl.enemies[id]; if (a.alive && a.spawned) { a.alive = false; puff(a.x, sy(a.z) - 8, 8, ['#ffffff'], 1); } } banner = { t: 160, a: e.bname + ' DEFEATED!', b: '' }; setTimeout(() => learnSkill(e.skill), 1600); lvl.boss = null; }
+  if (e.boss) { save.stats.bossesBeaten++; e.t = 90; hitstop = 20; shake = 16; for (const id of e.summons || []) { const a = lvl.enemies[id]; if (a.alive && a.spawned) { a.alive = false; puff(a.x, sy(a.z) - 8, 8, ['#ffffff'], 1); } } banner = { t: 160, a: e.bname + ' DEFEATED!', b: '' }; setTimeout(() => learnSkill(e.skill), 1600); lvl.boss = null; }
   puff(e.x, sy(e.z) - 10, 8, ['#ffffff', '#e8e4f4', '#c8ffa0'], 1.4); bleed(e.x, e.z, e.h, 8, e.vx > 0 ? 1 : -1);
   const zn = lvl.zones[lvl.zi];
   if (zn && lvl.locked && zn.ids.every(i => { const o = lvl.enemies[i]; return o === e || !o.alive || o.state === 5 || !o.spawned && o.skipped; }) && zn.ids.filter(i => !lvl.enemies[i].spawned && lvl.enemies[i].alive).length === 0) { hitstop = 14; shake = 10; }
@@ -1486,9 +1502,11 @@ function updateShots() {
 function update() {
   if (paused && !menu) return;
   frame++;
+  if (frame % 600 === 0 && running) { save.stats.playSec += 10; }
   if (banner && --banner.t <= 0) banner = null;
   const clearIn = () => { K.jumpPressed = K.enterPressed = K.attackPressed = K.throwPressed = false; K.nav = nextNav(); K.escPressed = false; if (state !== 'results') K.upPressed = K.downPressed = false; };
   if (updateTrans()) { clearIn(); return; }
+  if (dialog) { updateDialogue(); clearIn(); return; }
   if (menu) { updateMenu(); clearIn(); if (!Net.online || !menu) return; }
   if (state === 'story') { updateStory(); clearIn(); return; }
   if (state === 'lobby') { updateLobby(); clearIn(); return; }
@@ -1704,6 +1722,7 @@ function toResults() {
   const spotBonus = made ? 50 + lvl.n * 10 : 0;
   addCoins(ultraBonus + spotBonus);
   if (made) save.spots = Math.max(save.spots, lvl.n + 1);
+  save.stats.kills += me.kills; save.stats.bestCombo = Math.max(save.stats.bestCombo, me.best);
   persist();
   results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs };
   state = 'results'; shopSel = 0; hurryT = 0; banner = null;
@@ -2267,7 +2286,7 @@ function drawMenu() {
   if (menu.page === 'controls') text(rebinding ? 'PRESS ANY KEY (ESC CANCELS)' : rebindWarn && rebindWarn.t-- > 0 ? rebindWarn.m : 'CLICK A ROW, THEN PRESS THE NEW KEY. ARROWS + MOUSE ALWAYS WORK', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
   if (menu.msg) text(menu.msg, W / 2, y0 + h + 16, '#c8ffa0', 1, 'center');
 }
-function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
+function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
 function drawScene() {
   if (state === 'story') { drawStory(); return; }
   if (state === 'lobby') { draw320(drawLobby); return; }
@@ -2365,8 +2384,10 @@ function drawScene() {
     text('GO', W - 30, 60, '#ffd84a', 2); R(ctx, '#ffd84a', W - 12, 62, 4, 6); R(ctx, '#ffd84a', W - 8, 64, 2, 2);
   }
   if (me.tipT > 0 && state === 'play' && !banner) {
-    ctx.fillStyle = 'rgba(42,24,56,.8)'; ctx.fillRect(40, 176, W - 80, 13);
-    text('WASD MOVE  SPACE JUMP  CLICK HIT  K THROW  TAB BAG', W / 2, 180, '#fff6b0', 1, 'center');
+    const tips = ['WASD MOVE   SPACE JUMP   CLICK / ' + KL('attack') + ' SWING (3-HIT COMBO)', 'AIM WITH YOUR MOUSE   HOLD SHIFT TO RUN + LUNGE   JUMP AGAIN TO FLOAT', KL('throw') + ' OR RIGHT-CLICK TO THROW   ' + KL('munchie') + ' FOR MUNCHIES/REVIVE', 'GET COOKED TO 50%, THEN REACH THE SMOKE SPOT + PRESS SPACE TO CALL THE CREW'];
+    const tip = tips[Math.floor((900 - me.tipT) / 225) % tips.length];
+    ctx.fillStyle = 'rgba(42,24,56,.8)'; ctx.fillRect(Math.max(4, W / 2 - tip.length * 2 - 6), 174, Math.min(W - 8, tip.length * 4 + 12), 13);
+    text(tip, W / 2, 180, '#fff6b0', 1, 'center');
   }
   drawHUD();
   drawChat();
@@ -2503,7 +2524,8 @@ function itemStatus(it) {
   return null;
 }
 function updateShop() {
-  if (results.farmScene) { if (K.enterPressed || K.jumpPressed) { results.farmScene = false; if (results.shopOnly) openMap(); } return; }
+  if (results.statsScreen) { if (K.enterPressed || K.jumpPressed) { results.statsScreen = false; openMap(); } return; }
+  if (results.farmScene) { if (K.enterPressed || K.jumpPressed) { results.farmScene = false; if (results.endingStats) results.statsScreen = true; else if (results.shopOnly) openMap(); } return; }
   if (K.worldPrev || K.worldNext || K.nav === 'left' || K.nav === 'right') { shopTab = (shopTab + (K.worldNext || K.nav === 'right' ? 1 : -1) + SHOP_TABS.length) % SHOP_TABS.length; shopSel = 0; SFX.tick(); }
   K.worldPrev = K.worldNext = false;
   const list = shopEntries();
@@ -2514,7 +2536,8 @@ function updateShop() {
   shopConfirm();
 }
 function shopConfirm() {
-  if (results.farmScene) { results.farmScene = false; if (results.shopOnly) go(openMap); return; }
+  if (results.statsScreen) { results.statsScreen = false; go(openMap); return; }
+  if (results.farmScene) { results.farmScene = false; if (results.endingStats) results.statsScreen = true; else if (results.shopOnly) go(openMap); return; }
   const list = shopEntries();
   const it = list[shopSel];
   if (it.kind === 'quit') { persist(); location.href = location.pathname; return; }
@@ -2538,6 +2561,20 @@ function shopConfirm() {
 }
 function drawShop() {
   ctx.fillStyle = '#1e122c'; ctx.fillRect(0, 0, W, H);
+  if (results.statsScreen) {
+    R(ctx, '#3a1a5a', 0, 0, W, H);
+    text('THE ROAD TO THE FARM', W / 2, 10, '#ffd84a', 2, 'center');
+    text('- CREDITS -', W / 2, 28, '#c8ffa0', 1, 'center');
+    const st = save.stats, rows = [
+      ['TOTAL HASH COINS EARNED', save.coins], ['BUZZKILLS TAKEN DOWN', st.kills], ['BOSSES BEATEN', st.bossesBeaten],
+      ['BEST COMBO', st.bestCombo + 'x'], ['TIMES KNOCKED OUT', st.deaths], ['TIME PLAYED', Math.floor(st.playSec / 60) + 'm ' + (st.playSec % 60) + 's'],
+    ];
+    rows.forEach((rw, i) => { const y = 50 + i * 14; text(rw[0], W / 2 - 90, y, '#ffffff'); text(String(rw[1]), W / 2 + 90, y, '#c8ffa0', 1, 'right'); });
+    text('THANKS FOR PLAYING KUSH QUEST', W / 2, H - 24, '#e4b3ff', 1, 'center');
+    if (frame % 40 < 26) text('CLICK OR PRESS ENTER FOR THE MAP', W / 2, H - 10, '#8a809a', 1, 'center');
+    hot(0, 0, W, H, () => shopConfirm());
+    return;
+  }
   if (results.farmScene) {
     const g = ctx; R(g, '#9ad8ff', 0, 0, W, 120); R(g, '#7fe07a', 0, 120, W, 72);
     for (let i = 0; i < 14; i++) g.drawImage(PLANT, 8 + i * 22, 110 + (i % 2) * 8);
@@ -2894,7 +2931,14 @@ function updateMap() {
       else if (nd.kind === 'gate') { go(() => { setWorld(nd.to); mapSel = 0; Net.send({ t: 'mapsel', i: 0, w: curWorld }); }); }
       else if (nd.kind === 'farm') {
         if (save.farm) { results = { shopOnly: true, farmScene: true }; state = 'results'; }
-        else if (save.coins >= FARM_PRICE) { save.coins -= FARM_PRICE; save.farm = true; persist(); SFX.flag(); results = { shopOnly: true, farmScene: true }; state = 'results'; }
+        else if (save.coins >= FARM_PRICE) {
+          save.coins -= FARM_PRICE; save.farm = true; persist(); SFX.flag();
+          showDialogue([
+            { name: 'GRANDMA KUSH', text: 'YOU DID IT, SWEETIES. THE FARM IS OURS - FOR GOOD THIS TIME.' },
+            { name: 'GRANDMA KUSH', text: "MR. KILLJOY CAN PAVE A PARKING LOT SOMEWHERE ELSE." },
+            { name: 'GRANDMA KUSH', text: 'NOW SIT DOWN AND LET AN OLD LADY ROLL YOU ALL ONE.' },
+          ], () => { results = { shopOnly: true, farmScene: true, endingStats: true }; state = 'results'; });
+        }
         else { banner = { t: 120, a: 'NOT ENOUGH HASH COINS', b: 'THE FARM COSTS ' + FARM_PRICE + ' - YOU HAVE ' + save.coins }; SFX.bump(); }
       }
     }
@@ -2982,9 +3026,34 @@ function drawMap_() {
 // ============================================================
 // Animated intro: four little scenes acted out by the real game sprites, with typewriter dialogue.
 // SPACE skips to the next scene, ESC skips the whole intro.
+// ---- generic dialogue box: portrait + name + typewriter text, used for briefings/cutscenes outside the intro ----
+let dialog = null;
+const DIALOG_COL = { 'GRANDMA KUSH': '#e4b3ff', 'MR. KILLJOY': '#ff5a6a', 'BUZZKILL CORP': '#ff5a6a' };
+function showDialogue(lines, after) { dialog = { lines, i: 0, t: 0, after: after || null }; SFX.tick(); }
+function updateDialogue() {
+  dialog.t++;
+  if (K.jumpPressed || K.enterPressed || K.attackPressed) {
+    const ln = dialog.lines[dialog.i];
+    if (dialog.t < ln.text.length * 1.4) dialog.t = ln.text.length * 1.4; // reveal instantly
+    else { dialog.i++; dialog.t = 0; SFX.tick(); if (dialog.i >= dialog.lines.length) { const a = dialog.after; dialog = null; a && a(); } }
+  }
+  if (K.escPressed) { const a = dialog.after; dialog = null; a && a(); }
+  K.escPressed = false;
+}
+function drawDialogue() {
+  const ln = dialog.lines[dialog.i], shown = ln.text.slice(0, Math.floor(dialog.t / 1.4));
+  ctx.fillStyle = 'rgba(20,12,32,.55)'; ctx.fillRect(0, 0, W, H);
+  R(ctx, P.k, 20, H - 68, W - 40, 58); R(ctx, '#2a1838', 22, H - 66, W - 44, 54); R(ctx, '#c8ffa0', 22, H - 66, W - 44, 1);
+  R(ctx, P.k, 26, H - 62, 26, 26); R(ctx, DIALOG_COL[ln.name] || SHIRTS[ln.color] || '#c070ff', 27, H - 61, 24, 24);
+  text(ln.name.slice(0, 1), 39, H - 56, '#1a1026', 2, 'center');
+  text(ln.name, 58, H - 60, DIALOG_COL[ln.name] || '#ffd84a', 1);
+  wrap(shown, 58, H - 48, 46, '#ffffff');
+  if (dialog.t >= ln.text.length * 1.4 && frame % 40 < 26) text(dialog.i < dialog.lines.length - 1 ? '▼ CONTINUE' : '▼ CLOSE', W - 28, H - 14, '#8a809a', 1, 'right');
+  hot(20, H - 68, W - 40, 58, () => { K.enterPressed = true; updateDialogue(); K.enterPressed = false; });
+}
 const STORY = [
   { len: 540, lines: [[40, 0, 'BEST SMOKE SPOT IN TOWN. NO CAP.'], [200, 1, 'NOTHING COULD EVER RUIN THIS...'], [360, 3, 'PASS IT LEFT, HOMIE.']] },
-  { len: 560, lines: [[60, 'BUZZKILL CORP', 'THIS PARK IS BUZZKILL CORP PROPERTY NOW!'], [230, 'KAREN', 'I AM CALLING THE MANAGER OF THE PARK!'], [390, 2, 'THEY FLATTENED OUR COUCH, BRO!']] },
+  { len: 560, lines: [[60, 'BUZZKILL CORP', 'THIS PARK IS BUZZKILL CORP PROPERTY NOW - ORDERS OF MR. KILLJOY!'], [230, 'KAREN', 'I AM CALLING THE MANAGER OF THE PARK!'], [390, 2, 'THEY FLATTENED OUR COUCH, BRO!']] },
   { len: 520, lines: [[40, 'GRANDMA KUSH', 'MY OLD POT FARM IS FOR SALE, SWEETIES.'], [200, 'GRANDMA KUSH', FARM_PRICE + ' HASH COINS AND IT IS YOURS FOREVER.'], [360, 0, 'A SPOT NOBODY CAN EVER TAKE FROM US...']] },
   { len: 520, lines: [[40, 3, 'SO WE HIT EVERY SMOKE SPOT ON THE WAY...'], [190, 1, 'BEAT DOWN EVERY BUZZKILL...'], [340, 2, 'STACK HASH COINS AND BUY THE FARM. LETS ROLL!']] },
 ];
@@ -3339,5 +3408,5 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, K, remotes, Net, startLevel, toResults };
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, K, remotes, Net, startLevel, toResults };
 })();

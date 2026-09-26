@@ -52,15 +52,66 @@
   @media (pointer:coarse) and (max-height:420px) {
     /* short/landscape phones: shrink the pad so it doesn't eat half the screen */
     #touch { padding:6px; }
-    #touch .grp:first-child { transform:scale(.8); transform-origin:bottom left; }
+    #joyBase { transform:scale(.8); transform-origin:bottom left; }
     #touch .grp:last-child { transform:scale(.8); transform-origin:bottom right; max-width:150px; }
   }
+  /* Virtual joystick (replaces the up/down/left/right button grid) */
+  #joyBase {
+    position:relative; width:120px; height:120px; border-radius:50%;
+    background:rgba(255,255,255,.08); border:3px solid rgba(255,255,255,.35);
+    pointer-events:auto; touch-action:none; -webkit-touch-callout:none; user-select:none;
+    flex-shrink:0;
+  }
+  #joyKnob {
+    position:absolute; width:54px; height:54px; border-radius:50%;
+    left:33px; top:33px; background:rgba(143,240,176,.85); border:2px solid #2a6b3f;
+    box-shadow:0 4px 0 #1d6b2c; pointer-events:none; touch-action:none;
+    transition:left .08s linear, top .08s linear;
+  }
+  #joyBase.dragging #joyKnob { transition:none; }
   #chars button, #names button { min-height:40px; padding:10px 6px; }
 </style>
 </head>
 <body>
 <canvas id="game" width="320" height="192"></canvas>
 <div id="transitMount" style="display:none;position:fixed;inset:0;z-index:15;background:#000;align-items:center;justify-content:center"></div>
+
+<script>
+// Mobile: stop accidental pinch/double-tap zoom (and gesture-based screen resize) at the
+// document level. The <meta viewport> tag's maximum-scale/user-scalable is known to be
+// unreliable on iOS Safari once double-tap or rapid multi-touch happens, so this backs it
+// up with real gesture/touch event prevention plus a fallback that snaps zoom back to 1x
+// if it ever manages to slip through (so there's never "no way to get back to full zoom").
+(function () {
+  // Safari-only pinch gesture events - no-op elsewhere, harmless to listen for.
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+  });
+  // Block the native double-tap-to-zoom gesture (two quick taps anywhere on the page).
+  var lastTouchEnd = 0;
+  document.addEventListener('touchend', function (e) {
+    var now = Date.now();
+    if (now - lastTouchEnd <= 350) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+  // Block pinch-zoom (any 2+ finger move) anywhere on the page, not just the canvas.
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+  // Safety net: if the page ever does end up zoomed (e.g. a gesture that slipped through
+  // before this loaded), snap it back to 1x automatically instead of leaving the user stuck.
+  function snapZoom() {
+    var vv = window.visualViewport;
+    if (!vv || Math.abs(vv.scale - 1) < 0.02) return;
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    var c = meta.getAttribute('content');
+    meta.setAttribute('content', c + ', maximum-scale=1.0');
+    requestAnimationFrame(function () { meta.setAttribute('content', c); });
+  }
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', snapZoom);
+})();
+</script>
 
 <div id="menu">
   <div class="panel">
@@ -99,7 +150,7 @@
 </div>
 
 <div id="touch">
-  <div class="grp" style="display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(2,52px);gap:4px"><span></span><button data-k="up" style="width:52px;height:52px">▲</button><span></span><button data-k="left" style="width:52px;height:52px">◀</button><button data-k="down" style="width:52px;height:52px">▼</button><button data-k="right" style="width:52px;height:52px">▶</button></div>
+  <div id="joyBase"><div id="joyKnob"></div></div>
   <div class="grp" style="flex-wrap:wrap;max-width:180px;align-content:flex-end">
     <button data-k="pause" class="alt" style="width:36px;height:36px;font-size:9px">II</button>
     <button data-k="emote" class="alt" style="width:36px;height:36px;font-size:9px">:)</button>

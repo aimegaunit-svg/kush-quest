@@ -363,7 +363,6 @@ document.querySelectorAll('#touch button').forEach(b => {
   const k = b.dataset.k;
   b.addEventListener('pointerdown', e => {
     e.preventDefault();
-    if (['left', 'right', 'up', 'down'].includes(k)) K.nav = k;
     if (k === 'inv') { if (state !== 'results' && state !== 'story') invOpen = !invOpen; return; }
     if (k === 'pause') { gpDispatch('Escape', true); return; }
     if (k === 'emote') { if (state === 'play') emote((touchEmoteI = (touchEmoteI + 1) % EMOTES.length)); return; }
@@ -379,6 +378,65 @@ document.querySelectorAll('#touch button').forEach(b => {
     press(k, false);
   }));
 });
+// ---- virtual joystick (replaces the old up/down/left/right button grid) ----
+// Reuses the exact same K.left/right/up/down boolean flags (via press()) that keyboard/
+// gamepad movement already drives, plus the same K.nav single-shot pulse that menu
+// screens (map/lobby/results/inventory) read - so no movement or menu code needed to change.
+(function () {
+  const joyBase = document.getElementById('joyBase'), joyKnob = document.getElementById('joyKnob');
+  if (!joyBase || !joyKnob) return;
+  const JOY_MAX = 40, JOY_DEAD = 12;
+  let joyId = null, ox = 0, oy = 0, curDirs = { up: false, down: false, left: false, right: false }, navDir = null;
+  function dirsFor(dx, dy, dist) {
+    const d = { up: false, down: false, left: false, right: false };
+    if (dist < JOY_DEAD) return d;
+    const deg = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (deg > -157.5 && deg < -22.5) d.up = true;
+    if (deg > 22.5 && deg < 157.5) d.down = true;
+    if (deg > 112.5 || deg < -112.5) d.left = true;
+    if (deg > -67.5 && deg < 67.5) d.right = true;
+    return d;
+  }
+  function apply(d) {
+    const menuish = menu || state === 'map' || state === 'lobby' || state === 'story' || invOpen || state === 'results';
+    if (menuish) {
+      const dom = d.up ? 'up' : d.down ? 'down' : d.left ? 'left' : d.right ? 'right' : null;
+      if (dom !== navDir) {
+        navDir = dom;
+        if (dom) {
+          if (state === 'results') { if (dom === 'left' || dom === 'up') K.upPressed = true; else K.downPressed = true; }
+          else if (K.nav) (K.navQ = K.navQ || []).push(dom); else K.nav = dom;
+        }
+      }
+    } else {
+      ['up', 'down', 'left', 'right'].forEach(k => { if (d[k] !== curDirs[k]) press(k, d[k]); });
+    }
+    curDirs = d;
+  }
+  function resetKnob() { joyKnob.style.left = '33px'; joyKnob.style.top = '33px'; }
+  function endDrag() {
+    joyBase.classList.remove('dragging'); resetKnob(); apply({ up: false, down: false, left: false, right: false });
+    navDir = null; joyId = null;
+  }
+  joyBase.addEventListener('pointerdown', e => {
+    e.preventDefault(); joyId = e.pointerId;
+    const r = joyBase.getBoundingClientRect(); ox = r.left + r.width / 2; oy = r.top + r.height / 2;
+    joyBase.classList.add('dragging');
+    joyBase.setPointerCapture && joyBase.setPointerCapture(e.pointerId);
+  });
+  joyBase.addEventListener('pointermove', e => {
+    if (joyId === null || e.pointerId !== joyId) return;
+    e.preventDefault();
+    const dx = e.clientX - ox, dy = e.clientY - oy, dist = Math.hypot(dx, dy), clamped = Math.min(dist, JOY_MAX), ang = Math.atan2(dy, dx);
+    joyKnob.style.left = (33 + Math.cos(ang) * clamped) + 'px';
+    joyKnob.style.top = (33 + Math.sin(ang) * clamped) + 'px';
+    apply(dirsFor(dx, dy, dist));
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => joyBase.addEventListener(ev, e => {
+    if (joyId === null || e.pointerId !== joyId) return;
+    endDrag();
+  }));
+})();
 
 // ============================================================
 //  PALETTE + PIXEL ART

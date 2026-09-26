@@ -1,5 +1,46 @@
 # AGENT_NOTES
 
+## v1.1 A2/A3 real-brief pass landed (parallel subagent, latest)
+Closed the two specific A2/A3 gaps this file flagged after the real brief was read in full (see the
+"IMPORTANT: the full BRIEF_v1.1.md text..." section below) - commit `df1fb90` on top of `24ec993`, in
+its own git worktree, `public/game.js` only. Did NOT touch crew-lives/checkpoint code, WORLD_DEF/WORLDS/
+buildLevel/bossDataFor/mapNodes, the A6 enemy tricks, or launchTransit/WORLD_TRANSIT_GAMES, per this
+session's explicit brief.
+
+**A2**: the `coreup` shop entry now costs coins + Resin (+1 Seed on odd target levels) following the
+brief's example curve (`coreUpCost()`: Lv2=60c+10r, ~1.6x coins + 10 more Resin per level after). New
+`save.coreCap` gates how high ANY core can be leveled right now - starts at 3 for new saves, rises in
+`onKill()` at each world's mini-boss (`e.mini`, ->4+world) and boss (`e.mega`, ->5+world), landing on 10
+after Mr. Killjoy (world index 5), never lowered. The shop just won't offer the upgrade past the cap
+(LOCKED row) rather than clamping an already-higher stored core level. `onKill()` also grants +1 Seed to
+the killer on a world-boss kill only (not mini-bosses or ordinary captain fights). Old saves: `loadSlot()`
+seeds `coreCap` at 10 (not 3) for any save that already had `migratedV11 === true` before this pass's own
+migration ran, so nobody who leveled a core past 3 under the old free/uncapped economy gets locked out.
+
+**A3**: `ENV_WEAPONS` replaced wholesale with the brief's 12 named Wild weapons (Bong Hammer, Blunt Bat,
+Rolling Papers, Nug Bombs, Dab Torch, Hacky Sack, Leaf Blower, Zippo Flick, Hookah Whip, Lava Lamp Mace,
+Gravity Bong Cannon, Apple Pipe), each mechanically distinct via the existing weapon-stat shape + flags
+(pierce/spin/homer/stun/burn/etc). `WILD_POOL_BY_THEME` gives each of the 6 worlds its 3-4 weapons per
+the brief's table (Gravity Bong Cannon is HQ-only - no Astral Plane in this codebase); a pickup now rolls
+randomly from its world's pool instead of a fixed per-theme weapon. `me.envWeapon` is now `{id, charge}`
+(a Resin-backed charge bar, draining `cost` per swing) instead of `{id, uses}` - an empty weapon "clicks"
+(no damage, stays held) instead of breaking/auto-dropping. New `gainResin(amt)`, called from `onKill` for
+every kill the local player lands (1 regular / 3 mini-boss / 5 boss), tops up a held weapon's charge
+first, banking any leftover Resin, per the brief's stated priority.
+
+**Known gaps/simplifications** (all disclosed in the commit message too): Resin drops from enemies as an
+instant grant via `gainResin()`, not a physical pickup item with network sync/animation. Seeds and the
+`coreCap` raise are per-kill-credit/per-client rather than guaranteeing every co-op player their own Seed
+per boss (brief's literal "1 per boss per player") - no new net sync built for that. No Wild-weapon HUD
+charge bar (same as the pre-existing lack of a "uses remaining" display). No shop-side Wild-weapon
+buy/refill/reroll. Not multiplayer-verified (single-client testing + code review only, same caveat A6
+already carries).
+
+**Still open per the earlier gap list below**: the Grinder is still melee, not the brief's ranged
+returning disc (A2's other flagged gap - untouched this pass, out of this session's scope). A4's item
+list (6 items, not 3) and A5's checkpoint triggers (mid-level legend NPC + boss-arena-start, not just
+zone-clear) are both still exactly as this file already described them.
+
 ## v1.1 A6 + B1 landed via parallel subagents (main session, latest)
 Two subagents ran in parallel git worktrees off `2bc3b74`, each briefed with the actual
 `BRIEF_v1.1.md` text and told explicitly not to touch the other's territory (Core/Wild/crew-lives

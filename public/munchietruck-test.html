@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>MUNCHIE TRUCK test</title>
+<style>body{background:#111;color:#eee;font-family:monospace;text-align:center}
+#log{white-space:pre-wrap;text-align:left;max-width:640px;margin:8px auto;font-size:11px;color:#9f9}
+button{margin:4px}</style></head>
+<body>
+<h3>MUNCHIE TRUCK — standalone test</h3>
+<div id="mount"></div>
+<div>
+  <button onclick="startSolo()">Start solo (1p)</button>
+  <button onclick="startCrew(2)">Simulate 2p seats</button>
+  <button onclick="startCrew(4)">Simulate 4p seats</button>
+</div>
+<div id="log"></div>
+<script src="transit.js"></script>
+<script src="munchietruck.js"></script>
+<script>
+const log = m => { document.getElementById('log').textContent += m + '\n'; console.log(m); };
+window.onerror = (m,s,l,c,e) => log('ERROR: ' + m + ' @' + l + ':' + c);
+let save = {};
+function clearMount(){ document.getElementById('mount').innerHTML=''; }
+function startSolo() {
+  clearMount();
+  MunchieTruck.start({
+    from: 'suburbia', to: 'downtown', world: 0, crew: 1, save, net: null, mount: document.getElementById('mount'), scale: 3,
+    onDone: (r) => log('onDone: ' + JSON.stringify(r))
+  });
+  log('started solo');
+}
+function startCrew(n) {
+  clearMount();
+  const crew = []; for (let i=0;i<n;i++) crew.push({id:'p'+i,name:'P'+i,color:i});
+  MunchieTruck.start({
+    from: 'suburbia', to: 'downtown', world: 0, crew, save, net: null, mount: document.getElementById('mount'), scale: 3,
+    onDone: (r) => log('onDone: ' + JSON.stringify(r))
+  });
+  log('started crew of ' + n);
+}
+</script>
+</body></html>

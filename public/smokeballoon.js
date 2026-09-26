@@ -62,15 +62,23 @@
     function onKeyUp(e) { keys.delete(e.key.toLowerCase()); }
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    canvas.addEventListener('touchstart', (e) => {
+    let touchSandbag = false;
+    const SANDBAG_ZONE_H = H * 0.16;
+    function handleTouch(e) {
+      touchTaps = new Set(); touchSandbag = false;
       const r = canvas.getBoundingClientRect();
-      for (const t of e.changedTouches) {
-        const x = (t.clientX - r.left) * (W / r.width);
+      for (const t of e.touches) {
+        const x = (t.clientX - r.left) * (W / r.width), y = (t.clientY - r.top) * (H / r.height);
+        if (y < SANDBAG_ZONE_H) { touchSandbag = true; continue; }
         const lane = Math.min(nLanes - 1, Math.floor(x / (W / nLanes)));
         touchTaps.add(lane);
       }
       e.preventDefault();
-    }, { passive: false });
+    }
+    canvas.addEventListener('touchstart', handleTouch, { passive: false });
+    canvas.addEventListener('touchmove', handleTouch, { passive: false });
+    canvas.addEventListener('touchend', handleTouch, { passive: false });
+    canvas.addEventListener('touchcancel', handleTouch, { passive: false });
 
     // key 1..4 -> lanes; also J/K/L/; as alt; solo just uses SPACE for lane0
     const LANE_KEYS = [['1', 'j'], ['2', 'k'], ['3', 'l'], ['4', ';']];
@@ -79,7 +87,7 @@
       if (nLanes === 1) return keys.has(' ') || LANE_KEYS[0].some(k => keys.has(k));
       return LANE_KEYS[lane] ? LANE_KEYS[lane].some(k => keys.has(k)) : false;
     }
-    function sandbagPressed() { return keys.has('b') || keys.has('shift'); }
+    function sandbagPressed() { return keys.has('b') || keys.has('shift') || touchSandbag; }
 
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
@@ -237,6 +245,12 @@
       // lung meter bar
       ctx.fillStyle = '#333'; ctx.fillRect(4, H - 30, 60, 5);
       ctx.fillStyle = '#7fdc6a'; ctx.fillRect(4, H - 30, 60 * st.lung, 5);
+      if (T.isTouchDevice) {
+        const lw = W / nLanes;
+        const zones = [{ x: 0, y: 0, w: W, h: SANDBAG_ZONE_H, label: 'SANDBAG', active: touchSandbag }];
+        for (let i = 0; i < nLanes; i++) zones.push({ x: i * lw, y: SANDBAG_ZONE_H, w: lw, h: H - SANDBAG_ZONE_H, label: 'TAP', active: touchTaps.has(i) });
+        T.drawTouchZones(ctx, zones);
+      }
     }
 
     function finish() {

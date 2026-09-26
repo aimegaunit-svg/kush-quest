@@ -58,16 +58,21 @@
     window.addEventListener('keyup', onKeyUp);
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
-    // touch: single big hold-to-dive zone covers whole canvas for pilot
-    canvas.addEventListener('touchstart', (e) => { mouseDown = true; e.preventDefault(); }, { passive: false });
-    canvas.addEventListener('touchend', (e) => { mouseDown = false; e.preventDefault(); }, { passive: false });
+    // touch: holding anywhere on the canvas dives; where you hold (left/mid/right third)
+    // also leans the plane, so one thumb both dives and steers.
+    let touchLean = 0;
+    function touchXOf(e) { const t = e.touches[0] || e.changedTouches[0]; if (!t) return null; const r = canvas.getBoundingClientRect(); return (t.clientX - r.left) * (W / r.width); }
+    canvas.addEventListener('touchstart', (e) => { mouseDown = true; const x = touchXOf(e); touchLean = x == null ? 0 : (x < W / 3 ? -1 : x > W * 2 / 3 ? 1 : 0); e.preventDefault(); }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => { const x = touchXOf(e); touchLean = x == null ? 0 : (x < W / 3 ? -1 : x > W * 2 / 3 ? 1 : 0); e.preventDefault(); }, { passive: false });
+    canvas.addEventListener('touchend', (e) => { mouseDown = false; touchLean = 0; e.preventDefault(); }, { passive: false });
+    canvas.addEventListener('touchcancel', (e) => { mouseDown = false; touchLean = 0; e.preventDefault(); }, { passive: false });
 
     function diving() { return keys.has(' ') || keys.has('arrowdown') || mouseDown; }
     function leanInput() {
-      let l = 0;
+      let l = touchLean;
       if (keys.has('a') || keys.has('arrowleft')) l -= 1;
       if (keys.has('d') || keys.has('arrowright')) l += 1;
-      return l;
+      return Math.max(-1, Math.min(1, l));
     }
 
     const remoteInputs = new Map();
@@ -216,6 +221,11 @@
       ctx.fillStyle = st.wet > 0.6 ? '#88f' : '#ffd';
       ctx.fillText('Wet ' + Math.floor(st.wet * 100) + '%', W - 4, 10);
       if (st.caught) { ctx.fillStyle = '#f55'; ctx.textAlign = 'center'; ctx.fillText('CAUGHT! tap E/click to free', W / 2, H - 20); }
+      if (T.isTouchDevice) T.drawTouchZones(ctx, [
+        { x: 0, y: H - 26, w: W / 3, h: 26, label: '◀ LEAN', active: touchLean < 0 },
+        { x: W / 3, y: H - 26, w: W / 3, h: 26, label: 'HOLD=DIVE', active: mouseDown && touchLean === 0 },
+        { x: W * 2 / 3, y: H - 26, w: W / 3, h: 26, label: 'LEAN ▶', active: touchLean > 0 },
+      ]);
     }
 
     function finish() {

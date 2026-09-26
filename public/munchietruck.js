@@ -56,15 +56,39 @@
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
-    canvas.addEventListener('touchstart', (e) => { const t = e.touches[0]; const r = canvas.getBoundingClientRect(); touchAim = { x: (t.clientX - r.left) * (W / r.width), y: (t.clientY - r.top) * (H / r.height) }; mouse = touchAim; mouse.down = true; e.preventDefault(); }, { passive: false });
-    canvas.addEventListener('touchmove', (e) => { if (!touchAim) return; const t = e.touches[0]; const r = canvas.getBoundingClientRect(); touchAim.x = (t.clientX - r.left) * (W / r.width); touchAim.y = (t.clientY - r.top) * (H / r.height); e.preventDefault(); }, { passive: false });
-    canvas.addEventListener('touchend', () => { if (mouse) mouse.down = false; touchAim = null; }, { passive: false });
+    // touch steering (solo drives too): bottom-left/right corners steer, rest of the screen
+    // aims + throws (tap near a customer). The two never overlap so a throw-tap can't also steer.
+    const STEER_ZONE_W = W * 0.16, STEER_ZONE_H = H * 0.22;
+    const touchSteer = { left: false, right: false };
+    function inSteerZone(x, y) { return y > H - STEER_ZONE_H && (x < STEER_ZONE_W ? 'left' : x > W - STEER_ZONE_W ? 'right' : null); }
+    function refreshTouchSteer(touches) {
+      touchSteer.left = touchSteer.right = false;
+      for (const t of touches) { const r = canvas.getBoundingClientRect(); const x = (t.clientX - r.left) * (W / r.width), y = (t.clientY - r.top) * (H / r.height); const z = inSteerZone(x, y); if (z) touchSteer[z] = true; }
+    }
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      refreshTouchSteer(e.touches);
+      for (const t of e.changedTouches) {
+        const r = canvas.getBoundingClientRect();
+        const x = (t.clientX - r.left) * (W / r.width), y = (t.clientY - r.top) * (H / r.height);
+        if (!inSteerZone(x, y)) { touchAim = { x, y }; mouse = touchAim; mouse.down = true; }
+      }
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      refreshTouchSteer(e.touches);
+      if (!touchAim) return;
+      const t = [...e.touches].find(t => { const r = canvas.getBoundingClientRect(); return !inSteerZone((t.clientX - r.left) * (W / r.width), (t.clientY - r.top) * (H / r.height)); });
+      if (!t) return;
+      const r = canvas.getBoundingClientRect(); touchAim.x = (t.clientX - r.left) * (W / r.width); touchAim.y = (t.clientY - r.top) * (H / r.height);
+    }, { passive: false });
+    canvas.addEventListener('touchend', (e) => { e.preventDefault(); refreshTouchSteer(e.touches); if (mouse) mouse.down = false; if (e.touches.length === 0) touchAim = null; }, { passive: false });
 
     function driverInput() {
-      const throttle = keys.has('w') || keys.has('arrowup');
+      const throttle = keys.has('w') || keys.has('arrowup') || touchSteer.left || touchSteer.right; // any touch steer implies rolling forward
       const brake = keys.has('s') || keys.has('arrowdown');
-      const left = keys.has('a') || keys.has('arrowleft');
-      const right = keys.has('d') || keys.has('arrowright');
+      const left = keys.has('a') || keys.has('arrowleft') || touchSteer.left;
+      const right = keys.has('d') || keys.has('arrowright') || touchSteer.right;
       const handbrake = keys.has('shift') || keys.has(' ');
       return { throttle, brake, left, right, handbrake };
     }
@@ -225,6 +249,13 @@
       ctx.textAlign = 'left';
       ctx.fillStyle = colorOf(st.selSnack);
       ctx.fillText('Snack: ' + st.selSnack + ' (1-4)', 4, H - 4);
+      if (T.isTouchDevice) {
+        T.drawTouchZones(ctx, [
+          { x: 0, y: H - STEER_ZONE_H, w: STEER_ZONE_W, h: STEER_ZONE_H, label: '◀', active: touchSteer.left },
+          { x: W - STEER_ZONE_W, y: H - STEER_ZONE_H, w: STEER_ZONE_W, h: STEER_ZONE_H, label: '▶', active: touchSteer.right },
+        ]);
+        if (touchAim) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(touchAim.x, touchAim.y, 6, 0, Math.PI * 2); ctx.stroke(); }
+      }
     }
 
     function finish() {

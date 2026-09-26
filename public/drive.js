@@ -100,26 +100,28 @@
       el.addEventListener('touchstart', onTouch, { passive: false });
       el.addEventListener('touchmove', onTouch, { passive: false });
       el.addEventListener('touchend', onTouchEnd, { passive: false });
+      el.addEventListener('touchcancel', onTouchEnd, { passive: false });
     }
+    // Bottom strip split into 5 equal zones: steer-left, steer-right, boost, brake, throw/take-a-hit.
+    const TOUCH_ZONES = [
+      { key: 'left', label: '◀' }, { key: 'right', label: '▶' },
+      { key: 'boost', label: 'BOOST' }, { key: 'brake', label: 'BRAKE' }, { key: 'throw', label: 'THROW' },
+    ];
     function zoneAt(x, y) {
-      // Bottom strip split into zones: left 25% steer-left, next 25% steer-right,
-      // right 25% boost/throw, far right 25% brake/take-a-hit. Driver vs havoc differ in labels
-      // but we keep the touch layout simple and consistent.
       if (y < H * 0.55) return null;
-      const f = x / W;
-      if (f < 0.25) return 'left'; if (f < 0.5) return 'right';
-      if (f < 0.75) return 'boost'; return 'brake';
+      const i = Math.min(TOUCH_ZONES.length - 1, Math.floor((x / W) * TOUCH_ZONES.length));
+      return TOUCH_ZONES[i].key;
     }
     function onTouch(e) {
       e.preventDefault(); isTouch = true;
-      touch.left = touch.right = touch.boost = touch.brake = false;
+      touch.left = touch.right = touch.boost = touch.brake = touch.throw = false;
       const r = canvas.getBoundingClientRect();
       for (const t of e.touches) {
         const x = (t.clientX - r.left) / r.width * W, y = (t.clientY - r.top) / r.height * H;
         const z = zoneAt(x, y); if (z) touch[z] = true;
       }
     }
-    function onTouchEnd(e) { e.preventDefault(); if (e.touches.length === 0) { touch.left = touch.right = touch.boost = touch.brake = false; } }
+    function onTouchEnd(e) { e.preventDefault(); if (e.touches.length === 0) { touch.left = touch.right = touch.boost = touch.brake = touch.throw = false; } else onTouch(e); }
     bindTouchZone(canvas);
 
     function myInputs() {
@@ -127,8 +129,8 @@
       const right = keys.has('d') || keys.has('arrowright') || touch.right;
       const boost = keys.has('w') || keys.has('arrowup') || keys.has(' ') || touch.boost;
       const brake = keys.has('s') || keys.has('arrowdown') || touch.brake;
-      const throwK = keys.has('j') || mouse.down;
-      const hit = keys.has('h');
+      const throwK = keys.has('j') || mouse.down || touch.throw;
+      const hit = keys.has('h') || touch.throw;
       return { left, right, boost, brake, throwK, hit };
     }
 
@@ -276,6 +278,10 @@
       if (st.cops.some(c => c.stage === 'ram')) { ctx.textAlign = 'center'; ctx.fillStyle = '#ff5a6a'; ctx.font = 'bold 9px monospace'; ctx.fillText('LOCKED ON!', W / 2, HORIZON - 4); }
       ctx.textAlign = 'center'; ctx.fillStyle = '#9fff9f'; ctx.font = '7px monospace';
       ctx.fillText('A/D steer  W boost  S brake  J throw  H take a hit', W / 2, H - 4);
+      if (T.isTouchDevice) {
+        const zw = W / TOUCH_ZONES.length, zy = H * 0.55, zh = H * 0.45;
+        T.drawTouchZones(ctx, TOUCH_ZONES.map((z, i) => ({ x: i * zw, y: zy, w: zw, h: zh, label: z.label, active: touch[z.key] })));
+      }
     }
     let cardDone = false;
     const intro = T.showInstructionCard(ctx, {

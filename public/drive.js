@@ -360,6 +360,17 @@ function start(opts) {
   S.handle = handle;
   return handle;
 }
+// GARAGE (Step 9.4): the car's upgrades + cosmetics. Online the HOST's garage is used for everyone (sent in
+// 'start'), so every client sees the same car and a mid-drive handoff keeps the same handling.
+//   save.vanUp = { tires: 0-2, engine: 0-2, stash: 0-2 }   (affects both cars)
+//   save.vanPaint = 'tiedye' | 'flames' | 'leaf' | null      (van only)
+//   save.shitboxDeco = { dice: bool, fresh: bool }           (Taylor's Shitbox: fuzzy dice, new air freshener)
+function garageOf(save) {
+  const u = (save && save.vanUp) || {}, lv = v => Math.max(0, Math.min(2, v | 0));
+  const d = (save && save.shitboxDeco) || {};
+  const paint = save && ['tiedye', 'flames', 'leaf'].includes(save.vanPaint) ? save.vanPaint : null;
+  return { up: { tires: lv(u.tires), engine: lv(u.engine), stash: lv(u.stash) }, paint, deco: { dice: !!d.dice, fresh: !!d.fresh } };
+}
 function soloSeats() { S.seats = [S.me, null, null, null]; S.seed = (Math.random() * 1e9) | 0; }
 function hostStart(forceCar) {
   let car = forceCar;
@@ -369,11 +380,11 @@ function hostStart(forceCar) {
   }
   const drv = pickDriver(S.crew, S.net.hostId);
   const ids = [drv, ...S.crew.map(c => c.id).filter(id => id !== drv)];
-  const p = { car, seats: layoutSeats(ids), seed: (Math.random() * 1e9) | 0, crew: S.crew };
+  const p = { car, seats: layoutSeats(ids), seed: (Math.random() * 1e9) | 0, crew: S.crew, look: garageOf(S.save) };
   nsend('start', p); applyStart(p);
 }
 function applyStart(p) {
-  S.car = p.car; S.seats = p.seats; S.seed = p.seed;
+  S.car = p.car; S.seats = p.seats; S.seed = p.seed; if (p.look) S.look = p.look;
   if (p.crew) { S.names = S.names || {}; for (const c of p.crew) S.names[c.id] = c.name; }
   if (p.crew) S.crew = p.crew;
   S.mode = 'card'; S.cardT = 4;
@@ -381,7 +392,8 @@ function applyStart(p) {
 
 function setupDrive() {
   rng = seeded(S.seed || 1);
-  const up = S.save.vanUp || {};
+  if (!S.look) S.look = garageOf(S.save);
+  const up = S.look.up;
   const shit = S.car === 'shitbox';
   const len = S.practice ? 700 : S.solo ? 1400 : 1900;
   S.segs = buildRoad(len);
@@ -566,7 +578,7 @@ function snapshot() {
     cops: S.cops.map(c => [c.type, c.hp, Math.round(c.rel), +c.x.toFixed(2), c.side, c.stage, +c.t.toFixed(2), +c.blind.toFixed(2)]),
     tr: S.traffic.map(c => [Math.round(c.z), c.x, Math.round(c.sp), c.col]),
     ex: S.hdrT % 10 === 0 ? S.allExtra.slice() : S.extra.splice(0), g: S.hdrT % 10 === 0 ? S.allGot.slice() : S.got.splice(0), o: S.out.splice(0),
-    hdr: (S.hdrT = (S.hdrT || 0) + 1) % 10 === 1 ? { car: S.car, seats: S.seats, seed: S.seed, crew: S.crew } : undefined,
+    hdr: (S.hdrT = (S.hdrT || 0) + 1) % 10 === 1 ? { car: S.car, seats: S.seats, seed: S.seed, crew: S.crew, look: S.look } : undefined,
   };
 }
 // full state for the seat-swap handoff (brief 1.6): the new driver's game takes over from exactly this
@@ -1085,7 +1097,7 @@ function drawPlayer() {
   const steer = S.lastSteer;
   const x = W / 2 + steer * 4, y = 184 + (Math.abs(S.x) > 1 ? (Math.random() * 2 | 0) : 0) + Math.sin(S.t * 20) * (S.speed > 10 ? 0.6 : 0);
   const r = (ox, oy, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x + ox), Math.round(y - oy - h), w, h); };
-  const paint = S.save.vanPaint;
+  const look = S.look || garageOf(S.save), paint = look.paint;
   if (!shit) {
     const body = paint === 'tiedye' ? hue(S.t * 40, 70, 55) : paint === 'flames' ? '#222' : '#7fb0d8';
     r(-36, 0, 72, 6, '#111');
@@ -1103,6 +1115,8 @@ function drawPlayer() {
     r(-36, 4, 30, 4, '#c8c8a0'); r(-20, 4, 4, 4, '#bbb'); // taped bumper
     r(-36, 8, 8, 5, '#f33'); r(28, 8, 8, 5, '#ff8'); r(-8, 8, 16, 4, '#ddd');
     r(22, -2, 10, 8, '#222'); // spare
+    if (look.deco.dice) { const sw = Math.sin(S.t * 6) * 1.5; r(-6 + sw, 24, 4, 4, '#fff'); r(1 + sw, 23, 4, 4, '#fff'); r(-5 + sw, 25, 1, 1, '#111'); r(2 + sw, 24, 1, 1, '#111'); }
+    if (look.deco.fresh) { r(8, 23, 1, 3, '#ddd'); r(6, 19, 5, 5, '#3fae5a'); }
   }
   // damage (cosmetic)
   const d = Math.min(6, S.damage);

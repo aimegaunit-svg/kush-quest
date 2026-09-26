@@ -65,8 +65,15 @@ returns `{cleanup}`, and `Drive.needsDrive()` is unchanged. It draws its own can
 - Drop-in mid-drive uses Step 2's own "crew is driving" wait screen. `Drive.start({spectate:true})`
   also exists if you'd rather have late joiners watch the drive.
 
-**Next:** the drive side of the GARAGE (Step 9.4) inside `drive.js` only: reading `save.vanUp` and the
-paint jobs, and showing cosmetics online. The GARAGE tab UI in the shop is `game.js`, so it's the main session's.
+**GARAGE, drive side (Step 9.4). DONE in `drive.js` and verified.** The GARAGE tab UI in the shop is `game.js`, so it's still the main session's. It just needs to write these save fields:
+- `save.vanUp = { tires: 0-2, engine: 0-2, stash: 0-2 }` (both cars). Tires cut the baked lag and drift by 25% per
+  level, engine adds +6% top speed per level, stash adds +10 snacks per level.
+- `save.vanPaint = 'tiedye' | 'flames' | 'leaf' | null` (van only).
+- `save.shitboxDeco = { dice: bool, fresh: bool }` (Taylor's Shitbox: fuzzy dice and a new air freshener
+  in the rear window).
+- Online, the **host's** garage goes to everyone in the start message, so all players see the same car
+  and a mid-drive handoff keeps the same handling. Tested: a guest with no upgrades got the host's
+  tie-dye van and +20 snack stash.
 
 ## Session wrap-up: A2-A6 + B1-B3 all landed and merged (main session, latest)
 This session ran 4 subagents in parallel git worktrees (A6 enemy tricks, B1 world/level rebuild, A2/A3

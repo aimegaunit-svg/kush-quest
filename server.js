@@ -241,6 +241,13 @@ function handle(client, m) {
     case 'emote':
       if (room) broadcast(room, { t: 'emote', id: client.id, e: m.e | 0 }, client.id);
       break;
+    case 'd': { // transit mini-game relay (Hotbox Highway + the 5 brief-v1.1 transit games): {t:'d', k, p, to?}
+      if (!room) return;
+      const out = { t: 'd', k: String(m.k || '').slice(0, 24), p: m.p, id: client.id };
+      if (m.to) { const target = room.players.get(String(m.to)); if (target) target.client.send(out); }
+      else broadcast(room, out, client.id);
+      break;
+    }
   }
 }
 

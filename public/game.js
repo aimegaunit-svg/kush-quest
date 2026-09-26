@@ -659,6 +659,14 @@ const WEAPONS = [
   { id: 'blunt', name: 'BLUNT BAT', icon: 'blunt', dmg: 2, cd: 22, reach: 34, zr: 12, kb: 3, homer: 1, price: 220, desc: 'HOME RUN! LAUNCHES THEM INTO THEIR BUDDIES' },
 ];
 const wlv = id => (save.wlv && save.wlv[id]) || 1;
+const WEAPON_LV3 = { // LV3 unique perks, unlocked on the upgrade to LV3
+  puff: 'LV3 PERK: BURN LASTS 2X LONGER + HITS SOMETIMES DROP A SMOKE RING',
+  lighter: 'LV3 PERK: BURN SPREADS FURTHER + LEAVES A BURNING FIRE PATCH',
+  dab: 'LV3 PERK: CRITS CHAIN TO THE NEXT ENEMY IN LINE',
+  bong: 'LV3 PERK: THE STUN SENDS A SHOCKWAVE THAT HITS EVERYONE NEARBY',
+  grinder: 'LV3 PERK: THE SPIN PULLS ENEMIES IN HARDER BEFORE HITTING',
+  blunt: 'LV3 PERK: LAUNCHED ENEMIES BOUNCE OFF WALLS INTO MORE ENEMIES',
+};
 const ARMORS = [
   { id: 'hoodie', name: 'COMFY HOODIE', icon: 'hoodie', hp: 1, price: 70, desc: '+1 MAX HEART' },
   { id: 'vest', name: 'TIE-DYE VEST', icon: 'vest', hp: 2, price: 170, desc: '+2 MAX HEARTS' },
@@ -1425,7 +1433,7 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (by && e.lastHitBy && e.lastHitBy !== by && frame - (e.lastHitT || -999) < 30) { teamBonus = Math.max(1, Math.ceil(dmg * 0.5)); popup(e.x - 22, sy(e.z) - 30, 'TEAM UP!', '#ffd84a'); SFX.power(); }
   e.lastHitBy = by; e.lastHitT = frame;
   e.hp -= dmg + teamBonus; e.flash = 8;
-  if (fx.burn) { e.burn = Math.max(e.burn || 0, fx.burn); e.burnBy = by; e.burnT = e.burnT || 36; e.spread = e.spread || fx.sp; }
+  if (fx.burn) { e.burn = Math.max(e.burn || 0, fx.burn); e.burnBy = by; e.burnT = e.burnT || 36; e.spread = Math.max(e.spread || 0, fx.sp || 0); }
   if (fx.bleed) { e.bleedN = Math.max(e.bleedN || 0, fx.bleed); e.bleedBy = by; e.bleedT = e.bleedT || 44; }
   // HOTBOX: burning + stunned at once detonates a smoke burst that hits everything nearby
   if ((e.burn > 0 || fx.burn) && (e.stunned > 0 || fx.stun) && !(e.hotboxCd > 0)) { e.hotboxCd = 90; hotboxBlast(e, by); }
@@ -1438,7 +1446,7 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
     const kb = (fx.kb || 1) * (e.boss ? 0.25 : 1);
     if (e.boss) { if (!(e.state === 1 || e.state === 2) || fx.stun) { e.state = 4; e.t = fx.stun ? 30 : 8; } e.vx = dir * kb; if (fx.hr) fx = { ...fx, hr: 0 }; return; }
     e.state = 4; e.t = Math.max(strong ? 30 : 20, fx.stun || 0); e.stunned = fx.stun ? e.t : 0; e.vx = dir * (strong ? 3 : 1.4) * kb; if (strong) e.vh = 2.2;
-    if (fx.hr) { e.vh = 4; e.vx = dir * 5; e.flying = { by, dir }; }
+    if (fx.hr) { e.vh = 4; e.vx = dir * 5; e.flying = { by, dir, lv3: !!fx.hrLv3, bounces: fx.hrLv3 ? 2 : 0 }; }
   }
 }
 function hotboxBlast(center, by) {
@@ -1530,22 +1538,32 @@ function attack(charged) {
   }
   me.atkCd = Math.round(w.cd * (strong ? 1.3 : 0.75) * (me.buffs.soda > 0 ? 0.6 : 1)); me.atkT = 12; me.chainT = me.atkCd + 16;
   SFX.attack(Math.min(wi, 4));
-  const lv = wlv(w.id);
+  const lv = wlv(w.id), lv3 = lv >= 3;
   let dmg = w.dmg + (lv - 1) + (ultra() ? (hasSkill('rage') ? 3 : 1) : 0) + (me.buffs.power > 0 ? 1 : 0) + (me.buffs.rage > 0 ? 2 : 0) + (strong ? 1 : 0);
   if (charged) dmg = dmg * 2 + 2;
-  const reach = w.reach + (charged ? 12 : 0);
+  const reach = w.reach + (charged ? 12 : 0) + (lv3 && w.id === 'grinder' ? 10 : 0);
   const baseBurn = w.id === 'puff' ? (hasSkill('cherry') ? w.burn : 0) : (w.burn || 0);
-  const fx = { burn: Math.max(baseBurn ? baseBurn + (lv - 1) : 0, hasSkill('embers') ? 1 : 0), sp: w.spread ? 1 : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0, air };
+  const fx = { burn: Math.max(baseBurn ? (baseBurn + (lv - 1)) * (lv3 && w.id === 'puff' ? 2 : 1) : 0, hasSkill('embers') ? 1 : 0), sp: w.spread ? (lv3 && w.id === 'lighter' ? 2 : 1) : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0, hrLv3: lv3 && w.id === 'blunt' && strong, air };
   let hits = 0;
   const targets = lvl.enemies.filter(e => e.spawned && e.alive && e.state !== 5).map(e => ({ e, dx: e.x - me.x, dz: Math.abs(e.z - me.z) }))
     .filter(t => { const r = reach + (t.e.boss ? 14 : 0); return (w.spin || air ? Math.abs(t.dx) < r : t.dx * me.face > -6 && Math.abs(t.dx) < r) && t.dz < w.zr + (air ? 6 : 0) + (t.e.boss ? 10 : 0) && Math.abs(t.e.h - me.h) < 30; })
     .sort((a, b) => Math.abs(a.dx) - Math.abs(b.dx));
+  let critChained = false;
   for (const t of (w.pierce || w.spin || w.id === 'lighter' || w.id === 'bong' || w.homer) ? targets : targets.slice(0, 2)) {
     let d = dmg; const crit = Math.random() < (w.crit || 0) + (hasSkill('crit') ? 0.15 : 0);
     if (crit) { d *= 2; popup(t.e.x - 10, sy(t.e.z) - 30, 'CRIT!', '#9ae8ff'); }
     hitEnemy(t.e, d, Math.sign(t.dx) || me.face, strong || crit, fx); hits++;
+    if (w.id === 'puff' && lv3 && Math.random() < 0.15) lvl.items.push({ id: 'r' + Math.random(), kind: 'ring', x: t.e.x, z: t.e.z, h: 4, taken: false }); // JOINT LV3: hits sometimes drop a smoke ring
+    // DAB SABER LV3: a crit chains to the next enemy in line
+    if (w.id === 'dab' && lv3 && crit && !critChained) {
+      critChained = true;
+      const next = targets.find(o => o.e !== t.e);
+      if (next) { hitEnemy(next.e, d, Math.sign(next.dx) || me.face, true, fx); popup(next.e.x - 16, sy(next.e.z) - 34, 'CHAIN CRIT!', '#9ae8ff'); }
+    }
   }
-  if (w.id === 'grinder' && hits) for (const t of targets) t.e.x += Math.sign(me.x - t.e.x) * 4; // pulls them in
+  // BONG HAMMER LV3: the stun sends out a shockwave that hits everyone near the target
+  if (w.id === 'bong' && lv3 && strong && hits) for (const t of targets) for (const o of lvl.enemies) if (o !== t.e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - t.e.x) < 30 && Math.abs(o.z - t.e.z) < 22) hitEnemy(o, 1, Math.sign(o.x - t.e.x) || 1, false, { stun: 30 });
+  if (w.id === 'grinder' && hits) for (const t of targets) t.e.x += Math.sign(me.x - t.e.x) * (lv3 ? 8 : 4); // pulls them in (more at LV3)
   for (const p of lvl.props) {
     if (p.broken) continue;
     const dx = p.x - me.x;
@@ -1556,6 +1574,7 @@ function attack(charged) {
   if (w.id === 'bong' && strong) { shake = 6; puff(me.x + me.face * 22, sy(me.z) - 2, 12, ['#bfe8ff', '#ffffff', '#7fe07a'], 1.6); }
   if (w.id === 'blunt' && strong && hits) popup(me.x + me.face * 20, sy(me.z) - 40, 'HOME RUN!', '#ffd84a');
   if (w.id === 'lighter') for (let i = 0; i < 8; i++) particles.push({ x: me.x + me.face * (10 + i * 3), y: sy(me.z, me.h) - 12 + (Math.random() - .5) * 8, vx: me.face * (1 + Math.random()), vy: -0.3, life: 14, col: ['#ff5a6a', '#ff9a3a', '#ffd84a'][i % 3], s: 3, g: -0.02 });
+  if (w.id === 'lighter' && lv3 && hits) lvl.clouds.push({ x: me.x + me.face * 20, z: me.z, r: 16, t: 150, hot: true, by: Net.id }); // LIGHTER LV3: leaves a burning fire patch
   if (w.id === 'puff') puff(me.x + me.face * 26, sy(me.z, me.h) - 16, 5, ['#ffffff', '#e8e4f4'], .6, -0.02);
   Net.send({ t: 'fx', k: wi, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
 }
@@ -1926,12 +1945,16 @@ function hostUpdate() {
     e.vh -= 0.2; e.h = Math.max(0, e.h + e.vh); if (e.h === 0) e.vh = 0;
     if (e.burn > 0 && --e.burnT <= 0) {
       e.burnT = 36; e.burn--; e.hp -= 1; e.flash = 4;
-      if (e.spread) for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && !(o.burn > 0) && Math.abs(o.x - e.x) < 16 && Math.abs(o.z - e.z) < 10) { o.burn = 1; o.burnT = 36; o.burnBy = e.burnBy; }
+      if (e.spread) { const sr = 16 * e.spread; for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && !(o.burn > 0) && Math.abs(o.x - e.x) < sr && Math.abs(o.z - e.z) < 10) { o.burn = 1; o.burnT = 36; o.burnBy = e.burnBy; } }
       if (e.hp <= 0) { damageEnemy(e, 0, e.dir * -1, false, e.burnBy); continue; }
     }
     if (e.bleedN > 0 && --e.bleedT <= 0) { e.bleedT = 44; e.bleedN--; e.hp -= 1; e.flash = 4; if (e.hp <= 0) { damageEnemy(e, 0, e.dir * -1, false, e.bleedBy); continue; } }
     if (e.flying) {
       for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - e.x) < 14 && Math.abs(o.z - e.z) < 10 && !(o.bowled === e.id)) { o.bowled = e.id; damageEnemy(o, 2, e.flying.dir, true, e.flying.by, { kb: 1.5 }); }
+      // BLUNT BAT LV3: a launched enemy bounces off the fight-area walls and keeps hitting more enemies
+      if (e.flying.lv3 && e.flying.bounces > 0 && (e.x <= zMin + 4 || e.x >= zMax - 4) && Math.abs(e.vx) > 0.5) {
+        e.vx *= -0.8; e.flying.bounces--; e.flying.dir *= -1; e.bowled = null; shake = Math.max(shake, 3); puff(e.x, sy(e.z, e.h), 4, ['#ffffff']);
+      }
       if (e.h === 0 && e.vh <= 0) { e.flying = null; shake = Math.max(shake, 4); puff(e.x, sy(e.z), 6, ['#e8e0d0', '#ffffff'], 1); }
     }
     if (e.state === 4) { e.x += e.vx; e.vx *= 0.85; if (--e.t <= 0) { e.state = 0; e.stunned = 0; } continue; }
@@ -2646,7 +2669,7 @@ let shopTab = 0;
 const SHOP_TABS = ['ALL', 'WEAPONS', 'ARMOR', 'ITEMS', 'AMMO', 'UPGRADES'];
 const SHOP_TAB_OF = { weapon: 'WEAPONS', armor: 'ARMOR', item: 'ITEMS', use: 'ITEMS', ammo: 'AMMO', upgrade: 'UPGRADES' };
 function shopEntries(all) {
-  const ups = WEAPONS.filter(w => save.weapons.includes(w.id)).map(w => ({ kind: 'upgrade', id: w.id, icon: w.icon, name: 'UPGRADE ' + w.name + (wlv(w.id) < 3 ? ' LV' + (wlv(w.id) + 1) : ''), price: 60 * wlv(w.id) + w.dmg * 20, desc: '+1 DAMAGE AND STRONGER EFFECTS. MAX LV3' }));
+  const ups = WEAPONS.filter(w => save.weapons.includes(w.id)).map(w => ({ kind: 'upgrade', id: w.id, icon: w.icon, name: 'UPGRADE ' + w.name + (wlv(w.id) < 3 ? ' LV' + (wlv(w.id) + 1) : ''), price: 60 * wlv(w.id) + w.dmg * 20, desc: wlv(w.id) === 2 ? WEAPON_LV3[w.id] : '+1 DAMAGE AND STRONGER EFFECTS. MAX LV3' }));
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
   const nav = [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }];
   const goods = [...ups, ...uses, ...SHOP];

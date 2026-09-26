@@ -1442,6 +1442,47 @@ function hotboxBlast(center, by) {
     damageEnemy(e2, 3, Math.sign(e2.x - center.x) || 1, true, by, {});
   }
 }
+// ---- world hazards, one per base theme: hurt/push both players and enemies (except woods fog, which is purely visual) ----
+function applyHazards() {
+  if (state !== 'play' || !lvl) return;
+  const bk = lvl.theme.base || lvl.themeKey;
+  const zn = lvl.zones[lvl.zi] || lvl.zones[0]; if (!zn) return;
+  lvl.hazardOn = false; lvl.hazardX = null; lvl.hazardZ = null; lvl.hazardFog = false;
+  if (bk === 'park') { // sprinklers: knock everyone around, no damage
+    const midX = zn.x0 + ZW / 2, on = frame % 240 < 40;
+    lvl.hazardOn = on;
+    if (on && frame % 8 === 0) {
+      if (Math.abs(me.x - midX) < ZW / 2 && me.h < 6) { me.vx += (Math.sign(me.x - midX) || 1) * 0.4; me.vh = Math.max(me.vh, 1.4); puff(me.x, sy(me.z, me.h) - 6, 2, ['#bfe8ff', '#ffffff'], .6); }
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - midX) < ZW / 2) { e.vx += (Math.sign(e.x - midX) || 1) * 0.4; e.vh = Math.max(e.vh, 1.2); }
+    }
+  } else if (bk === 'beach') { // waves: push everyone along the depth axis, no damage
+    lvl.hazardOn = Math.sin(frame / 70) > 0.7;
+    if (lvl.hazardOn && frame % 6 === 0) {
+      me.vz = (me.vz || 0) + 0.3;
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5) e.vz = (e.vz || 0) + 0.25;
+    }
+  } else if (bk === 'suburb') { // rolling BBQ grill: a moving hitbox that burns anyone (player or enemy) it rolls over
+    const gx = zn.x0 + ZW / 2 + Math.sin(frame / 100) * (ZW / 2 - 24), gz = ZMAX / 2;
+    lvl.hazardX = gx; lvl.hazardOn = true;
+    if (frame % 30 === 0 && Math.abs(me.x - gx) < 12 && Math.abs(me.z - gz) < 10) hurt(1, 4, gx);
+    if (isHost() && frame % 20 === 0) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - gx) < 12 && Math.abs(e.z - gz) < 10) damageEnemy(e, 1, Math.sign(e.x - gx) || 1, false, null, { burn: 1 });
+  } else if (bk === 'city') { // traffic lanes: a warning light, then a car passes through the lane
+    const cyc = frame % 150, laneZ = 14 + (Math.floor(frame / 150) % 3) * 20;
+    lvl.hazardOn = cyc > 110; lvl.hazardZ = laneZ;
+    if (cyc === 130) {
+      if (Math.abs(me.z - laneZ) < 10) hurt(1, 3, me.x - 40 * me.face);
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.z - laneZ) < 10) damageEnemy(e, 2, 1, true, null, { kb: 1.4 });
+    }
+  } else if (bk === 'woods') { // fog: enemies only show up close (handled purely in drawScene)
+    lvl.hazardFog = true;
+  } else if (bk === 'hq') { // laser grid: switches on/off on a timer, damages anyone standing (not jumping) through it
+    lvl.hazardOn = (frame % 180) < 60;
+    if (lvl.hazardOn && frame % 20 === 0) {
+      if (me.h < 6) hurt(1, 3, me.x);
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && e.h < 6) damageEnemy(e, 1, 1, false, null, {});
+    }
+  }
+}
 let crewCombo = 0, crewComboT = 0;
 function onKill(e, by) { // everyone: death effect; the one who landed it gets the goods
   e.state = 5; e.t = Math.max(e.t, 40);
@@ -1556,7 +1597,7 @@ function update() {
   if (invOpen) { updateInventory(); if (!Net.online) { clearIn(); return; } }
   if (hitstop > 0) { hitstop--; return; }
 
-  if (state === 'play' && !invOpen) updatePlayer();
+  if (state === 'play' && !invOpen) { updatePlayer(); applyHazards(); }
   else if (state === 'sitting') {
     me.vx = me.vz = 0;
     if (frame % 8 === 0) puff(lvl.spot.x + 40, sy(-2) - 14, 1, ['#ffffff', '#e8e4f4', '#d4c8f8'], .3, -0.03);
@@ -2346,6 +2387,24 @@ function drawMenu() {
   if (menu.page === 'controls') text(rebinding ? 'PRESS ANY KEY (ESC CANCELS)' : rebindWarn && rebindWarn.t-- > 0 ? rebindWarn.m : 'CLICK A ROW, THEN PRESS THE NEW KEY. ARROWS + MOUSE ALWAYS WORK', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
   if (menu.msg) text(menu.msg, W / 2, y0 + h + 16, '#c8ffa0', 1, 'center');
 }
+function drawHazard() {
+  if (state !== 'play' || !lvl) return;
+  const bk = lvl.theme.base || lvl.themeKey;
+  if (bk === 'park' && lvl.hazardOn) {
+    const midX = (lvl.zones[lvl.zi] || lvl.zones[0]).x0 + ZW / 2 - camX;
+    for (let i = 0; i < 4; i++) { ctx.fillStyle = 'rgba(150,220,255,.5)'; ctx.fillRect(Math.round(midX + (i - 1.5) * 20), sy(0) - 40, 2, 40); }
+  } else if (bk === 'beach' && lvl.hazardOn) {
+    ctx.fillStyle = 'rgba(180,220,255,.25)'; ctx.fillRect(0, sy(ZMAX) - 6, W, 10);
+  } else if (bk === 'suburb' && lvl.hazardX != null) {
+    const X = Math.round(lvl.hazardX - camX), Y = sy(ZMAX / 2);
+    ctx.fillStyle = 'rgba(255,220,80,.4)'; circle(X, Y, 12); ctx.fillStyle = 'rgba(255,120,40,.7)'; circle(X, Y, 7);
+  } else if (bk === 'city') {
+    const Y = sy(lvl.hazardZ || 14);
+    ctx.fillStyle = lvl.hazardOn ? 'rgba(255,60,60,.35)' : 'rgba(255,220,60,.22)'; ctx.fillRect(0, Y - 8, W, 16);
+  } else if (bk === 'hq' && lvl.hazardOn) {
+    for (let X = 4; X < W; X += 16) { ctx.fillStyle = 'rgba(255,40,60,' + (0.35 + 0.15 * Math.sin(frame / 6 + X)).toFixed(2) + ')'; ctx.fillRect(X, FLOOR_Y - 40, 2, 40); }
+  }
+}
 function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
 function drawScene() {
   if (state === 'story') { drawStory(); return; }
@@ -2372,6 +2431,7 @@ function drawScene() {
   if (th.floorTint) { ctx.globalAlpha = th.floorTint[1]; ctx.fillStyle = th.floorTint[0]; ctx.fillRect(0, FLOOR_Y - 12, W, H); ctx.globalAlpha = 1; }
   for (const x of lvl.deco) draw_(PLANT, x, FLOOR_Y - 24);
   drawSpot();
+  drawHazard();
   // fight area edges
   const zn = lvl.zones[lvl.zi];
   if (lvl.locked && zn && frame % 30 < 20) { R(ctx, 'rgba(255,90,106,.5)', Math.round(zn.x0 + ZW - 4 - camX), FLOOR_Y, 3, ZMAX + 10); R(ctx, 'rgba(255,90,106,.5)', Math.round(zn.x0 + 2 - camX), FLOOR_Y, 3, ZMAX + 10); }
@@ -2395,7 +2455,7 @@ function drawScene() {
   const list = [];
   for (const it of lvl.items) if (!it.taken && Math.abs(it.x - camX - W / 2) < W) list.push({ z: it.z, d: () => { shadow(it.x, it.z, it.h || 0, 4); drawItem(it); } });
   for (const p of lvl.props) if (!p.broken) list.push({ z: p.z, d: () => { shadow(p.x, p.z, 0, 8); drawProp(p); } });
-  for (const e of lvl.enemies) if (e.spawned && e.alive) list.push({ z: e.z, d: () => { shadow(e.x, e.z, e.h, e.ai === 'mouse' ? 5 : 7); drawEnemyB(e); } });
+  for (const e of lvl.enemies) if (e.spawned && e.alive) list.push({ z: e.z, d: () => { const fogA = lvl.hazardFog ? Math.max(0.15, 1 - Math.max(0, Math.abs(e.x - me.x) - 46) / 90) : 1; ctx.globalAlpha = fogA; shadow(e.x, e.z, e.h, e.ai === 'mouse' ? 5 : 7); drawEnemyB(e); ctx.globalAlpha = 1; } });
   const lg = lvl.legend;
   if (lg) list.push({ z: lg.z, d: () => {
     const L = LEGENDS[lg.who]; shadow(lg.x, lg.z, 0);

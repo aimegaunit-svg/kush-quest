@@ -1,5 +1,43 @@
 # AGENT_NOTES
 
+## Session wrap-up: A2-A6 + B1-B3 all landed and merged (main session, latest)
+This session ran 4 subagents in parallel git worktrees (A6 enemy tricks, B1 world/level rebuild, A2/A3
+economy fidelity, mobile/touch polish), each briefed against the real `BRIEF_v1.1.md` text and told which
+files/systems NOT to touch so their work wouldn't collide. All 4 branches merged into `main` with **zero
+textual conflicts** across two merge rounds (`9a663a8`+`3901f0e`, then `7d4bc04`+`4432aff`), and the
+combined result was re-verified after each merge, not just trusted: `node --check` on every touched file,
+the full existing Playwright regression (fresh save -> migration -> solo -> combat -> shop cycling ->
+crew-lives drain-to-restart still losing exactly 50% coins/Resin -> all 55 levels building with zero
+errors), plus targeted checks of the newly-merged transit-game launch wiring (Hotbox Highway + a world-gate
+game both still launch correctly into `state:'transit'` after the touch-input changes landed on top).
+
+Also landed this session, directly (not via subagent): B2/B3's actual map wiring (commit `24ec993`) -
+`index.html` now loads `transit.js`+all 6 mini-game files and gets a `#transitMount` overlay; a new
+`launchTransit()` in `game.js` pauses the main loop and launches Drive.start/LazyRiver.start/etc. from the
+Hotbox Highway node and each world-gate node, banking coins and returning to the map on completion.
+
+**Everything currently on `main` for brief v1.1**: A1 (two weapon slots) / A2 (4 Core weapons, real
+coins+Resin+Seeds cost curve, `save.coreCap` raised at each mini-boss/boss) / A3 (the 12 named Wild
+weapons, per-world pool, Resin-backed charge bar) / A4 (trimmed consumables) / A5 (crew lives, checkpoints,
+restart-at-0-with-50%-loss) / A6 (world-gated enemy tricks for cop/karen/mouse/squirrel) / B1 (6 worlds,
+49+6 levels, mini-bosses, per-world maps, cutscenes) / B2+B3 (Hotbox Highway + the 5 transit games actually
+launchable from the map) / mobile touch support pass across the main game and all 6 mini-games.
+
+**Remaining known gaps** (each already disclosed in detail in its own commit/section below - read those
+before starting on any of them): A1's old THROWS system was never fully ripped out (just no longer fed).
+A6 was never verified with real two-client co-op. B1's level-TYPE tags (BRAWL/GAUNTLET/etc.) are metadata
+only, not yet distinct gameplay; mini-bosses reuse one attack pattern; secret levels build as data but
+have no discovery mechanic. A2/A3's Seed-per-boss-per-player and Resin drops aren't co-op-synced (single-
+client credit only). Mobile audio-unlock on real iOS Safari couldn't be verified from headless Chromium.
+Farm price/gate (Part B4: "~2500 coins + Killjoy beaten") and the Astral Plane unlock change (Part B4:
+"S grade on all 6 bosses" - no grade system exists yet) are untouched. Part B5 (save/UI: world %, secrets-
+found count on the menu) is untouched.
+
+**Deploy**: this repo has a `render.yaml` and README-documented live URL (`https://kush-quest.onrender.com`)
+that auto-deploys from GitHub on push to `main` - already pushed as of commit `4432aff`. The sandbox's
+network egress doesn't allow curling arbitrary external hosts, so the live deploy couldn't be verified
+from inside this session; Render's own dashboard/build logs are the way to confirm it went out.
+
 ## v1.1 A2/A3 real-brief pass landed (parallel subagent, latest)
 Closed the two specific A2/A3 gaps this file flagged after the real brief was read in full (see the
 "IMPORTANT: the full BRIEF_v1.1.md text..." section below) - commit `df1fb90` on top of `24ec993`, in

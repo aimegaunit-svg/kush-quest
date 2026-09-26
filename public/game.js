@@ -1898,6 +1898,7 @@ function hot(x, y, w, h, click, hover) { const m = ctx.getTransform(); HOT.push(
 function hotAt(gx, gy) { for (let i = HOT.length - 1; i >= 0; i--) { const r = HOT[i]; if (gx >= r.x && gx < r.x + r.w && gy >= r.y && gy < r.y + r.h) return r; } return null; }
 let trans = null;
 function go(fn, exhale) {
+  if (document.hidden) { fn(); return; } // no one is watching: skip the animation
   if (trans) { if (!trans.done) { const prev = trans.mid; trans.mid = () => { prev && prev(); fn(); }; } else fn(); return; }
   trans = { t: 0, dur: exhale ? 110 : 64, mid: fn, done: false, exhale, ox: exhale && me ? me.x - camX : W / 2, oy: exhale && me ? sy(me.z || 30) - 20 : H / 2 };
   if (AC) { noise(exhale ? 1.4 : 0.6, exhale ? 0.1 : 0.05, AC.currentTime, 500); if (exhale) tone(180, 1.2, 'triangle', 0.05, 0, 0.5); }
@@ -2269,7 +2270,16 @@ function wrap(str, x, y, width, col) {
 // ============================================================
 //  MAIN LOOP (fixed 60 updates / second)
 // ============================================================
-let last = 0, acc = 0;
+let last = 0, acc = 0, lastBg = 0;
+// browsers pause requestAnimationFrame in background tabs; keep the game (and the host's enemies) running anyway
+setInterval(() => {
+  if (!running || !document.hidden) { lastBg = 0; return; }
+  const now = performance.now(); if (!lastBg) lastBg = now;
+  let steps = Math.min(120, Math.floor((now - lastBg) / (1000 / 60)));
+  lastBg += steps * (1000 / 60);
+  while (steps-- > 0) update();
+}, 100);
+document.addEventListener('visibilitychange', () => { last = 0; acc = 0; });
 function loop(t) {
   if (!last) last = t;
   acc += Math.min(100, t - last); last = t;

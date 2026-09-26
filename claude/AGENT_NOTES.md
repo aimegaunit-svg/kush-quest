@@ -1,5 +1,45 @@
 # AGENT_NOTES
 
+## IMPORTANT: the full BRIEF_v1.1.md text was only read in full late in this session
+Everything below "v1.1 Section A progress" was built from a compacted/summarized memory of the
+brief, not the actual document. Once the real `claude/BRIEF_v1.1.md` was read from the Project (near
+the end of this session), a few real deviations turned up - **noted here, not yet fixed**:
+- **A2**: the Grinder is specced as a **ranged returning disc** ("throws a disc that flies out and
+  returns... range grows with level"), not melee. This session deliberately kept it melee as a scoped
+  simplification (disclosed in the A1/A2 commit) - that's now a bigger gap than it looked at the time.
+- **A2 cost curve**: the brief wants Core upgrades to cost **coins + Resin** (and Seeds on odd levels,
+  Seeds dropped only by bosses), with level caps that only rise at each world's mini-boss/boss (capping
+  at Lv10 after Mr. Killjoy). This session's shop entry is Resin-only, no coin cost, no Seeds, no level
+  caps at all - upgradeable 1-10 freely from the start. `save.seeds` field exists (added in the A1
+  foundation commit) but is completely unused.
+- **A3 Wild pool**: the brief lists 12 specific named Wild weapons (Bong Hammer, Blunt Bat, Rolling
+  Papers, Nug Bombs, Dab Torch, Hacky Sack, Leaf Blower, Zippo Flick, Hookah Whip, Lava Lamp Mace,
+  Gravity Bong Cannon, Apple Pipe), each with 3-4 worlds it appears in, a charge-bar economy (Resin
+  fills the Wild charge first, overflow goes to the bank), and being lost at level end. This session's
+  A3 only folded the Dab Saber into the existing 4 enviro-weapon pickups (lid/cone/surfboard/chair) -
+  none of the 12 named weapons, no charge-bar (still flat "uses" count), no per-world pool rotation.
+- **A4**: the brief's actual item list is Munchies/Pre-roll/Rage Brownie (shareable) plus Energy
+  Soda/Golden Leaf/**Vape Pen** (personal-only) - 6 items total, carry Munchies+2 others. This session
+  instead cut down to exactly 3 items total (munchie/brownie/soda), dropping pre-roll and gold rather
+  than keeping them as brief'd. No GIVE key, no shared brownie buff (both flagged already).
+- **A5 checkpoints**: the brief's checkpoints are specifically "the mid-level legend NPC" and "each
+  boss arena start", not just "the last zone that cleared" (what this session actually built). Close in
+  spirit but not the same trigger points - there's currently no legend-NPC or boss-arena-start hook
+  setting `checkpoint`, only the zone-clear one.
+- **A6**: not started at all this session. The brief has a full 6-world x 3-enemy-type table (18
+  distinct tricks: taser/sunscreen-spray/sand at Beach, pepper-spray/leaf-blower-Karen/mousetraps at
+  Suburbia, riot-shield/phone-flash/rat-gangs at Downtown, net-launcher/essential-oil-diffuser/pinecone-
+  grenades at Woods, drone-backed-cops/clipboard-Karens/exploding-robot-mice at HQ), each needing a
+  telegraph, a counter, a briefing entry, a sound, and network sync. None of this exists yet.
+- **Section B** (the 6-world/49-level rebuild, the 5 already-built transit games' actual per-world
+  hookup + pool rotation, the Head Shop CORE tab, farm price/gate change to "Killjoy beaten + coins",
+  Astral Plane unlock changed to "S grade on all 6 bosses", save/UI updates) is entirely unbuilt - this
+  was already known/flagged before the brief was re-read, just re-confirming it here.
+
+**Read `claude/BRIEF_v1.1.md` in full before touching Section A again** - do not keep working from a
+summary of it. The gaps above are exactly the kind of drift that happens when a brief gets paraphrased
+across a context-compaction boundary; the original doc is short enough to just read directly.
+
 ## v1.1 Section A progress (main session, latest)
 Commits `100a4ed`..`c295b95` on `main` land brief v1.1 Section A1-A4 in `public/game.js`:
 - **A1/A2 done**: `save.cores{rasta,snapback,bucket,afro}` (1-10 Core-weapon levels), `save.resin`,

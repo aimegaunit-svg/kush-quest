@@ -2101,7 +2101,7 @@ function drawMap(y) {
 function shopEntries() {
   const ups = WEAPONS.filter(w => save.weapons.includes(w.id)).map(w => ({ kind: 'upgrade', id: w.id, icon: w.icon, name: 'UPGRADE ' + w.name + (wlv(w.id) < 3 ? ' LV' + (wlv(w.id) + 1) : ''), price: 60 * wlv(w.id) + w.dmg * 20, desc: '+1 DAMAGE AND STRONGER EFFECTS. MAX LV3' }));
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
-  return [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, ...ups, ...uses, ...SHOP];
+  return [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }, ...ups, ...uses, ...SHOP];
 }
 function shopEntriesOld() { return [...SHOP, { kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP' }]; }
 function itemStatus(it) {
@@ -2128,6 +2128,7 @@ function shopConfirm() {
   if (results.farmScene) { results.farmScene = false; if (results.shopOnly) go(openMap); return; }
   const list = shopEntries();
   const it = list[shopSel];
+  if (it.kind === 'quit') { persist(); location.href = location.pathname; return; }
   if (it.kind === 'ready') {
     if (Net.online && !results.shopOnly) { if (!readyInfo || !readyInfo.me) { Net.send({ t: 'ready' }); SFX.cp(); } }
     else go(openMap);
@@ -2174,16 +2175,17 @@ function drawShop() {
     const it = list[i], y = 76 + (i - start) * 10, sel = i === shopSel, st = itemStatus(it);
     hot(4, y - 1, 190, 10, () => { if (shopSel === i) shopConfirm(); else { shopSel = i; SFX.tick(); } }, () => { shopSel = i; });
     if (sel) { R(ctx, '#4a3a60', 4, y - 1, 190, 10); R(ctx, '#c8ffa0', 4, y - 1, 2, 10); }
-    if (it.kind !== 'ready') ctx.drawImage(ICONS[it.icon], 8, y - 1, 9, 9);
-    text(it.name, it.kind === 'ready' ? 10 : 20, y + 1, it.kind === 'ready' ? '#c8ffa0' : st ? '#8a809a' : '#ffffff');
-    if (it.kind !== 'ready') text(st || it.price, 192, y + 1, st ? '#8a809a' : save.coins >= it.price ? '#ffd84a' : '#ff8a8a', 1, 'right');
+    const plain = it.kind === 'ready' || it.kind === 'quit';
+    if (!plain) ctx.drawImage(ICONS[it.icon], 8, y - 1, 9, 9);
+    text(it.name, plain ? 10 : 20, y + 1, it.kind === 'ready' ? '#c8ffa0' : it.kind === 'quit' ? '#ff9ab8' : st ? '#8a809a' : '#ffffff');
+    if (!plain) text(st || it.price, 192, y + 1, st ? '#8a809a' : save.coins >= it.price ? '#ffd84a' : '#ff8a8a', 1, 'right');
     else if (st) text(st, 192, y + 1, '#e4b3ff', 1, 'right');
   }
   if (start > 0 && frame % 30 < 20) text('^ MORE', 150, 68, '#b0a8c0');
   if (start + rows < list.length && frame % 30 < 20) text('V MORE', 150, 176, '#b0a8c0');
   const it = list[shopSel];
   R(ctx, '#4a3a60', 202, 76, 112, 96);
-  if (it.kind !== 'ready') ctx.drawImage(ICONS[it.icon], 246, 80, 20, 20);
+  if (it.kind !== 'ready' && it.kind !== 'quit') ctx.drawImage(ICONS[it.icon], 246, 80, 20, 20);
   wrap(it.desc, 206, 106, 26, '#ffffff');
   if (r.msg) wrap(r.msg, 206, 142, 26, '#ffd84a');
   text('MOUSE: CLICK TWICE TO BUY   KEYS: UP/DOWN + ENTER   ESC: MAP', W / 2, 183, '#8a809a', 1, 'center');
@@ -2434,6 +2436,7 @@ function drawMap_() {
   // header + info panel across the full width
   R(ctx, 'rgba(26,16,38,.85)', 0, 0, W, 16);
   text('WORLD 1 - ROAD TO THE FARM', 6, 5, '#c8ffa0');
+  { const bx = Math.round(W / 2 - 22); R(ctx, '#4a3a60', bx, 2, 44, 12); R(ctx, '#c8ffa0', bx, 2, 44, 1); text('MENU', W / 2, 5, '#ffffff', 1, 'center'); hot(bx, 2, 44, 12, () => openMenu()); }
   ctx.drawImage(COIN, W - 76, 3); text(save.coins + ' / ' + FARM_PRICE, W - 4, 5, '#ffd84a', 1, 'right');
   R(ctx, 'rgba(26,16,38,.92)', 0, H - 34, W, 34); R(ctx, '#c8ffa0', 0, H - 34, W, 1);
   text(nodeLabel(nd), 6, H - 30, '#ffd84a', 1);

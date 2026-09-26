@@ -233,6 +233,7 @@ addEventListener('keydown', e => {
   if (!running || chatOpen) return;
   const c = e.code;
   if (Net.rejoin && e.code === 'Enter') { Net.doRejoin(); return; }
+  if (Net.kicked && e.code === 'Enter') { persist(); location.href = location.pathname; return; }
   if (rebinding) { // waiting for a key to bind
     e.preventDefault();
     if (c !== 'Escape') { const old = settings.keys[rebinding]; for (const a in settings.keys) if (a !== rebinding && settings.keys[a] === c) { settings.keys[a] = old; rebindWarn = { t: 240, m: keyLabel(c) + ' WAS ' + ACTION_NAMES[a] + ' - SWAPPED, THAT IS NOW ' + keyLabel(old) }; } settings.keys[rebinding] = c; saveSettings(); SFX.buy(); }
@@ -247,7 +248,7 @@ addEventListener('keydown', e => {
     if (state === 'results' && results && results.shopOnly) { go(openMap); return; }
     if (state !== 'story') { openMenu(); return; }
   }
-  const menuish = menu || state === 'map' || state === 'story' || invOpen;
+  const menuish = menu || state === 'map' || state === 'lobby' || state === 'story' || invOpen;
   if (menuish && !nav && (a === 'jump' || a === 'attack' || c === 'Enter') && (K.nav || (K.navQ && K.navQ.length))) { e.preventDefault(); (K.navQ = K.navQ || []).push('enter'); return; }
   if (menuish && (nav || a === 'jump' || a === 'attack' || c === 'Enter')) { e.preventDefault(); if (a === 'jump') press('jump', true); if (c === 'Enter') press('enter', true); if (a === 'attack') K.attackPressed = true; return; }
   if (a === 'chat' && Net.online) { e.preventDefault(); openChat(); return; }
@@ -327,7 +328,7 @@ document.querySelectorAll('#touch button').forEach(b => {
     if (k === 'pause') { gpDispatch('Escape', true); return; }
     if (k === 'emote') { if (state === 'play') emote((touchEmoteI = (touchEmoteI + 1) % 4)); return; }
     if (k === 'weapon' || k === 'quick' || k === 'throw') { gpDispatch(settings.keys[k === 'throw' ? 'throw' : k], true); return; }
-    if (state === 'map' || state === 'story' || invOpen) { if (k === 'jump' || k === 'attack') K.enterPressed = true; return; }
+    if (state === 'map' || state === 'lobby' || state === 'story' || invOpen) { if (k === 'jump' || k === 'attack') K.enterPressed = true; return; }
     if (state === 'results') { if (k === 'left' || k === 'up') K.upPressed = true; else if (k === 'right' || k === 'down') K.downPressed = true; else K.enterPressed = true; return; }
     if (state === 'sitting' && k === 'jump') K.enterPressed = true;
     press(k, true);
@@ -1406,7 +1407,6 @@ function attack(charged) {
     Net.send({ t: 'fx', k: 5, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
     return;
   }
-  if (K.left !== K.right) me.face = K.right ? 1 : -1;
   const lunge = K.run && Math.abs(me.vx) > 1.5 && me.h === 0, air = me.h > 6;
   if (air && me.vh < 0.5 && hasSkill('pound') && !charged) { me.pound = true; me.vh = -5; me.slash = { t: 12, max: 12, heavy: true, kind: w.id, air: true }; SFX.flap(); return; }
   me.chain = lunge || air || charged ? 2 : me.chainT > 0 ? (me.chain + 1) % 3 : 0;
@@ -1486,6 +1486,7 @@ function update() {
   if (updateTrans()) { clearIn(); return; }
   if (menu) { updateMenu(); clearIn(); if (!Net.online || !menu) return; }
   if (state === 'story') { updateStory(); clearIn(); return; }
+  if (state === 'lobby') { updateLobby(); clearIn(); return; }
   if (state === 'map') { if (invOpen) updateInventory(); else updateMap(); clearIn(); return; }
   if (state === 'brief') {
     if (--briefT <= 0 || (!Net.online && (K.jumpPressed || K.enterPressed || K.attackPressed))) { state = 'play'; banner = null; for (const k of new Set(lvl.theme.enemies)) if (!save.met.includes(k)) save.met.push(k); persist(); }
@@ -1579,6 +1580,7 @@ function updatePlayer() {
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
   if (p.atkT > 6 && p.h === 0) { ix = 0; iz = 0; } // plant your feet while swinging
   if (ix) p.face = ix;
+  if (mouseG && !chatOpen && p.atkT <= 6) { const sx = p.x - camX; if (Math.abs(mouseG.x - sx) > 3) p.face = mouseG.x > sx ? 1 : -1; } // aim with the mouse; WASD still moves
   if (p.roll > 0) { p.roll--; if (hasSkill('rollsmoke') && frame % 3 === 0) { puff(p.x, sy(p.z) - 6, 3, ['#ffffff', '#c8ffa0'], .6); for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - p.x) < 14 && Math.abs(e.z - p.z) < 10 && !(e.rollHit > frame)) { e.rollHit = frame + 30; hitEnemy(e, 1, Math.sign(e.x - p.x) || 1, false, { burn: 1 }); } } }
   else if (p.inv > 55) { /* knockback */ } else { p.vx += (ix * mx - p.vx) * 0.3; p.vz += (iz * mz - p.vz) * 0.3; }
   if (p.puffed) { p.vx *= 0.9; p.vz *= 0.9; }
@@ -2252,6 +2254,7 @@ function drawMenu() {
 function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
 function drawScene() {
   if (state === 'story') { drawStory(); return; }
+  if (state === 'lobby') { draw320(drawLobby); return; }
   if (state === 'map') { drawMap_(); if (invOpen) draw320(drawInventory); return; }
   if (state === 'results' && results && results.shopOnly) { draw320(drawShop, '#1e122c'); return; }
   const th = lvl.theme;
@@ -2416,6 +2419,7 @@ function drawHUD() {
     text(banner.a, W / 2, 68, '#c8ffa0', 2 * bs, 'center');
     if (banner.b) text(banner.b, W / 2, 68 + 16 * bs, '#fff', bs, 'center');
     if (Net.rejoin) hot(0, 62, W, (banner.b ? 34 : 22) * bs, () => Net.doRejoin());
+    if (Net.kicked) hot(0, 62, W, (banner.b ? 34 : 22) * bs, () => { persist(); location.href = location.pathname; });
     ctx.globalAlpha = 1;
   }
   if (state === 'sitting') {
@@ -2758,6 +2762,56 @@ function nodeLabel(nd) {
   if (nd.kind === 'farm') return 'THE POT FARM';
   return missionName(nd.n)[0] + ' ' + missionName(nd.n)[1];
 }
+// ---- Online lobby: shown right after create/join, before the map ----
+function openLobby() { state = 'lobby'; lobbySel = 0; }
+let lobbySel = 0;
+function updateLobby() {
+  if (!Net.online) { go(openMap); return; } // solo never lands here
+  const rows = lobbyRows();
+  if (K.nav === 'up') lobbySel = (lobbySel + rows.length - 1) % rows.length;
+  if (K.nav === 'down') lobbySel = (lobbySel + 1) % rows.length;
+  if (K.nav) SFX.tick();
+  if ((K.jumpPressed || K.enterPressed || K.attackPressed) && rows[lobbySel]) rows[lobbySel].act();
+}
+function lobbyRows() {
+  const isH = Net.hostId === Net.id;
+  const rows = [{ label: (Net.readySet && Net.readySet.has(Net.id)) ? "I'M READY (CANCEL)" : "I'M READY", act: () => { Net.send({ t: 'ready' }); (Net.readySet = Net.readySet || new Set()).add(Net.id); SFX.cp(); } }];
+  if (isH) rows.push({ label: 'START NOW (SKIP READY-UP)', act: () => { Net.send({ t: 'start' }); } });
+  rows.push({ label: 'COPY INVITE LINK', act: copyInviteLobby });
+  rows.push({ label: 'BACK TO MAIN MENU', act: () => { persist(); location.href = location.pathname; } });
+  return rows;
+}
+function copyInviteLobby() {
+  const link = location.origin + '/?room=' + Net.code;
+  (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => { lobbyMsg = 'COPIED! PASTE IT TO YOUR FRIENDS'; }, () => { lobbyMsg = link; });
+}
+let lobbyMsg = '';
+function drawLobby() {
+  ctx.fillStyle = 'rgba(26,16,38,.96)'; ctx.fillRect(0, 0, W, H);
+  text('WAITING ROOM', W / 2, 10, '#c8ffa0', 2, 'center');
+  text('ROOM CODE', W / 2, 26, '#b0a8c0', 1, 'center');
+  text(Net.code, W / 2, 34, '#ffd84a', 2, 'center');
+  const ready = Net.readySet || new Set();
+  const all = [{ id: Net.id, name: Net.name, color: Net.color, host: Net.hostId === Net.id }, ...[...remotes].map(([id, r]) => ({ id, name: r.name, color: r.color, host: Net.hostId === id }))];
+  let y = 54;
+  for (const pl of all) {
+    R(ctx, P.k, 30, y - 1, W - 60, 12); R(ctx, '#4a3a60', 31, y, W - 62, 10);
+    text((pl.host ? '[HOST] ' : '') + pl.name, 36, y + 2, SHIRTS[pl.color] || '#fff');
+    text(ready.has(pl.id) ? 'READY' : 'WAITING...', W - 34, y + 2, ready.has(pl.id) ? '#7fe07a' : '#b0a8c0', 1, 'right');
+    if (Net.hostId === Net.id && pl.id !== Net.id) hot(W - 30, y - 1, 24, 12, () => Net.send({ t: 'kick', id: pl.id }));
+    if (Net.hostId === Net.id && pl.id !== Net.id) text('X', W - 22, y + 2, '#ff8a8a');
+    y += 15;
+  }
+  y += 8;
+  const rows = lobbyRows();
+  rows.forEach((row, i) => {
+    hot(30, y - 1, W - 60, 12, () => { lobbySel = i; row.act(); }, () => { lobbySel = i; });
+    text(row.label, W / 2, y + 2, i === lobbySel ? '#ffd84a' : '#ffffff', 1, 'center');
+    y += 14;
+  });
+  if (lobbyMsg) text(lobbyMsg, W / 2, y + 6, '#c8ffa0', 1, 'center');
+  text('THE HOST CAN START ANY TIME. EVERYONE ELSE: HIT READY', W / 2, H - 10, '#8a809a', 1, 'center');
+}
 function openMap() {
   state = 'map'; results = null; banner = null; invOpen = false;
   setWorld(maxWorld());
@@ -3083,7 +3137,8 @@ const Net = {
         ws.onclose = () => { if (this.ws === ws) this.lost(); };
         if (running) {
           me.color = m.color; readyInfo = null;
-          if (m.phase === 'map') openMap();
+          if (m.phase === 'lobby') openLobby();
+          else if (m.phase === 'map') openMap();
           else if (m.phase === 'shop') { if (state !== 'results') toResults(); }
           else {
             if (m.level !== lvl.n || state === 'map' || state === 'results') startLevel(m.level);
@@ -3144,11 +3199,12 @@ function onNet(m) {
     }
     case 'hurry': hurryT = 20 * 60; banner = { t: 120, a: m.name + ' CALLED THE CREW!', b: '20 SECONDS TO REACH THE SMOKE SPOT' }; SFX.karen(); break;
     case 'allfin': readyInfo = null; go(toResults, true); break;
-    case 'ready': readyInfo = { me: (readyInfo && readyInfo.me) || m.who === Net.id, n: m.n, of: m.of }; break;
+    case 'ready': readyInfo = { me: (readyInfo && readyInfo.me) || m.who === Net.id, n: m.n, of: m.of }; (Net.readySet = Net.readySet || new Set()).add(m.who); break;
     case 'level': go(() => startLevel(m.n)); break;
-    case 'map': go(openMap); readyInfo = null; break;
+    case 'map': go(openMap); readyInfo = null; if (Net.readySet) Net.readySet.clear(); break;
     case 'mapsel': Net.mapCursor = m.i; Net.mapWorld = m.w; break;
     case 'emote': { const r = remotes.get(m.id); if (r) r.emote = { e: m.e % EMOTES.length, t: 120 }; break; }
+    case 'kicked': persist(); banner = { t: 99999, a: 'REMOVED FROM THE ROOM', b: 'BY THE HOST - CLICK HERE TO GO TO THE MENU' }; Net.online = false; Net.kicked = true; break;
   }
 }
 
@@ -3204,6 +3260,7 @@ function startGame() {
   running = true;
   if (Net.online && Net.phase === 'play') startLevel(Net.level);
   else if (Net.online && Net.phase === 'shop') { results = { made: false, earned: 0, lost: 0, spotBonus: 0, ultraBonus: 0, cooked: 0, kills: 0, best: 0, msg: 'CREW IS SHOPPING - JOIN THEM' }; state = 'results'; }
+  else if (Net.online && Net.phase === 'lobby') openLobby();
   else if (!save.intro && !Net.online) { state = 'story'; storyPage = 0; storyT = 0; }
   else openMap();
   if (Net.online) setTimeout(() => { banner = { t: 150, a: 'ROOM CODE: ' + Net.code, b: 'ALWAYS ON THE MAP - ESC TO COPY THE INVITE LINK' }; }, 50);
@@ -3228,5 +3285,5 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, K, remotes, Net, startLevel, toResults };
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, K, remotes, Net, startLevel, toResults };
 })();

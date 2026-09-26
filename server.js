@@ -134,7 +134,7 @@ function checkProgress(room) {
   if (room.phase === 'play' && room.fin.size > 0 && [...room.players.keys()].every(id => room.fin.has(id))) {
     room.phase = 'shop';
     broadcast(room, { t: 'allfin' });
-  } else if (room.phase === 'shop' && [...room.players.keys()].every(id => room.ready.has(id))) {
+  } else if ((room.phase === 'shop' || room.phase === 'lobby') && [...room.players.keys()].every(id => room.ready.has(id))) {
     room.phase = 'map'; room.ready.clear();
     broadcast(room, { t: 'map' });
   }
@@ -148,7 +148,7 @@ function handle(client, m) {
       if (client.room) return;
       if (rooms.size >= MAX_ROOMS) return client.send({ t: 'err', msg: 'Server is full, try again later' });
       const code = makeCode();
-      rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'map', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0 });
+      rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'lobby', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0 });
       enter(client, code, cleanName(m.name));
       break;
     }
@@ -187,11 +187,27 @@ function handle(client, m) {
       break;
     case 'timeup': break; // the server runs the countdown itself now
     case 'ready':
-      if (!room || room.phase !== 'shop') return;
+      if (!room || (room.phase !== 'shop' && room.phase !== 'lobby')) return;
       room.ready.add(client.id);
       broadcast(room, { t: 'ready', n: room.ready.size, of: room.players.size, who: client.id });
       checkProgress(room);
       break;
+    case 'start': // host forces the lobby straight into the map, ready or not
+      if (!room || room.phase !== 'lobby' || client.id !== room.host) return;
+      room.phase = 'map'; room.ready.clear();
+      broadcast(room, { t: 'map' });
+      break;
+    case 'kick': { // host removes a player from the lobby
+      if (!room || room.phase !== 'lobby' || client.id !== room.host) return;
+      const targetId = String(m.id || '');
+      const target = room.players.get(targetId);
+      if (!target || targetId === room.host) return;
+      target.client.send({ t: 'kicked' });
+      room.players.delete(targetId); room.ready.delete(targetId);
+      target.client.room = null;
+      broadcast(room, { t: 'pl', id: targetId });
+      break;
+    }
     // beat-em-up sync: the host runs the enemies, everyone else reports hits/thefts to it
     case 'es': // enemy snapshot from the host only
       if (room && client.id === room.host && Array.isArray(m.e) && m.e.length <= 400)

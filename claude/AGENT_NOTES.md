@@ -363,3 +363,29 @@ with real `PointerEvent`s, one on a plain desktop viewport confirming `ArrowRigh
 movement still works unaffected (x: 40 → 80.1). No new console/page errors in either pass (the
 only reported "error" was the sandbox's own outbound network block on unrelated Google telemetry
 domains — not a game issue). Pushed to `main`; Render auto-deploys from there.
+
+---
+
+## Follow-up: two-client online verification + user report of joystick "not changed" (latest)
+
+Ran a real two-browser-context Playwright test (`/tmp/kq_2browser_test.js`, not committed - scratch
+test) against a locally running `server.js`: client A (desktop) creates a room, client B (iPhone 13
+emulation) joins with the room code, both advance through lobby → brief → play on the same level
+(host picks level via `Net.send({t:'pick', n:1})`), then A moves right via keyboard and B moves
+right via a real `PointerEvent` drag on the new joystick. Result: both local positions advanced
+(A: 40→136, B: 50→149) **and each client's `remotes` map showed the other player's x position
+matching**, confirming both the mobile joystick and the desktop keyboard path stay correctly
+network-synced together. No new console/page errors (only the sandbox's own blocked outbound
+telemetry domain, as before).
+
+The user then reported the mobile controls "did not change in the way I wanted" (still expecting
+a drag-anywhere joystick instead of 4 buttons). Re-verified the code on `main` (commit `d88bbdc`)
+is in fact exactly that — `#joyBase`/`#joyKnob` in `index.html`, wired in `game.js` right after the
+`#touch button` listener block — and took a fresh screenshot confirming it renders as a circular
+drag stick, not 4 separate buttons. Likely explanation given to the user: Render free-tier deploy
+lag/cold-start or a stale browser cache on their phone, not a code issue — asked them to hard-reload
+and report back with specifics if it's still wrong. No code changes made in this follow-up; purely
+verification. If the user comes back saying it's still 4 buttons after a hard refresh + confirming
+they're on `kush-quest.onrender.com`, the next step is to ask for a screenshot from their actual
+device rather than guessing further from the sandbox (which cannot reach the live Render URL to
+verify the deployed bytes directly - egress is allowlisted to GitHub/npm only).

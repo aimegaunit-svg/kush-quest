@@ -1192,6 +1192,7 @@ function puff(x, y, n, cols, spd = 1, g = 0.02) {
 function popup(x, y, str, col = '#fff') { popups.push({ x, y, str, col, t: 60 }); }
 function collect(id) { Net.send({ t: 'col', id, l: lvl.n }); }
 const ultra = () => me.cooked >= 100;
+const tooHigh = () => me.cooked >= 90 && me.cooked < 100;
 function addCombo(x, y) {
   me.combo++; me.comboT = 120; me.best = Math.max(me.best, me.combo);
   if (me.combo === 5 || me.combo === 10 || me.combo === 20) {
@@ -1405,6 +1406,7 @@ function hitEnemy(e, dmg, dir, strong, fx = {}) {
 }
 function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (!e.alive || e.state === 5) return;
+  if (by === Net.id && tooHigh() && dmg > 0) dmg += 1; // too-high zone (90-99% Cooked): hit harder, but slower on your feet
   let teamBonus = 0;
   if (by && e.lastHitBy && e.lastHitBy !== by && frame - (e.lastHitT || -999) < 30) { teamBonus = Math.max(1, Math.ceil(dmg * 0.5)); popup(e.x - 22, sy(e.z) - 30, 'TEAM UP!', '#ffd84a'); SFX.power(); }
   e.lastHitBy = by; e.lastHitT = frame;
@@ -1616,6 +1618,8 @@ function animFrame(p) {
 }
 
 function updatePlayer() {
+  // the Cooked meter slowly fades - not mid-boss-fight, and not once you're already chilling at the spot
+  if (frame % 180 === 0 && me.cooked > 0 && !(lvl.boss && lvl.boss.alive) && state === 'play') addCooked(-1);
   if (me.down > 0) { // waiting for a revive
     me.vx = me.vz = 0; me.atkT = 0;
     if (--me.down <= 0) { me.inv = 0; knockedOutFinal(); }
@@ -1644,7 +1648,8 @@ function updatePlayer() {
     if (!passed) me.passT = 0;
   } else me.passT = 0;
   const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1);
-  const mx = (K.run ? 2.1 : 1.3) * spd * (Net.color === 1 ? 1.1 : 1), mz = (K.run ? 1.3 : 0.9) * spd * (Net.color === 1 ? 1.1 : 1);
+  const highSlow = tooHigh() ? 0.9 : 1;
+  const mx = (K.run ? 2.1 : 1.3) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow, mz = (K.run ? 1.3 : 0.9) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow;
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
   if (p.atkT > 6 && p.h === 0) { ix = 0; iz = 0; } // plant your feet while swinging
   if (ix) p.face = ix;
@@ -1729,7 +1734,7 @@ function updatePlayer() {
     if (e.hitMe === e.strikeN) continue;
     const dx = p.x - e.x;
     if (e.boss) { if ((e.dash ? Math.abs(dx) < 22 : dx * e.dir > -6 && Math.abs(dx) < 44) && Math.abs(e.z - p.z) < 14 && p.h < 20) { e.hitMe = e.strikeN; hurt(e.mega ? 2 : 1, 5, e.x); } continue; }
-    if (dx * e.dir > -4 && Math.abs(dx) < 28 && Math.abs(e.z - p.z) < 8 && p.h < 14) { e.hitMe = e.strikeN; hurt(1, 0, e.x); }
+    if (dx * e.dir > -4 && Math.abs(dx) < 28 && Math.abs(e.z - p.z) < 8 && p.h < 14) { e.hitMe = e.strikeN; hurt(1, 2, e.x); }
   }
   // legend
   const lg = lvl.legend;
@@ -2340,6 +2345,7 @@ function drawScene() {
   const th = lvl.theme;
   ctx.save();
   if (shake > 0) { ctx.translate(Math.round((Math.random() - .5) * shake), Math.round((Math.random() - .5) * shake)); shake *= 0.85; if (shake < 0.5) shake = 0; }
+  if (tooHigh() && state === 'play' && !settings.reduceFlash) ctx.translate(Math.round(Math.sin(frame / 11) * 1.4), Math.round(Math.cos(frame / 13) * 0.8));
   ctx.drawImage(th.sky, 0, 0);
   drawLayer(th.clouds, 0.08, camX, frame * 0.1, 0);
   drawLayer(th.far, 0.2, camX, 0, -78);
@@ -2423,6 +2429,7 @@ function drawScene() {
 
   if (lvl.fightT > 0.02) { const a = lvl.fightT * 0.35; ctx.fillStyle = 'rgba(40,10,30,' + a.toFixed(3) + ')'; ctx.fillRect(0, 0, W, 6); ctx.fillRect(0, H - 6, W, 6); ctx.fillRect(0, 0, 6, H); ctx.fillRect(W - 6, 0, 6, H); }
   if (ultra() && state === 'play') { ctx.fillStyle = 'rgba(192,112,255,' + (0.06 + Math.sin(frame / 20) * 0.03) + ')'; ctx.fillRect(0, 0, W, H); }
+  if (tooHigh() && state === 'play' && !settings.reduceFlash) { ctx.fillStyle = 'rgba(150,80,200,' + (0.05 + Math.sin(frame / 14) * 0.02) + ')'; ctx.fillRect(0, 0, W, H); }
   // GO arrow after clearing a fight
   const next = lvl.zones.find(z => !z.cleared);
   if (state === 'play' && !lvl.locked && frame % 40 < 26 && (!next || me.x < next.x0 + 40)) {
@@ -2452,7 +2459,7 @@ function drawHUD() {
   R(ctx, P.k, mx + 9, 3, 62, 7); R(ctx, '#4a3a60', mx + 10, 4, 60, 5);
   R(ctx, c >= 100 ? (settings.reduceFlash ? '#e4b3ff' : ['#c070ff', '#c8ffa0', '#ff9ab8', '#ffd84a'][Math.floor(frame / 5) % 4]) : c >= 50 ? '#7fe07a' : '#c8b890', mx + 10, 4, Math.round(60 * c / 100), 5);
   R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 30, 3, 1, 7); R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 54, 3, 1, 7);
-  text(c >= 100 ? 'ULTRA COOKED!' : c >= 50 ? 'COOKED ' + c + '%' : 'SOBER-ISH ' + c + '%', mx + 9, 11, c >= 100 ? '#e4b3ff' : c >= 50 ? '#c8ffa0' : '#d8c8b0');
+  text(c >= 100 ? 'ULTRA COOKED!' : c >= 90 ? 'TOO HIGH ' + c + '%' : c >= 50 ? 'COOKED ' + c + '%' : 'SOBER-ISH ' + c + '%', mx + 9, 11, c >= 100 ? '#e4b3ff' : c >= 90 ? '#ff9a3a' : c >= 50 ? '#c8ffa0' : '#d8c8b0');
   // weapon + items
   const w = weaponDef();
   R(ctx, P.k, 146, 2, 14, 14); R(ctx, '#4a3a60', 147, 3, 12, 12); ctx.drawImage(ICONS[w.icon], 148, 4);

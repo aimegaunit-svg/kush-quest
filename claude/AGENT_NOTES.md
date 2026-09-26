@@ -1,5 +1,46 @@
 # AGENT_NOTES
 
+## v1.1 A6 + B1 landed via parallel subagents (main session, latest)
+Two subagents ran in parallel git worktrees off `2bc3b74`, each briefed with the actual
+`BRIEF_v1.1.md` text and told explicitly not to touch the other's territory (Core/Wild/crew-lives
+systems vs. world/level structure). Both merged into `main` cleanly - `9a663a8` (A6) then `3901f0e`
+(B1), no textual conflicts, and the combined result was re-verified after merging (not just trusted):
+`node --check` both files, a full Playwright regression (fresh save -> migration -> solo -> combat ->
+shop cycling -> crew-lives drain-to-restart, still losing exactly 50% coins/Resin), and all 55 levels
+(49 main + 6 secret) built via the debug handle with zero errors.
+
+**A6 (commit `70e0d9c`)**: world-gated enemy tricks for cop/karen/mouse/squirrel across
+beach/suburb/city/woods/hq (Park intentionally untouched). Each has a telegraph, a status-effect
+(`me.stunT/rootT/slowT/blindT`), new SFX, and network sync via existing per-enemy state sync plus two
+new relay message types (`'cloud'`, `'trap'`) added to server.js's explicit whitelist. Known gaps:
+mousetraps are level-seeded not dynamically dropped, the HQ drone has no independent hittable hp, the
+clipboard-Karen buff icon is host-local cosmetic only (the actual buff is synced), and **true two-client
+multiplayer was not tested** - only single-client plus code-level mirroring of already-proven sync
+patterns. A manual two-browser smoke test is recommended before calling this multiplayer-verified.
+
+**B1 (commits `3963a59`, `9ab39fc`)**: `WORLD_DEF` replaces the old fixed-length world scheme with the
+brief's real 6/7/8/9/9/10-level (49 main + 6 secret) structure, mini-bosses per world (`bossDataFor(n)`,
+deterministic by level number, brief's exact names), per-world maps sized to each world's real level
+count with a Hotbox Highway node after the mini-boss and a Head Shop node, and once-per-save
+world-transition cutscenes. Old saves migrate (`migratedB1` flag) - spot-tested with a save shaped like
+the pre-B1 format. **Biggest disclosed gap**: no real hand-chunk content-authoring happened (that's a
+genuine multi-day task) - `buildLevel` is still one deterministic procedural generator per level number,
+and the BRAWL/GAUNTLET/HAZARD/CHASE/ESCORT/SECRET level-type tags are metadata only, not yet wired to
+distinct gameplay (every level still plays as the existing clear-zones-then-boss flow). Also: mini-bosses
+reuse their base enemy's single attack pattern (brief wants 2 patterns each), the Hotbox Highway map node
+is clickable but shows "COMING SOON" rather than launching `drive.js` (which exists as a standalone file
+but was never hooked into `game.js`'s map at all, by anyone, until now being a visible gap), and the 6
+secret levels build as data but have no in-level hidden-exit discovery mechanic yet.
+
+**Next most valuable steps, roughly in priority order**: (1) wire the Hotbox Highway map node to actually
+launch `drive.js` (and the equivalent per-world-transition hookup for the 5 built transit games -
+lazyriver/paperplane/munchietruck/smokeballoon/bongrocket - which also still aren't connected to any
+in-game trigger despite existing and working standalone), (2) give GAUNTLET/CHASE/ESCORT real distinct
+mechanics instead of metadata tags, (3) a real two-browser co-op smoke test of the A6 tricks, (4) hidden
+secret-level exits, (5) the A2/A3/A4 brief-fidelity gaps already documented below (Grinder should be
+ranged, Core upgrades should cost coins+Resin+Seeds with mini-boss/boss level caps, the Wild pool should
+be the 12 brief-named weapons with a charge-bar economy, consumables should be 6 items not 3).
+
 ## IMPORTANT: the full BRIEF_v1.1.md text was only read in full late in this session
 Everything below "v1.1 Section A progress" was built from a compacted/summarized memory of the
 brief, not the actual document. Once the real `claude/BRIEF_v1.1.md` was read from the Project (near

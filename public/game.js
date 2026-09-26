@@ -1112,6 +1112,15 @@ const WORLD_CUTSCENES = [
   [{ name: 'GRANDMA KUSH', text: 'THAT DRONE SWARM DIDNT STAND A CHANCE.' }, { name: 'GRANDMA KUSH', text: 'THE MISTY WOODS ARE NEXT. SOMETHING IN THERE HUNTS BY SMELL.' }],
   [{ name: 'GRANDMA KUSH', text: 'THE FOREST NARC IS TOAST. ONE PLACE LEFT.' }, { name: 'GRANDMA KUSH', text: 'BUZZKILL HQ. KILLJOY HIMSELF. LETS FINISH THIS.' }],
 ];
+// v1.1 B3: one unique co-op transit mini-game per world-gate (the trip TO that index's world), per the
+// brief's table. Index 5 (Buzzkill HQ) has no entry - its gate leads to the Farm, not another world.
+const WORLD_TRANSIT_GAMES = [
+  { mod: window.LazyRiver, name: 'lazy river', world: 'park' },     // 0: Park -> Beach
+  { mod: window.PaperPlane, name: 'paper plane', world: 'beach' },  // 1: Beach -> Suburbia
+  { mod: window.MunchieTruck, name: 'munchie truck', world: 'suburb' }, // 2: Suburbia -> Downtown
+  { mod: window.SmokeBalloon, name: 'smoke balloon', world: 'city' }, // 3: Downtown -> Woods
+  { mod: window.BongRocket, name: 'bong rocket', world: 'woods' },  // 4: Woods -> HQ
+];
 const WORLD_START = (() => { const a = [0]; for (const w of WORLDS) a.push(a[a.length - 1] + w.levels.length); return a; })();
 const TOTAL_LEVELS = WORLD_START[WORLDS.length]; // 49 main levels
 const SECRET_BASE = TOTAL_LEVELS; // secret levels are n = 49..54, one per world, in world order
@@ -1340,6 +1349,10 @@ function loadSlot(i) {
     save.migratedB1 = true;
   }
   save.spots = Math.min(save.spots || 0, TOTAL_LEVELS);
+  // v1.1 B2/B3: the transit-game files (drive.js, lazyriver.js, etc.) call save.__persist() when they want
+  // to save mid-ride (e.g. after marking an intro card seen); persist is a hoisted function declaration so
+  // it already exists here even though it's defined later in the file.
+  save.__persist = persist;
 }
 loadSlot(1);
 // Core weapon level for the currently-selected homie (Net.color/save.character index into CORE_HOMIE), 1-10.
@@ -1895,6 +1908,9 @@ function update() {
   if (banner && --banner.t <= 0) banner = null;
   if (crewComboT > 0 && --crewComboT <= 0) crewCombo = 0;
   const clearIn = () => { K.jumpPressed = K.enterPressed = K.attackPressed = K.throwPressed = false; K.nav = nextNav(); K.escPressed = false; if (state !== 'results') K.upPressed = K.downPressed = false; };
+  // v1.1 B2/B3: while a transit mini-game (Hotbox Highway or a world-transition game) owns the #transitMount
+  // overlay, the main game loop is fully paused - the mini-game runs its own independent rAF loop.
+  if (state === 'transit') { clearIn(); return; }
   if (updateTrans()) { clearIn(); return; }
   if (dialog) { updateDialogue(); clearIn(); return; }
   if (menu) { updateMenu(); clearIn(); if (!Net.online || !menu) return; }
@@ -2863,7 +2879,7 @@ function drawHazard() {
     for (let X = 4; X < W; X += 16) { ctx.fillStyle = 'rgba(255,40,60,' + (0.35 + 0.15 * Math.sin(frame / 6 + X)).toFixed(2) + ')'; ctx.fillRect(X, FLOOR_Y - 40, 2, 40); }
   }
 }
-function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
+function draw() { if (state === 'transit') return; TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
 function drawScene() {
   if (state === 'story') { drawStory(); return; }
   if (state === 'lobby') { draw320(drawLobby); return; }
@@ -3587,6 +3603,37 @@ function drawLobby() {
   if (lobbyMsg) text(lobbyMsg, W / 2, y + 6, '#c8ffa0', 1, 'center');
   text('THE HOST CAN START ANY TIME. EVERYONE ELSE: HIT READY', W / 2, H - 10, '#8a809a', 1, 'center');
 }
+// v1.1 B2/B3: launches a transit mini-game (Hotbox Highway, or one of the 5 world-transition games) into
+// the #transitMount overlay, pausing the main loop (see the `state === 'transit'` guards in update()/draw())
+// until it reports back via onDone. `mod` is one of window.Drive/LazyRiver/PaperPlane/MunchieTruck/
+// SmokeBalloon/BongRocket - all share the same {save,mount,scale,crew,net,onDone} start() contract.
+// `extraOpts` carries game-specific fields (Drive needs {from,to,world,cooked}; the others just {world}).
+function launchTransit(mod, extraOpts, afterBanner, onAfter) {
+  if (!mod || typeof mod.start !== 'function') { banner = { t: 120, a: 'RIDE UNAVAILABLE', b: 'THIS MINI-GAME DID NOT LOAD - CHECK THE BROWSER CONSOLE' }; return; }
+  const mount = document.getElementById('transitMount');
+  if (!mount) { banner = { t: 120, a: 'RIDE UNAVAILABLE', b: 'NO MOUNT POINT ON THIS PAGE' }; return; }
+  mount.innerHTML = ''; mount.style.display = 'flex'; state = 'transit';
+  const crew = Net.online ? [{ id: Net.id, name: Net.name, color: Net.color }, ...[...remotes].map(([id, r]) => ({ id, name: r.name, color: r.color }))] : 1;
+  try {
+    mod.start({
+      ...extraOpts, save, mount, scale: 3, crew, net: Net.online ? Net : null,
+      onDone: (r) => {
+        try {
+          if (r && typeof r.coins === 'number') { save.coins += Math.max(0, Math.round(r.coins)); }
+          persist();
+        } catch (e) {}
+        mount.style.display = 'none'; mount.innerHTML = '';
+        state = 'map';
+        if (typeof onAfter === 'function') onAfter();
+        banner = { t: 150, a: (afterBanner && afterBanner.a) || 'MADE IT!', b: (r && typeof r.coins === 'number' ? '+' + Math.max(0, Math.round(r.coins)) + ' COINS - ' : '') + ((afterBanner && afterBanner.b) || '') };
+        SFX.cp();
+      }
+    });
+  } catch (e) {
+    mount.style.display = 'none'; mount.innerHTML = ''; state = 'map';
+    banner = { t: 150, a: 'RIDE CRASHED', b: String(e && e.message || e).slice(0, 60) };
+  }
+}
 function openMap() {
   state = 'map'; results = null; banner = null; invOpen = false;
   setWorld(maxWorld());
@@ -3612,12 +3659,25 @@ function updateMap() {
       const nd = MAP_NODES[mapSel];
       if (nd.kind === 'level') { if (Net.online) Net.send({ t: 'pick', n: nd.n }); else go(() => startLevel(nd.n)); SFX.cp(); }
       else if (nd.kind === 'shop') go(openShop);
-      // v1.1 B1: the Hotbox Highway node exists on the map (right after the mid-world mini-boss) but isn't
-      // wired to an actual transit mini-game in this session - the transit-game files (drive.js etc.) are
-      // being built on a parallel branch. Clicking it here just shows an informational banner so the node
-      // is real and navigable without crashing or double-building someone else's in-progress work.
-      else if (nd.kind === 'hotbox') { SFX.tick(); banner = { t: 150, a: 'HOTBOX HIGHWAY', b: 'COMING SOON - A TRANSIT MINI-GAME BETWEEN HERE AND THE BOSS' }; }
-      else if (nd.kind === 'gate') { go(() => { setWorld(nd.to); mapSel = 0; Net.send({ t: 'mapsel', i: 0, w: curWorld }); }); }
+      // v1.1 B2: Hotbox Highway, right after the mid-world mini-boss - drive.js's own from/to args just need
+      // real level numbers either side of the mini-boss and the world's theme key for its road palette.
+      else if (nd.kind === 'hotbox') {
+        SFX.tick();
+        const wd = WORLDS[curWorld], from = WORLD_START[curWorld] + wd.miniAt, to = Math.min(from + 1, WORLD_START[curWorld] + wd.levels.length - 1);
+        launchTransit(window.Drive, { from, to, world: WORLD_DEF[curWorld].base, cooked: me ? Math.round(me.cooked) : 0 }, { a: 'MADE IT DOWN THE HIGHWAY!', b: 'BACK ON THE MAP' });
+      }
+      // v1.1 B3: each world-gate node is also the crew's ride to the next world - a different one-off
+      // transit mini-game per world, per the brief's B3 table (Park->Beach: Lazy River, Beach->Suburbia:
+      // Paper Plane, Suburbia->Downtown: Munchie Truck, Downtown->Woods: Smoke Balloon, Woods->HQ: Bong
+      // Rocket). WORLD_TRANSIT_GAMES maps world index -> the module to launch (see its definition near
+      // WORLD_DEF). If a world has no entry (shouldn't happen for 0-4) it just falls straight through to
+      // the old gate behavior.
+      else if (nd.kind === 'gate') {
+        const game = WORLD_TRANSIT_GAMES[curWorld];
+        const advance = () => go(() => { setWorld(nd.to); mapSel = 0; Net.send({ t: 'mapsel', i: 0, w: curWorld }); });
+        if (game) launchTransit(game.mod, { world: game.world }, { a: game.name.toUpperCase() + '!', b: 'WELCOME TO ' + (WORLDS[nd.to] ? WORLDS[nd.to].name : 'THE NEXT WORLD') }, advance);
+        else advance();
+      }
       else if (nd.kind === 'farm') {
         if (save.farm) { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }
         else if (save.coins >= FARM_PRICE) {

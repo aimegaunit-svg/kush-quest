@@ -52,6 +52,7 @@
 </head>
 <body>
 <canvas id="game" width="320" height="192"></canvas>
+<div id="transitMount" style="display:none;position:fixed;inset:0;z-index:15;background:#000;align-items:center;justify-content:center"></div>
 
 <div id="menu">
   <div class="panel">
@@ -103,6 +104,15 @@
   </div>
 </div>
 
+<!-- v1.1 B1/B2/B3: Hotbox Highway + the 5 world-transition transit mini-games. Loaded before game.js so
+     window.Drive/window.Transit/window.LazyRiver/etc. exist by the time the map can launch them. -->
+<script src="transit.js"></script>
+<script src="drive.js"></script>
+<script src="lazyriver.js"></script>
+<script src="paperplane.js"></script>
+<script src="munchietruck.js"></script>
+<script src="smokeballoon.js"></script>
+<script src="bongrocket.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

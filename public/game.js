@@ -679,6 +679,7 @@ const SHOP = [
   { kind: 'item', id: 'pouch', name: 'STASH POUCH', icon: 'pouch', price: 130, desc: 'MICE + SQUIRRELS CANT STEAL' },
   { kind: 'ammo', id: 'papers', name: 'ROLLING PAPERS x10', icon: 'papers', price: 30, desc: 'THROWING STARS. THROW KEY OR RIGHT-CLICK' },
   { kind: 'ammo', id: 'bombs', name: 'NUG BOMBS x5', icon: 'bombs', price: 60, desc: 'LOB A SMOKY BOMB INTO A CROWD' },
+  { kind: 'ammo', id: 'smoke', name: 'SMOKE GRENADES x3', icon: 'smoke', price: 70, desc: 'LOB A HIDING CLOUD - GREAT FOR ESCAPES + FAST REVIVES' },
 ];
 const SHOPKEEP_LINES = [
   'WELCOME BACK, LEGEND.', "DON'T SPEND IT ALL ON PAPERS.", 'THE GRINDER SPIN SLAPS, TRUST ME.',
@@ -1137,13 +1138,13 @@ function buildLevel(n) {
 let SAVE_KEY = 'kq_save_v2_s1';
 const SLOT_COUNT = 3;
 try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.getItem('kq_save_v2_s1')) localStorage.setItem('kq_save_v2_s1', old); } catch (e) {}
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [] }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [] }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
   SAVE_KEY = 'kq_save_v2_s' + i;
   save = { ...defaultSave(), ...(readSlot(i) || {}) };
-  save.throws = { papers: 0, bombs: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
+  save.throws = { papers: 0, bombs: 0, smoke: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
   if (!Array.isArray(save.skills)) save.skills = BOSSES.slice(0, Math.min(save.spots || 0, BOSSES.length)).map(b => b[2]);
 }
@@ -1278,7 +1279,7 @@ function pickUp(it) {
     else { save.munchie = Math.min(3, save.munchie + 1); popup(x - 12, y - 6, 'SAVED FOR LATER', '#ff9ab8'); }
   }
   else if (ITEMS[it.kind] && !(it.kind === 'munchie' && me.hp < maxHp())) { save[it.kind] = Math.min(MAX_ITEM, (save[it.kind] || 0) + 1); SFX.buy(); popup(x - 16, y - 6, '+1 ' + ITEMS[it.kind].name, '#fff6b0'); persist(); }
-  else if (it.kind === 'papers' || it.kind === 'bombs') { const k = it.kind === 'papers' ? 5 : 2; save.throws[it.kind] = (save.throws[it.kind] || 0) + k; SFX.buy(); popup(x - 16, y - 6, '+' + k + (it.kind === 'papers' ? ' PAPERS' : ' NUG BOMBS'), '#fff6b0'); }
+  else if (it.kind === 'papers' || it.kind === 'bombs' || it.kind === 'smoke') { const k = it.kind === 'papers' ? 5 : it.kind === 'bombs' ? 2 : 2; save.throws[it.kind] = (save.throws[it.kind] || 0) + k; SFX.buy(); popup(x - 16, y - 6, '+' + k + ' ' + (it.kind === 'papers' ? 'PAPERS' : it.kind === 'bombs' ? 'NUG BOMBS' : 'SMOKE GRENADES'), '#fff6b0'); }
   else if (it.kind === 'gold') { me.star = 540; SFX.star(); shake = 6; banner = { t: 150, a: 'GOLDEN LEAF!', b: 'UNSTOPPABLE - RUN INTO ENEMIES' }; }
   else if (it.kind === 'extra') {
     const d = EXTRAS[it.sub];
@@ -1582,6 +1583,7 @@ function updateShots() {
   for (const s of shots) {
     s.x += s.vx; s.life--; if (s.kind === 5) s.vx *= 0.95;
     if (s.kind === 8) { s.vh -= 0.18; s.h += s.vh; if (s.h <= 0) { s.life = 0; explode(s); } continue; }
+    if (s.kind === 10) { s.vh -= 0.18; s.h += s.vh; if (s.h <= 0) { s.life = 0; landSmoke(s); } continue; }
     if (!s.mine) continue;
     for (const e of lvl.enemies) {
       if (!e.spawned || !e.alive || e.state === 5 || s.hit.has(e)) continue;
@@ -2518,6 +2520,7 @@ function drawScene() {
     const x = Math.round(s.x - camX), y = sy(s.z, s.h);
     if (s.kind === 7) { ctx.save(); ctx.translate(x, y); ctx.rotate(frame * 0.6); ctx.drawImage(ICONS.papers, -3, -3); ctx.restore(); return; }
     if (s.kind === 8) { shadow(s.x, s.z, s.h, 4); ctx.drawImage(ICONS.bombs, x - 4, y - 4); if (frame % 3 === 0) puff(s.x, y - 4, 1, ['#ffffff', '#c8ffa0'], .3); return; }
+    if (s.kind === 10) { shadow(s.x, s.z, s.h, 4); ctx.drawImage(ICONS.smoke, x - 4, y - 4); if (frame % 3 === 0) puff(s.x, y - 4, 1, ['#ffffff', '#e8e4f4'], .3); return; }
     if (s.kind === 6) { ctx.fillStyle = P.k; circle(x, y, 4.5); ctx.fillStyle = '#7ac8ff'; circle(x, y, 3.5); ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y - 3, 2, 2); }
     else { ctx.globalAlpha = Math.min(1, s.life / 8); ctx.fillStyle = P.k; circle(x, y, 8); ctx.fillStyle = '#ffffff'; circle(x, y, 7); ctx.fillStyle = '#e8e4f4'; circle(x + 2, y + 2, 3); ctx.globalAlpha = 1; }
   } });
@@ -2592,7 +2595,7 @@ function drawHUD() {
     if (down && !off) text(rp.name + ' DOWN', arrowX, ay + 8, '#ff8a8a', 1, 'center');
   }
   const tw = THROWS.find(t => t.id === save.throwSel) || THROWS[0];
-  if ((save.throws.papers || 0) + (save.throws.bombs || 0) > 0) { ctx.drawImage(ICONS[tw.id], 186, 4); text(save.throws[tw.id] || 0, 196, 3, '#fff6b0'); text('K', 197, 10, '#b0a8c0'); }
+  if ((save.throws.papers || 0) + (save.throws.bombs || 0) + (save.throws.smoke || 0) > 0) { ctx.drawImage(ICONS[tw.id], 186, 4); text(save.throws[tw.id] || 0, 196, 3, '#fff6b0'); text('K', 197, 10, '#b0a8c0'); }
   if (me.star > 0) { ctx.drawImage(GOLD_LEAF, 212, 4); R(ctx, '#ffd84a', 198, 8, Math.ceil(me.star / 540 * 20), 3); }
   text(lvl.name[0], W - 4, 3, '#ffffff', 1, 'right');
   text(lvl.name[1], W - 4, 10, '#b0a8c0', 1, 'right');
@@ -2858,20 +2861,31 @@ function pollGamepad() {
 const THROWS = [
   { id: 'papers', name: 'ROLLING PAPERS', dmg: 1, desc: 'FAST THROWING STARS. PIERCE 2 ENEMIES', pack: 10, price: 30 },
   { id: 'bombs', name: 'NUG BOMBS', dmg: 3, desc: 'LOB IT. BIG SMOKY BOOM HITS A CROWD', pack: 5, price: 60 },
+  { id: 'smoke', name: 'SMOKE GRENADE', dmg: 0, desc: 'LOB IT. MAKES A HIDING CLOUD - GREAT FOR ESCAPES + REVIVES', pack: 3, price: 70 },
 ];
 ICONS.papers = sprite(['...k...', '..kwk..', '.kwWwk.', 'kwWwWwk', '.kwWwk.', '..kwk..', '...k...']);
 ICONS.bombs = sprite(['....kk...', '...kEEk..', '..kGGGGk.', '.kGLGGGGk', '.kGGpGGGk', '.kGGGGoGk', '..kGGGGk.', '...kkkk..']);
+ICONS.smoke = sprite(['....kk...', '...kwwk..', '..kwWWwk.', '.kwWWWWwk', '.kWWwWWWk', '.kwWWWWwk', '..kwWWwk.', '...kkkk..']);
 function throwItem() {
   if (state !== 'play' || me.throwCd > 0) return;
   if (!hasSkill('throw')) { popup(me.x - 30, sy(me.z) - 34, 'A BOSS WILL TEACH YOU TO THROW', '#ff8a8a'); me.throwCd = 30; return; }
   const t = THROWS.find(t => t.id === save.throwSel) || THROWS[0];
-  if (!(save.throws[t.id] > 0)) { const other = THROWS.find(o => save.throws[o.id] > 0); if (other) { save.throwSel = other.id; return throwItem(); } popup(me.x - 20, sy(me.z) - 34, (save.throws.papers || save.throws.bombs) ? 'OUT OF ' + t.name : 'NO THROWABLES YET', '#ff8a8a'); SFX.bump(); me.throwCd = 20; return; }
-  save.throws[t.id]--; me.throwCd = t.id === 'bombs' ? 40 : 16; me.atkT = 8;
+  if (!(save.throws[t.id] > 0)) { const other = THROWS.find(o => save.throws[o.id] > 0); if (other) { save.throwSel = other.id; return throwItem(); } popup(me.x - 20, sy(me.z) - 34, (save.throws.papers || save.throws.bombs || save.throws.smoke) ? 'OUT OF ' + t.name : 'NO THROWABLES YET', '#ff8a8a'); SFX.bump(); me.throwCd = 20; return; }
+  save.throws[t.id]--; me.throwCd = t.id === 'bombs' ? 40 : t.id === 'smoke' ? 30 : 16; me.atkT = 8;
   const perkDmg = Net.color === 3 ? 1 : 0;
   if (t.id === 'papers') for (const dz of hasSkill('twothrow') ? [-7, 7] : [0]) shots.push({ mine: true, kind: 7, x: me.x + me.face * 8, z: me.z + dz, h: me.h + 10, vx: me.face * 5, life: 45, dmg: 1 + (me.buffs.power > 0 ? 1 : 0) + perkDmg, pierce: 2, hit: new Set() });
+  else if (t.id === 'smoke') shots.push({ mine: true, kind: 10, x: me.x + me.face * 6, z: me.z, h: me.h + 14, vx: me.face * 2, vh: 3, life: 200, hit: new Set() });
   else shots.push({ mine: true, kind: 8, x: me.x + me.face * 6, z: me.z, h: me.h + 14, vx: me.face * 2.4, vh: 3, life: 200, dmg: 3 + (ultra() ? 1 : 0) + perkDmg, hit: new Set() });
   SFX.jump();
-  Net.send({ t: 'fx', k: t.id === 'papers' ? 7 : 8, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+  Net.send({ t: 'fx', k: t.id === 'papers' ? 7 : t.id === 'smoke' ? 10 : 8, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+}
+function landSmoke(s) { // SMOKE GRENADE: a hiding cloud - enemies lose track, revives are faster inside
+  shake = 4; SFX.exhale();
+  puff(s.x, sy(s.z, 4), 20, ['#ffffff', '#e8e4f4'], 1.8, -0.03);
+  if (!s.mine) return;
+  const c = { x: s.x, z: s.z, r: 34, t: 300, by: Net.id };
+  lvl.clouds.push(c);
+  Net.send({ t: 'fx', k: 9, x: Math.round(s.x), y: Math.round(s.z), h: c.r, f: 0 });
 }
 function explode(s) {
   shake = 8; hitstop = 3; SFX.stomp(); if (AC) noise(0.4, 0.12, AC.currentTime, 300);
@@ -3472,6 +3486,7 @@ function onNet(m) {
       if (m.k === 9) { lvl.clouds.push({ x: m.x, z: m.y, r: m.h || 50, t: 360, heal: !!(m.f & 1), hot: !!(m.f & 2), by: m.id }); break; }
       if (m.k === 7) shots.push({ mine: false, kind: 7, x: m.x + m.f * 8, z: m.y, h: m.h + 10, vx: m.f * 5, life: 45 });
       if (m.k === 8) shots.push({ mine: false, kind: 8, x: m.x + m.f * 6, z: m.y, h: m.h + 14, vx: m.f * 2.4, vh: 3, life: 200 });
+      if (m.k === 10) shots.push({ mine: false, kind: 10, x: m.x + m.f * 6, z: m.y, h: m.h + 14, vx: m.f * 2, vh: 3, life: 200 });
       if (m.k === 5) shots.push({ mine: false, x: m.x + m.f * 10, z: m.y, h: m.h + 8, vx: m.f * 3.6, life: 26, kind: 5 });
       break;
     }

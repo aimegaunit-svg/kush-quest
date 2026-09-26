@@ -221,8 +221,8 @@ function startMusic() {
 // ============================================================
 const K = { left: false, right: false, up: false, down: false, jump: false, run: false, attack: false, enter: false };
 // ---- settings (saved in this browser): volumes, toggles, custom key bindings ----
-const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT' };
-const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT' };
+const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT', block: 'ControlLeft' };
+const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT', block: 'BLOCK (TAP=PARRY, HOLD+DIR=ROLL)' };
 let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, bigText: false, reduceFlash: false, colorblind: false, muteHidden: false, holdAttack: false, keys: { ...DEFAULT_KEYS } };
 try { const st = JSON.parse(localStorage.getItem('kq_settings')); if (st) settings = { ...settings, ...st, keys: { ...DEFAULT_KEYS, ...(st.keys || {}) } }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('kq_settings', JSON.stringify(settings)); } catch (e) {} if (master) master.gain.value = settings.sfx; }
@@ -278,12 +278,13 @@ addEventListener('keydown', e => {
     if (a === 'quick') { useItem(save.quick || 'brownie'); return; }
     if (a === 'throw') { K.throwPressed = true; return; }
     if (a === 'toke') { K.toke = true; return; }
+    if (a === 'block') { if (!K.block) me.parryT = 8; K.block = true; return; }
     if (a === 'throwsel') { const i = THROWS.findIndex(t => t.id === save.throwSel); save.throwSel = THROWS[(i + 1) % THROWS.length].id; persist(); popup(me.x - 20, sy(me.z) - 34, THROWS.find(t => t.id === save.throwSel).name, '#fff6b0'); return; }
     const em = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[c]; if (em !== undefined) { emote(em + (K.run ? 4 : 0)); return; }
   }
   if (['left', 'right', 'up', 'down', 'jump', 'attack', 'run', 'enter'].includes(a)) { e.preventDefault(); press(a, true); }
 });
-addEventListener('keyup', e => { const a = actionOf(e.code); if (a === 'munchie') K.use = false; if (a === 'toke') K.toke = false; if (['left', 'right', 'up', 'down', 'jump', 'attack', 'run', 'enter'].includes(a)) press(a, false); });
+addEventListener('keyup', e => { const a = actionOf(e.code); if (a === 'munchie') K.use = false; if (a === 'toke') K.toke = false; if (a === 'block') K.block = false; if (['left', 'right', 'up', 'down', 'jump', 'attack', 'run', 'enter'].includes(a)) press(a, false); });
 function nextNav() { const n = K.navQ && K.navQ.shift(); if (n === 'enter') { K.enterPressed = true; return null; } return n || null; }
 function toggleFullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
 // ---- chat (online): T to type, ENTER to send ----
@@ -668,6 +669,14 @@ const WEAPONS = [
   { id: 'grinder', name: 'GRINDER SPIN', icon: 'grinder', dmg: 2, cd: 28, reach: 30, zr: 16, spin: 1, bleed: 2, price: 260, desc: 'SPIKY SPIN ALL AROUND YOU. MAKES THEM BLEED' },
   { id: 'blunt', name: 'BLUNT BAT', icon: 'blunt', dmg: 2, cd: 22, reach: 34, zr: 12, kb: 3, homer: 1, price: 220, desc: 'HOME RUN! LAUNCHES THEM INTO THEIR BUDDIES' },
 ];
+// environmental weapons: temporary melee pickups that replace your weapon for a few uses, then break
+const ENV_WEAPONS = {
+  lid: { id: 'lid', name: 'TRASH-CAN LID', dmg: 2, cd: 20, reach: 26, zr: 16, kb: 1, uses: 4, blockProj: true },
+  cone: { id: 'cone', name: 'TRAFFIC CONE', dmg: 2, cd: 26, reach: 42, zr: 14, kb: 1.6, uses: 3 },
+  surfboard: { id: 'surfboard', name: 'SURFBOARD', dmg: 2, cd: 24, reach: 30, zr: 30, kb: 1.2, uses: 4 },
+  chair: { id: 'chair', name: 'OFFICE CHAIR', dmg: 3, cd: 22, reach: 34, zr: 16, kb: 1.8, uses: 3 },
+};
+const ENV_BY_THEME = { park: 'lid', beach: 'surfboard', suburb: 'cone', city: 'cone', woods: 'lid', hq: 'chair' };
 const wlv = id => (save.wlv && save.wlv[id]) || 1;
 const WEAPON_LV3 = { // LV3 unique perks, unlocked on the upgrade to LV3
   puff: 'LV3 PERK: BURN LASTS 2X LONGER + HITS SOMETIMES DROP A SMOKE RING',
@@ -1169,6 +1178,7 @@ function buildLevel(n, remix) {
     if (zi === chestZone) prop('chest', x0 + 150, 20, ['loot']);
     if (zi === goldZone) prop('crate', x0 + 220, 40, ['gold']);
     if (zi === secretZone) prop('secret', x0 + 40, ZMAX - 8, ['gold', 'nug']);
+    if (zi === 0) item('envweapon', x0 + 90, rz(), 0, ENV_BY_THEME[themeKey] || 'lid'); // one environmental weapon pickup per mission
     // the walk to the next fight: coins, nugs, rings, bonuses
     const gx = x0 + ZW + 10;
     coinArc(gx, rz(), 5);
@@ -1349,6 +1359,7 @@ function pickUp(it) {
   else if (ITEMS[it.kind] && !(it.kind === 'munchie' && me.hp < maxHp())) { save[it.kind] = Math.min(itemCap(it.kind), (save[it.kind] || 0) + 1); SFX.buy(); popup(x - 16, y - 6, '+1 ' + ITEMS[it.kind].name, '#fff6b0'); persist(); }
   else if (it.kind === 'papers' || it.kind === 'bombs' || it.kind === 'smoke') { const k = it.kind === 'papers' ? 5 : it.kind === 'bombs' ? 2 : 2; save.throws[it.kind] = (save.throws[it.kind] || 0) + k; SFX.buy(); popup(x - 16, y - 6, '+' + k + ' ' + (it.kind === 'papers' ? 'PAPERS' : it.kind === 'bombs' ? 'NUG BOMBS' : 'SMOKE GRENADES'), '#fff6b0'); }
   else if (it.kind === 'gold') { me.star = 540; SFX.star(); shake = 6; banner = { t: 150, a: 'GOLDEN LEAF!', b: 'UNSTOPPABLE - RUN INTO ENEMIES' }; }
+  else if (it.kind === 'envweapon') { me.envWeapon = { id: it.sub, uses: ENV_WEAPONS[it.sub].uses }; popup(x - 24, y - 10, 'PICKED UP ' + ENV_WEAPONS[it.sub].name, '#fff6b0'); SFX.buy(); }
   else if (it.kind === 'extra') {
     const d = EXTRAS[it.sub];
     addCoins(d.coins); if (d.cooked) addCooked(d.cooked); if (d.buff) me.buffs[d.buff] = d.time;
@@ -1359,6 +1370,13 @@ function pickUp(it) {
 }
 function hurt(dmg = 1, cookedLoss = 0, fromX) {
   if (me.inv > 0 || me.star > 0 || state !== 'play') return;
+  if (me.parryT > 0 && dmg > 0) { // BLOCK tapped just before the hit: PARRY - no damage, attacker's stunned & knocked back
+    me.parryT = 0; popup(me.x - 16, sy(me.z) - 38, 'PARRY!', '#ffd84a'); shake = 8; hitstop = 6; SFX.power();
+    puff(me.x, sy(me.z, me.h) - 10, 8, ['#ffd84a', '#ffffff']);
+    if (fromX !== undefined) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - fromX) < 24 && Math.abs(e.z - me.z) < 20) { e.state = 4; e.t = 50; e.vx = (Math.sign(e.x - me.x) || 1) * 4.5; break; }
+    return;
+  }
+  if (K.block && dmg > 0) { dmg = Math.max(0, Math.floor(dmg / 2)); popup(me.x - 16, sy(me.z) - 34, 'BLOCKED', '#9ac8ff'); if (dmg <= 0) { me.inv = 30; SFX.bump(); return; } }
   me.hp -= dmg; me.inv = 70; me.vx = (fromX !== undefined ? Math.sign(me.x - fromX) || -me.face : -me.face) * 2.2; me.vh = 2;
   me.puffed = false; me.combo = 0; shake = 10; hitstop = 4;
   if (cookedLoss) { addCooked(-cookedLoss); popup(me.x - 16, sy(me.z) - 34, 'BUZZKILL -' + cookedLoss + '%', '#ff8a8a'); }
@@ -1412,6 +1430,7 @@ function useMunchies() {
   useItem('munchie');
 }
 function cycleWeapon(dir) {
+  if (me.envWeapon) { popup(me.x - 16, sy(me.z) - 34, 'DROPPED ' + ENV_WEAPONS[me.envWeapon.id].name, '#ff8a8a'); me.envWeapon = null; return; }
   const owned = WEAPONS.filter(w => save.weapons.includes(w.id));
   const i = owned.findIndex(w => w.id === save.weapon);
   save.weapon = owned[(i + dir + owned.length) % owned.length].id; persist();
@@ -1593,7 +1612,7 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
 }
 function attack(charged) {
   if ((me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
-  const w = weaponDef(), wi = WEAPONS.indexOf(w);
+  const w = me.envWeapon ? ENV_WEAPONS[me.envWeapon.id] : weaponDef(), wi = me.envWeapon ? 0 : WEAPONS.indexOf(w);
   if (me.puffed) { // exhale a smoke blast from the cloud
     me.puffed = false; me.flaps = 0; SFX.exhale(); me.atkCd = 16; me.atkT = 10;
     shots.push({ mine: true, x: me.x + me.face * 10, z: me.z, h: me.h + 8, vx: me.face * 3.6, life: 26, dmg: 2, kind: 5, hit: new Set() });
@@ -1628,7 +1647,9 @@ function attack(charged) {
   for (const t of (w.pierce || w.spin || w.id === 'lighter' || w.id === 'bong' || w.homer) ? targets : targets.slice(0, 2)) {
     let d = dmg; const crit = Math.random() < (w.crit || 0) + (hasSkill('crit') ? 0.15 : 0) + (me.buffs.crit > 0 ? 0.25 : 0) + (farmHas('sticky') ? 0.15 : 0);
     if (crit) { d *= 2; popup(t.e.x - 10, sy(t.e.z) - 30, 'CRIT!', '#9ae8ff'); }
-    hitEnemy(t.e, d, Math.sign(t.dx) || me.face, strong || crit, fx); hits++;
+    // minimal shove: swinging into an already-stunned buzzkill (Bong Hammer or a parry) knocks it into the others
+    const shoveFx = (t.e.state === 4 && !fx.hr) ? { ...fx, hr: 1 } : fx;
+    hitEnemy(t.e, d, Math.sign(t.dx) || me.face, strong || crit, shoveFx); hits++;
     if (w.id === 'puff' && lv3 && Math.random() < 0.15) lvl.items.push({ id: 'r' + Math.random(), kind: 'ring', x: t.e.x, z: t.e.z, h: 4, taken: false }); // JOINT LV3: hits sometimes drop a smoke ring
     // DAB SABER LV3: a crit chains to the next enemy in line
     if (w.id === 'dab' && lv3 && crit && !critChained) {
@@ -1664,6 +1685,7 @@ function attack(charged) {
   if (w.id === 'lighter' && lv3 && hits) lvl.clouds.push({ x: me.x + me.face * 20, z: me.z, r: 16, t: 150, hot: true, by: Net.id }); // LIGHTER LV3: leaves a burning fire patch
   if (w.id === 'puff') puff(me.x + me.face * 26, sy(me.z, me.h) - 16, 5, ['#ffffff', '#e8e4f4'], .6, -0.02);
   Net.send({ t: 'fx', k: wi, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+  if (me.envWeapon && hits) { me.envWeapon.uses--; if (me.envWeapon.uses <= 0) { popup(me.x - 20, sy(me.z) - 40, w.name + ' BROKE!', '#ff8a8a'); me.envWeapon = null; SFX.bump(); } }
 }
 function updateShots() {
   for (const s of shots) {
@@ -1825,6 +1847,8 @@ function updatePlayer() {
   if (K.jumpPressed) p.jumpBuf = 6; else if (p.jumpBuf > 0) p.jumpBuf--;
   if (p.jumpBuf > 0 && K.run && (hasSkill('roll') || p.buffs.dash > 0) && p.h === 0 && !(p.roll > 0) && (ix || iz)) {
     p.roll = 20; p.jumpBuf = 0; p.vx = (ix || p.face) * 4.2; p.vz = iz * 2.4; p.inv = Math.max(p.inv, 22); SFX.flap(); puff(p.x, sy(p.z) - 4, 5, ['#ffffff', '#e8e0d0'], .8);
+  } else if (K.block && (ix || iz) && p.h === 0 && !(p.roll > 0) && (p.rollCd || 0) <= 0) { // BLOCK + direction: dodge roll with i-frames, 1s cooldown
+    p.roll = 20; p.rollCd = 60; p.vx = (ix || p.face) * 4.2; p.vz = iz * 2.4; p.inv = Math.max(p.inv, 22); SFX.flap(); puff(p.x, sy(p.z) - 4, 5, ['#ffffff', '#e8e0d0'], .8);
   } else if (p.jumpBuf > 0) {
     if (p.h === 0) { p.vh = 3.4; p.jumpBuf = 0; p.sq = 6; SFX.jump(); }
   }
@@ -1858,6 +1882,9 @@ function updatePlayer() {
   // standing in a crewmate's cloud (not your own) gives a slow Cooked regen - the co-op payoff
   for (const c of lvl.clouds) if (c.by !== Net.id && Math.abs(c.x - p.x) < c.r && Math.abs(c.z - p.z) < c.r * 0.6 && frame % 60 === 0 && p.cooked < 100) { addCooked(1); break; }
   if (p.atkCd > 0) p.atkCd--;
+  if (p.rollCd > 0) p.rollCd--;
+  if (p.parryT > 0) p.parryT--;
+  if (K.block && p.parryT <= 0 && frame % 30 === 0 && p.cooked > 0) p.cooked = Math.max(0, p.cooked - 1); // holding block drains Cooked slowly
   if (p.throwCd > 0) p.throwCd--;
   if (p.slash && p.slash.t > 0) p.slash.t--;
   if (K.throwPressed) throwItem();
@@ -1880,7 +1907,10 @@ function updatePlayer() {
   for (const it of lvl.items) {
     if (it.taken) continue;
     if (p.buffs.magnet > 0) { const dx = p.x - it.x, dz = p.z - it.z, d = Math.hypot(dx, dz); if (d < 90 && d > 1) { it.x += dx / d * 3; it.z += dz / d * 3; } }
-    if (Math.abs(it.x - p.x) < 12 && Math.abs(it.z - p.z) < 12 && Math.abs((it.h || 0) - p.h) < 22) pickUp(it);
+    if (Math.abs(it.x - p.x) < 12 && Math.abs(it.z - p.z) < 12 && Math.abs((it.h || 0) - p.h) < 22) {
+      if (it.kind === 'envweapon') { if (K.attackPressed && !p.envWeapon) pickUp(it); }
+      else pickUp(it);
+    }
   }
   // thieves
   for (const e of lvl.enemies) {
@@ -2385,6 +2415,11 @@ function drawItem(it) {
   else if (it.kind === 'gold') draw_(GOLD_LEAF, it.x - 4, y - 10);
   else if (it.kind === 'papers' || it.kind === 'bombs' || it.kind === 'brownie' || it.kind === 'soda') draw_(ICONS[it.kind], it.x - 4, y - 9);
   else if (it.kind === 'extra') { draw_(EXTRAS[it.sub].img, it.x - 4, y - 10); if (frame % 20 === 0) puff(it.x, y - 8, 1, ['#ffffff', '#fff6b0', '#9ae8ff'], .4); }
+  else if (it.kind === 'envweapon') {
+    const ew = ENV_WEAPONS[it.sub]; const X = Math.round(it.x - camX);
+    R(ctx, '#8a7a6a', X - 5, y - 12, 10, 10); R(ctx, '#c0b0a0', X - 3, y - 10, 6, 6);
+    if (Math.abs(it.x - me.x) < 14 && Math.abs(it.z - me.z) < 12 && !me.envWeapon) text(ew.name + ' (' + KL('attack') + ')', it.x - 20, y - 22, '#fff6b0');
+  }
 }
 
 // menus are laid out for 320 wide: center them on wider screens
@@ -3816,5 +3851,5 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; } };
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt };
 })();

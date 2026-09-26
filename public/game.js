@@ -3411,24 +3411,25 @@ function drawMap_() {
     text('ESC: COPY INVITE LINK', 10, 46, '#b0a8c0');
   }
   // header + info panel across the full width
-  R(ctx, 'rgba(26,16,38,.85)', 0, 0, W, 16);
+  R(ctx, 'rgba(26,16,38,.85)', 0, 0, W, 24);
   text('WORLD ' + (curWorld + 1) + ' - ' + WORLDS[curWorld].name, 6, 5, '#c8ffa0');
   if (maxWorld() > 0) { const ax = Math.round(W / 2 + 30); hot(ax, 2, 12, 12, () => { setWorld(curWorld - 1); SFX.tick(); Net.send({ t: 'mapsel', i: mapSel, w: curWorld }); }); hot(ax + 14, 2, 12, 12, () => { setWorld(curWorld + 1); SFX.tick(); Net.send({ t: 'mapsel', i: mapSel, w: curWorld }); }); text('< >', ax + 1, 5, curWorld < maxWorld() ? '#ffd84a' : '#8a809a'); }
   { const bx = Math.round(W / 2 - 22); R(ctx, '#4a3a60', bx, 2, 44, 12); R(ctx, '#c8ffa0', bx, 2, 44, 1); text('MENU', W / 2, 5, '#ffffff', 1, 'center'); hot(bx, 2, 44, 12, () => openMenu()); }
   ctx.drawImage(COIN, W - 76, 3); text(save.coins + ' / ' + FARM_PRICE, W - 4, 5, '#ffd84a', 1, 'right');
-  R(ctx, 'rgba(26,16,38,.92)', 0, H - 34, W, 34); R(ctx, '#c8ffa0', 0, H - 34, W, 1);
-  text(nodeLabel(nd), 6, H - 30, '#ffd84a', 1);
+  // help line moved into its own header row so it never overlaps the bottom info panel's icons
+  const hint = Net.online && !isHost() ? 'HOST PICKS   H SHOP   TAB BAG   ESC MENU' : 'ARROWS/CLICK PICK   SPACE GO   Q/E WORLD   H SHOP   ESC MENU';
+  text(hint, W - 4, 16, '#c8ffa0', 1, 'right');
+  R(ctx, 'rgba(26,16,38,.92)', 0, H - 40, W, 40); R(ctx, '#c8ffa0', 0, H - 40, W, 1);
+  text(nodeLabel(nd), 6, H - 36, '#ffd84a', 1);
   if (nd.kind === 'level') {
     const th = THEMES[themeKeyFor(nd.n)];
     const bd = BOSSES[nd.n % BOSSES.length];
-    text(nd.n < save.spots ? 'CLEARED - REPLAY FOR COINS' : (bd[4] ? 'MEGA BOSS: ' : 'BOSS: ') + bd[0] + '  -  TEACHES: ' + SKILLS[bd[2]].name, 6, H - 21, nd.n < save.spots ? '#c8ffa0' : bd[4] ? '#ff8a8a' : '#ffffff');
-    text('WATCH OUT:', 6, H - 12, '#b0a8c0');
-    [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 50 + i * 12, H - 2 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
-  } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 21, '#ffffff');
-  else text(save.farm ? 'YOU OWN IT. HOME SWEET HOME' : 'COSTS ' + FARM_PRICE + ' HASH COINS. YOU HAVE ' + save.coins, 6, H - 21, '#ffffff');
+    text(nd.n < save.spots ? 'CLEARED - REPLAY FOR COINS' : (bd[4] ? 'MEGA BOSS: ' : 'BOSS: ') + bd[0] + '  -  TEACHES: ' + SKILLS[bd[2]].name, 6, H - 27, nd.n < save.spots ? '#c8ffa0' : bd[4] ? '#ff8a8a' : '#ffffff');
+    text('WATCH OUT:', 6, H - 16, '#b0a8c0');
+    [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 50 + i * 12, H - 4 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
+  } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 27, '#ffffff');
+  else text(save.farm ? 'YOU OWN IT. HOME SWEET HOME' : 'COSTS ' + FARM_PRICE + ' HASH COINS. YOU HAVE ' + save.coins, 6, H - 27, '#ffffff');
   drawChat();
-  const hint = Net.online && !isHost() ? 'HOST PICKS   H SHOP   TAB BAG   ESC MENU' : 'ARROWS/CLICK PICK   SPACE GO   Q/E WORLD   H SHOP   ESC MENU';
-  text(hint, W - 4, H - 10, '#c8ffa0', 1, 'right');
   if (banner) { R(ctx, 'rgba(42,24,56,.85)', 0, 70, W, 30); text(banner.a, W / 2, 74, '#ff8a8a', 2, 'center'); text(banner.b, W / 2, 90, '#fff', 1, 'center'); }
 }
 

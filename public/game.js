@@ -153,11 +153,19 @@ const SONGS = {
   fight: { bpm: 174, div: 4, steps: 16,
     roots: [45, 41, 43, 40],
     arp: [[69, 72, 76, 81], [65, 69, 72, 77], [67, 71, 74, 79], [64, 68, 71, 76]] },
+  boss: { bpm: 160, div: 4, steps: 16, // Phase 8: a darker, slower variant of the fight theme for boss encounters
+    roots: [38, 33, 36, 34],
+    arp: [[62, 65, 69, 74], [57, 60, 65, 69], [60, 62, 67, 72], [58, 62, 65, 70]] },
+  farm: { bpm: 96, div: 2, steps: 8, // Phase 8: a happier major-key variant of the calm theme for the Farm Hub
+    chords: [[60, 64, 67, 72], [65, 69, 72, 76], [62, 65, 69, 74], [67, 71, 74, 79]],
+    bass: [[36, -1, -1, 43, -1, -1, 40, -1], [41, -1, -1, 48, -1, -1, 45, -1], [38, -1, -1, 45, -1, -1, 41, -1], [43, -1, -1, 50, -1, 47, -1, 50]],
+    lead: [[72, -1, -1, 76, 79, -1, 76, -1], [77, -1, -1, -1, 81, -1, 77, -1], [74, -1, 76, -1, 79, -1, 81, -1], [79, -1, -1, -1, 84, -1, -1, -1]] },
 };
 let musicMode = 'map', musicVol = 1, musicWant = 'map';
 function wantedMusic() {
+  if (state === 'results' && results && results.farmHub) return 'farm';
   if (state === 'map' || state === 'story') return 'map';
-  if (state === 'play' && lvl && lvl.locked) return 'fight';
+  if (state === 'play' && lvl && lvl.locked) return (lvl.boss && lvl.boss.alive) ? 'boss' : 'fight';
   return 'calm';
 }
 function startMusic() {
@@ -177,7 +185,7 @@ function startMusic() {
       }
       if (musicOn) {
         const b = bar % 4;
-        if (musicMode === 'fight') {
+        if (musicMode === 'fight' || musicMode === 'boss') {
           // two-step drum & bass break
           if (s === 0 || s === 10) kick(next, 0.55);
           if (s === 4 || s === 12) snare(next, 0.22);
@@ -194,7 +202,7 @@ function startMusic() {
           tone(midi(arp[s % 4] + (bar % 8 >= 4 ? 12 : 0)), step * 0.8, 'square', 0.022, dt);
           if (s % 4 === 0) tone(midi(arp[0] - 12), step * 3, 'square', 0.02, dt);
         } else {
-          const calm = musicMode === 'calm';
+          const calm = musicMode === 'calm' || musicMode === 'farm';
           if (song.bass[b][s] > 0) tone(midi(song.bass[b][s]), step * (calm ? 2.4 : 0.9), 'triangle', calm ? 0.13 : 0.12, dt);
           if (calm) { if (s === 0) kick(next, 0.28); if (s === 4) snare(next, 0.07); if (s % 2 === 1) noise(0.03, 0.015, next, 7000); if (s === 2 || s === 6) song.chords[b].forEach(n => tone(midi(n), step * 1.6, 'triangle', 0.018, dt)); }
           else { if (s % 4 === 0) kick(next, 0.3); if (s % 4 === 2) snare(next, 0.08); if (s % 2 === 1) song.chords[b].forEach(n => tone(midi(n), step * 0.4, 'square', 0.015, dt)); noise(0.02, 0.02, next, 8000); }
@@ -254,6 +262,7 @@ addEventListener('keydown', e => {
   if (a === 'chat' && Net.online) { e.preventDefault(); openChat(); return; }
   if (c === 'KeyH' && state === 'map') { K.shopPressed = true; return; }
   if (c === 'KeyG' && state === 'map') { K.dailyPressed = true; return; }
+  if (c === 'KeyB' && state === 'map') { K.statsPressed = true; return; }
   if ((state === 'map' || state === 'results') && (c === 'KeyQ' || c === 'BracketLeft')) { K.worldPrev = true; return; }
   if ((state === 'map' || state === 'results') && (c === 'KeyE' || c === 'BracketRight')) { K.worldNext = true; return; }
   if (a === 'up') K.upPressed = true;
@@ -690,6 +699,37 @@ const PETS = [
   { id: 'kushling', name: 'KUSHLING', metric: 'kills', need: 100, desc: '100 KOs. +1 MAX HEART' },
 ];
 function petUnlocked(p) { return p.metric === 'none' || (p.metric === 'bosses' ? save.stats.bossesBeaten : save.stats.kills) >= p.need; }
+// ---- Phase 8: achievements ----
+const ACHV = [
+  { id: 'first_blood', name: 'FIRST BLOOD', desc: 'KNOCK OUT YOUR FIRST BUZZKILL', coins: 10, check: s => s.stats.kills >= 1 },
+  { id: 'buzzkill_50', name: 'BUZZKILL BUSTER', desc: 'KNOCK OUT 50 BUZZKILLS', coins: 25, check: s => s.stats.kills >= 50 },
+  { id: 'buzzkill_250', name: 'PUBLIC MENACE', desc: 'KNOCK OUT 250 BUZZKILLS', coins: 60, check: s => s.stats.kills >= 250 },
+  { id: 'buzzkill_1000', name: 'ONE-STONER ARMY', desc: 'KNOCK OUT 1000 BUZZKILLS', coins: 150, check: s => s.stats.kills >= 1000 },
+  { id: 'boss_1', name: 'FIRST BOSS DOWN', desc: 'BEAT YOUR FIRST BOSS', coins: 20, check: s => s.stats.bossesBeaten >= 1 },
+  { id: 'boss_10', name: 'BOSS SLAYER', desc: 'BEAT 10 BOSSES', coins: 60, check: s => s.stats.bossesBeaten >= 10 },
+  { id: 'boss_25', name: 'THE WHOLE CORP', desc: 'BEAT ALL 25 MAIN BOSSES', coins: 150, check: s => s.stats.bossesBeaten >= 25 },
+  { id: 'combo_10', name: 'ON A ROLL', desc: 'HIT A 10x COMBO', coins: 15, check: s => s.stats.bestCombo >= 10 },
+  { id: 'combo_25', name: 'UNSTOPPABLE FLOW', desc: 'HIT A 25x COMBO', coins: 40, check: s => s.stats.bestCombo >= 25 },
+  { id: 'coins_1000', name: 'HASH HOARDER', desc: 'EARN 1000 HASH COINS LIFETIME', coins: 30, check: s => (s.stats.coinsEarned || 0) >= 1000 },
+  { id: 'coins_10000', name: 'HASH TYCOON', desc: 'EARN 10000 HASH COINS LIFETIME', coins: 100, check: s => (s.stats.coinsEarned || 0) >= 10000 },
+  { id: 'farm_owner', name: 'HOME SWEET HOME', desc: 'BUY GRANDMA THE FARM', coins: 50, check: s => s.farm },
+  { id: 'all_weapons', name: 'ARMED AND DANGEROUS', desc: 'OWN ALL 6 WEAPONS', coins: 60, check: s => s.weapons.length >= 6 },
+  { id: 'maxed_weapon', name: 'FULLY LOADED', desc: 'UPGRADE ANY WEAPON TO LV3', coins: 40, check: s => Object.values(s.wlv || {}).some(v => v >= 3) },
+  { id: 'full_armor', name: 'RASTA ROYALTY', desc: 'WEAR THE RASTA CROWN', coins: 40, check: s => s.armor.includes('crown') },
+  { id: 'pouch_owner', name: 'NOTHING TO STEAL', desc: 'BUY THE STASH POUCH', coins: 20, check: s => s.pouch },
+  { id: 'daily_done', name: 'DAILY DRIVER', desc: 'BEAT A DAILY CHALLENGE', coins: 30, check: s => !!s.dailyDate },
+  { id: 'spots_all', name: 'ROAD TRIP COMPLETE', desc: 'REACH EVERY SMOKE SPOT', coins: 200, check: s => s.spots >= TOTAL_LEVELS },
+  { id: 'green_thumb', name: 'GREEN THUMB', desc: 'PLANT A STRAIN IN THE FARM', coins: 20, check: s => (s.farmPlots || []).some(p => p), },
+  { id: 'pet_owner', name: 'BEST FRIENDS', desc: 'EQUIP A FARM PET', coins: 20, check: s => !!s.pet },
+];
+function checkAchv() {
+  save.achv = save.achv || [];
+  for (const a of ACHV) {
+    if (save.achv.includes(a.id) || !a.check(save)) continue;
+    save.achv.push(a.id); save.coins += a.coins;
+    if (state === 'play') { banner = { t: 180, a: 'ACHIEVEMENT: ' + a.name, b: a.desc + ' (+' + a.coins + ' COINS)' }; SFX.power(); }
+  }
+}
 function farmHas(strainId) { return (save.farmPlots || []).includes(strainId); }
 const farmSpeedMul = () => (save.pet === 'zippy' ? 1.1 : 1);
 const SHOP = [
@@ -1173,7 +1213,7 @@ function loadSlot(i) {
   if (!Array.isArray(save.skills)) save.skills = BOSSES.slice(0, Math.min(save.spots || 0, BOSSES.length)).map(b => b[2]);
 }
 loadSlot(1);
-function persist() { save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+function persist() { checkAchv(); save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length + (Net.color === 0 ? 1 : 0) + (save.pet === 'kushling' ? 1 : 0);
 const weaponDef = () => WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];
 
@@ -1247,7 +1287,7 @@ function addCombo(x, y) {
     const bonus = me.combo * (hasSkill('combo') ? 4 : 2); addCoins(bonus); popup(x, y - 10, 'COMBO BONUS +' + bonus, '#c8ffa0');
   }
 }
-function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; if (lvl && lvl.remix) k = Math.round(k * 1.3); if (farmHas('sunny')) k = Math.round(k * 1.1); if (save.pet === 'sproutly') k = Math.round(k * 1.05); save.coins += k; me.earned += k; }
+function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; if (lvl && lvl.remix) k = Math.round(k * 1.3); if (farmHas('sunny')) k = Math.round(k * 1.1); if (save.pet === 'sproutly') k = Math.round(k * 1.05); save.coins += k; me.earned += k; save.stats.coinsEarned = (save.stats.coinsEarned || 0) + Math.max(0, k); }
 function addCooked(k) {
   if (k > 0 && save.pet === 'puffball') k = Math.round(k * 1.05);
   if (k < 0 && farmHas('chill')) k = Math.round(k * 0.7); // CHILL KUSH: fades 30% slower
@@ -2775,6 +2815,7 @@ function drawFarmHub() {
 }
 function updateShop() {
   if (results.farmHub) { updateFarmHub(); return; }
+  if (results.statsPage) { updateStatsPage(); return; }
   if (results.statsScreen) { if (K.enterPressed || K.jumpPressed) { results.statsScreen = false; openMap(); } return; }
   if (results.farmScene) { if (K.enterPressed || K.jumpPressed) { results.farmScene = false; if (results.endingStats) results.statsScreen = true; else if (results.shopOnly) openMap(); } return; }
   if (K.worldPrev || K.worldNext || K.nav === 'left' || K.nav === 'right') { shopTab = (shopTab + (K.worldNext || K.nav === 'right' ? 1 : -1) + SHOP_TABS.length) % SHOP_TABS.length; shopSel = 0; SFX.tick(); }
@@ -2813,6 +2854,7 @@ function shopConfirm() {
 function drawShop() {
   ctx.fillStyle = '#1e122c'; ctx.fillRect(0, 0, W, H);
   if (results.farmHub) { drawFarmHub(); return; }
+  if (results.statsPage) { drawStatsPage(); return; }
   if (results.statsScreen) {
     R(ctx, '#3a1a5a', 0, 0, W, H);
     text('THE ROAD TO THE FARM', W / 2, 10, '#ffd84a', 2, 'center');
@@ -3211,7 +3253,38 @@ function updateMap() {
   K.worldPrev = K.worldNext = false;
   if (K.shopPressed) go(openShop);
   if (K.dailyPressed) startDaily();
-  K.nav = null; K.shopPressed = false; K.dailyPressed = false;
+  if (K.statsPressed) { results = { shopOnly: true, statsPage: true }; state = 'results'; statsScroll = 0; }
+  K.nav = null; K.shopPressed = false; K.dailyPressed = false; K.statsPressed = false;
+}
+let statsScroll = 0;
+function updateStatsPage() {
+  if (K.upPressed) { statsScroll = Math.max(0, statsScroll - 1); SFX.tick(); }
+  if (K.downPressed) { statsScroll = Math.min(ACHV.length - 1, statsScroll + 1); SFX.tick(); }
+  K.upPressed = K.downPressed = false;
+  if (K.escPressed || K.enterPressed || K.jumpPressed) { results.statsPage = false; go(openMap); }
+  K.escPressed = false;
+}
+function drawStatsPage() {
+  R(ctx, '#1e122c', 0, 0, W, H);
+  text('STATS & ACHIEVEMENTS', W / 2, 4, '#ffd84a', 2, 'center');
+  const st = save.stats;
+  const rows = [
+    ['HASH COINS (LIFETIME)', st.coinsEarned || 0], ['BUZZKILLS TAKEN DOWN', st.kills], ['BOSSES BEATEN', st.bossesBeaten],
+    ['BEST COMBO', st.bestCombo + 'x'], ['TIMES KNOCKED OUT', st.deaths], ['SMOKE SPOTS', save.spots + '/' + TOTAL_LEVELS],
+  ];
+  rows.forEach((rw, i) => { const y = 16 + i * 8; text(rw[0], 6, y, '#ffffff'); text(String(rw[1]), W - 6, y, '#c8ffa0', 1, 'right'); });
+  const unlockedN = ACHV.filter(a => save.achv.includes(a.id)).length;
+  text('ACHIEVEMENTS: ' + unlockedN + '/' + ACHV.length, W / 2, 68, '#e4b3ff', 1, 'center');
+  const visible = 8, start = Math.max(0, Math.min(ACHV.length - visible, statsScroll - Math.floor(visible / 2)));
+  for (let i = 0; i < visible && start + i < ACHV.length; i++) {
+    const a = ACHV[start + i], y = 78 + i * 12, on = save.achv.includes(a.id), sel = start + i === statsScroll;
+    R(ctx, sel ? '#4a3a60' : '#2a1f40', 8, y, W - 16, 11);
+    text((on ? '[X] ' : '[ ] ') + a.name, 12, y + 2, on ? '#ffd84a' : '#6a6a6a');
+    text(on ? a.desc : '???', W - 12, y + 2, on ? '#c8ffa0' : '#6a6a6a', 1, 'right');
+    hot(8, y, W - 16, 11, () => { statsScroll = start + i; });
+  }
+  text('UP/DOWN TO SCROLL - ENTER OR ESC FOR THE MAP', W / 2, H - 8, '#8a809a', 1, 'center');
+  hot(0, H - 12, W, 12, () => { results.statsPage = false; go(openMap); });
 }
 function todaySeed() { const d = new Date(); return d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate(); }
 function todayStr() { const d = new Date(); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); }
@@ -3705,5 +3778,5 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; } };
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; } };
 })();

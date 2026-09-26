@@ -676,7 +676,7 @@ const FARM_PRICE = 1500, SPOTS_TO_FARM = 5;
 const SHOP = [
   ...WEAPONS.slice(1).map(w => ({ kind: 'weapon', ...w })),
   ...ARMORS.map(a => ({ kind: 'armor', ...a })),
-  { kind: 'item', id: 'pouch', name: 'STASH POUCH', icon: 'pouch', price: 130, desc: 'MICE + SQUIRRELS CANT STEAL' },
+  { kind: 'item', id: 'pouch', name: 'STASH POUCH', icon: 'pouch', price: 130, desc: 'HALVES THEFT AMOUNT (THIEF GETS +1 BONUS COIN)' },
   { kind: 'ammo', id: 'papers', name: 'ROLLING PAPERS x10', icon: 'papers', price: 30, desc: 'THROWING STARS. THROW KEY OR RIGHT-CLICK' },
   { kind: 'ammo', id: 'bombs', name: 'NUG BOMBS x5', icon: 'bombs', price: 60, desc: 'LOB A SMOKY BOMB INTO A CROWD' },
   { kind: 'ammo', id: 'smoke', name: 'SMOKE GRENADES x3', icon: 'smoke', price: 70, desc: 'LOB A HIDING CLOUD - GREAT FOR ESCAPES + FAST REVIVES' },
@@ -688,10 +688,10 @@ const SHOPKEEP_LINES = [
 ];
 // rare bonus pickups: coins + a special effect
 const EXTRAS = {
-  shatter: { name: 'SHATTER', coins: 25, buff: 'speed', time: 600, desc: 'ZOOMIES! SPEED BOOST', img: sprite(['...kkk...', '..kYyOk..', '.kYyyyOk.', 'kYyYyyyOk', 'kyyyyOyyk', '.kyOyyyk.', '..kOyyk..', '...kkk...'], { ...P, y: '#ffb84a', Y: '#fff0b0', O: '#d8801a' }) },
+  shatter: { name: 'SHATTER', coins: 25, buff: 'dash', time: 600, desc: 'RUN KEY DASHES WITH I-FRAMES FOR 10s', img: sprite(['...kkk...', '..kYyOk..', '.kYyyyOk.', 'kYyYyyyOk', 'kyyyyOyyk', '.kyOyyyk.', '..kOyyk..', '...kkk...'], { ...P, y: '#ffb84a', Y: '#fff0b0', O: '#d8801a' }) },
   diamond: { name: 'DIAMONDS', coins: 50, cooked: 20, desc: '+50 COINS +20% COOKED', img: sprite(['..kkkkk..', '.kwvvvwk.', 'kvwvvvwvk', '.kvvwvvk.', '..kvvvk..', '...kvk...', '....k....'], { ...P, v: '#9ae8ff', w: '#ffffff' }) },
-  kief: { name: 'KIEF', coins: 10, buff: 'magnet', time: 720, desc: 'COIN MAGNET', img: sprite(['.........', '....y....', '...yYy...', '..yYyYy..', '.yyYyyYy.', 'kkkkkkkkk', 'kNNNNNNNk', '.kkkkkkk.'], { ...P, y: '#e8d070', Y: '#fff6c0' }) },
-  hash: { name: 'HASH', coins: 20, buff: 'power', time: 720, desc: 'HASH POWER! +1 ATTACK DMG', img: sprite(['.kkkkkkk.', 'kNtNtNtNk', 'ktNtNtNtk', 'kNtNtNtNk', 'ktNtNtNtk', '.kkkkkkk.'], { ...P, t: '#a8703a', N: '#7a4a24' }) },
+  kief: { name: 'KIEF', coins: 10, buff: 'magnet', time: 720, desc: 'ITEM MAGNET + DOUBLE COINS', img: sprite(['.........', '....y....', '...yYy...', '..yYyYy..', '.yyYyyYy.', 'kkkkkkkkk', 'kNNNNNNNk', '.kkkkkkk.'], { ...P, y: '#e8d070', Y: '#fff6c0' }) },
+  hash: { name: 'HASH', coins: 20, buff: 'crit', time: 720, desc: 'HASH POWER! +25% CRIT CHANCE FOR 12s', img: sprite(['.kkkkkkk.', 'kNtNtNtNk', 'ktNtNtNtk', 'kNtNtNtNk', 'ktNtNtNtk', '.kkkkkkk.'], { ...P, t: '#a8703a', N: '#7a4a24' }) },
 };
 // legendary stoners (original characters) who hang out at checkpoints and share their wisdom + a boost
 const LEGEND_PAL = [
@@ -1167,7 +1167,7 @@ function makePlayer() {
     x: lvl.spawn.x + (Net.color || 0) * 10, z: lvl.spawn.z - 12 + (Net.color || 0) * 10, h: 0, vx: 0, vz: 0, vh: 0, face: 1, w: 10,
     puffed: false, flaps: 0, jumpBuf: 0, inv: 60, walkT: 0, sq: 0, star: 0,
     hp: maxHp(), cooked: 0, combo: 0, comboT: 0, best: 0, atkCd: 0, atkT: 0, chain: 0, chainT: 0,
-    earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0 }, legendT: 0,
+    earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0, crit: 0, dash: 0 }, legendT: 0,
     color: Net.color, name: Net.name, emote: null, stealCd: {}
   };
 }
@@ -1221,7 +1221,7 @@ function addCombo(x, y) {
     const bonus = me.combo * (hasSkill('combo') ? 4 : 2); addCoins(bonus); popup(x, y - 10, 'COMBO BONUS +' + bonus, '#c8ffa0');
   }
 }
-function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); save.coins += k; me.earned += k; }
+function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; save.coins += k; me.earned += k; }
 function addCooked(k) {
   const was = me.cooked; me.cooked = Math.max(0, Math.min(100, me.cooked + k));
   if (k > 0 && was < 50 && me.cooked >= 50) { banner = { t: 120, a: 'YOU ARE COOKED!', b: 'THE SMOKE SPOT IS OPEN - KEEP GOING FOR ULTRA' }; SFX.power(); }
@@ -1278,7 +1278,7 @@ function pickUp(it) {
     if (me.hp < maxHp()) { me.hp = Math.min(maxHp(), me.hp + 2); popup(x - 12, y - 6, 'MUNCHIES! +2', '#ff9ab8'); }
     else { save.munchie = Math.min(3, save.munchie + 1); popup(x - 12, y - 6, 'SAVED FOR LATER', '#ff9ab8'); }
   }
-  else if (ITEMS[it.kind] && !(it.kind === 'munchie' && me.hp < maxHp())) { save[it.kind] = Math.min(MAX_ITEM, (save[it.kind] || 0) + 1); SFX.buy(); popup(x - 16, y - 6, '+1 ' + ITEMS[it.kind].name, '#fff6b0'); persist(); }
+  else if (ITEMS[it.kind] && !(it.kind === 'munchie' && me.hp < maxHp())) { save[it.kind] = Math.min(itemCap(it.kind), (save[it.kind] || 0) + 1); SFX.buy(); popup(x - 16, y - 6, '+1 ' + ITEMS[it.kind].name, '#fff6b0'); persist(); }
   else if (it.kind === 'papers' || it.kind === 'bombs' || it.kind === 'smoke') { const k = it.kind === 'papers' ? 5 : it.kind === 'bombs' ? 2 : 2; save.throws[it.kind] = (save.throws[it.kind] || 0) + k; SFX.buy(); popup(x - 16, y - 6, '+' + k + ' ' + (it.kind === 'papers' ? 'PAPERS' : it.kind === 'bombs' ? 'NUG BOMBS' : 'SMOKE GRENADES'), '#fff6b0'); }
   else if (it.kind === 'gold') { me.star = 540; SFX.star(); shake = 6; banner = { t: 150, a: 'GOLDEN LEAF!', b: 'UNSTOPPABLE - RUN INTO ENEMIES' }; }
   else if (it.kind === 'extra') {
@@ -1324,10 +1324,11 @@ const ITEMS = {
   munchie: { name: 'MUNCHIES', icon: 'munchie', price: 25, desc: 'HEALS 2 HEARTS. QUICK KEY: E' },
   brownie: { name: 'RAGE BROWNIE', icon: 'brownie', price: 45, desc: '+2 DAMAGE ON EVERY HIT FOR 20 SECONDS' },
   soda: { name: 'ENERGY SODA', icon: 'soda', price: 35, desc: 'RUN + SWING FASTER FOR 20 SECONDS' },
-  preroll: { name: 'PRE-ROLL', icon: 'preroll', price: 40, desc: '+40% COOKED RIGHT NOW' },
-  gold: { name: 'GOLDEN LEAF', icon: 'gold', price: 75, desc: 'INVINCIBLE FOR 10 SECONDS. SMASH THROUGH ANYTHING' },
+  preroll: { name: 'PRE-ROLL', icon: 'preroll', price: 40, desc: '+30% COOKED RIGHT NOW' },
+  gold: { name: 'GOLDEN LEAF', icon: 'gold', price: 150, desc: 'INVINCIBLE FOR 10 SECONDS. SMASH THROUGH ANYTHING. CARRY MAX 2', cap: 2 },
 };
 const MAX_ITEM = 5;
+const itemCap = id => (ITEMS[id] && ITEMS[id].cap) || MAX_ITEM;
 function useItem(id) {
   if (state !== 'play' || !(save[id] > 0)) { SFX.bump(); return; }
   if (id === 'munchie' && me.hp >= maxHp()) { popup(me.x - 14, sy(me.z) - 34, 'ALREADY FULL', '#ff9ab8'); return; }
@@ -1336,7 +1337,7 @@ function useItem(id) {
   if (id === 'munchie') { me.hp = Math.min(maxHp(), me.hp + 2); say('MUNCHIES! +2'); }
   if (id === 'brownie') { me.buffs.rage = 1200; say('RAGE BROWNIE!'); shake = 4; }
   if (id === 'soda') { me.buffs.soda = 1200; me.buffs.speed = Math.max(me.buffs.speed, 1200); say('ENERGY SODA!'); }
-  if (id === 'preroll') { addCooked(40); say('PRE-ROLL +40%'); }
+  if (id === 'preroll') { addCooked(30); say('PRE-ROLL +30%'); }
   if (id === 'gold') { me.star = 600; SFX.star(); say('GOLDEN LEAF!'); }
 }
 function useMunchies() {
@@ -1540,7 +1541,7 @@ function attack(charged) {
   me.atkCd = Math.round(w.cd * (strong ? 1.3 : 0.75) * (me.buffs.soda > 0 ? 0.6 : 1)); me.atkT = 12; me.chainT = me.atkCd + 16;
   SFX.attack(Math.min(wi, 4));
   const lv = wlv(w.id), lv3 = lv >= 3;
-  let dmg = w.dmg + (lv - 1) + (ultra() ? (hasSkill('rage') ? 3 : 1) : 0) + (me.buffs.power > 0 ? 1 : 0) + (me.buffs.rage > 0 ? 2 : 0) + (strong ? 1 : 0);
+  let dmg = w.dmg + (lv - 1) + (ultra() ? (hasSkill('rage') ? 3 : 1) : 0) + (me.buffs.rage > 0 ? 2 : 0) + (strong ? 1 : 0);
   if (charged) dmg = dmg * 2 + 2;
   const reach = w.reach + (charged ? 12 : 0) + (lv3 && w.id === 'grinder' ? 10 : 0);
   const baseBurn = w.id === 'puff' ? (hasSkill('cherry') ? w.burn : 0) : (w.burn || 0);
@@ -1551,7 +1552,7 @@ function attack(charged) {
     .sort((a, b) => Math.abs(a.dx) - Math.abs(b.dx));
   let critChained = false;
   for (const t of (w.pierce || w.spin || w.id === 'lighter' || w.id === 'bong' || w.homer) ? targets : targets.slice(0, 2)) {
-    let d = dmg; const crit = Math.random() < (w.crit || 0) + (hasSkill('crit') ? 0.15 : 0);
+    let d = dmg; const crit = Math.random() < (w.crit || 0) + (hasSkill('crit') ? 0.15 : 0) + (me.buffs.crit > 0 ? 0.25 : 0);
     if (crit) { d *= 2; popup(t.e.x - 10, sy(t.e.z) - 30, 'CRIT!', '#9ae8ff'); }
     hitEnemy(t.e, d, Math.sign(t.dx) || me.face, strong || crit, fx); hits++;
     if (w.id === 'puff' && lv3 && Math.random() < 0.15) lvl.items.push({ id: 'r' + Math.random(), kind: 'ring', x: t.e.x, z: t.e.z, h: 4, taken: false }); // JOINT LV3: hits sometimes drop a smoke ring
@@ -1736,7 +1737,7 @@ function updatePlayer() {
   if (p.puffed) { p.vx *= 0.9; p.vz *= 0.9; }
 
   if (K.jumpPressed) p.jumpBuf = 6; else if (p.jumpBuf > 0) p.jumpBuf--;
-  if (p.jumpBuf > 0 && K.run && hasSkill('roll') && p.h === 0 && !(p.roll > 0) && (ix || iz)) {
+  if (p.jumpBuf > 0 && K.run && (hasSkill('roll') || p.buffs.dash > 0) && p.h === 0 && !(p.roll > 0) && (ix || iz)) {
     p.roll = 20; p.jumpBuf = 0; p.vx = (ix || p.face) * 4.2; p.vz = iz * 2.4; p.inv = Math.max(p.inv, 22); SFX.flap(); puff(p.x, sy(p.z) - 4, 5, ['#ffffff', '#e8e0d0'], .8);
   } else if (p.jumpBuf > 0) {
     if (p.h === 0) { p.vh = 3.4; p.jumpBuf = 0; p.sq = 6; SFX.jump(); }
@@ -1790,7 +1791,7 @@ function updatePlayer() {
   // pick things up
   for (const it of lvl.items) {
     if (it.taken) continue;
-    if (p.buffs.magnet > 0 && it.kind === 'coin') { const dx = p.x - it.x, dz = p.z - it.z, d = Math.hypot(dx, dz); if (d < 90) { it.x += dx / d * 3; it.z += dz / d * 3; } }
+    if (p.buffs.magnet > 0) { const dx = p.x - it.x, dz = p.z - it.z, d = Math.hypot(dx, dz); if (d < 90 && d > 1) { it.x += dx / d * 3; it.z += dz / d * 3; } }
     if (Math.abs(it.x - p.x) < 12 && Math.abs(it.z - p.z) < 12 && Math.abs((it.h || 0) - p.h) < 22) pickUp(it);
   }
   // thieves
@@ -1798,11 +1799,11 @@ function updatePlayer() {
     if (!e.spawned || !e.alive || (e.ai !== 'mouse' && e.ai !== 'squirrel') || e.state !== 0) continue;
     if (Math.abs(e.x - p.x) < 10 && Math.abs(e.z - p.z) < 7 && p.h < 10 && !(p.stealCd[e.id] > frame)) {
       p.stealCd[e.id] = frame + 120;
-      const k = save.pouch ? 0 : Math.min(save.coins, e.ai === 'mouse' ? 5 : 8);
-      if (save.pouch) popup(e.x - 16, sy(e.z) - 24, 'POUCH LOCKED!', '#ffd84a');
-      else if (k) { save.coins -= k; p.lost += k; popup(p.x - 16, sy(p.z) - 36, '-' + k + ' STOLEN!', '#ff8a8a'); SFX.steal(); }
+      const base = Math.min(save.coins, e.ai === 'mouse' ? 5 : 8), k = save.pouch ? Math.round(base / 2) : base;
+      const thiefBonus = save.pouch && k > 0 ? 1 : 0; // STASH POUCH: halves theft instead of blocking it, but the thief gets a small bonus coin
+      if (k) { save.coins -= k; p.lost += k; popup(p.x - 16, sy(p.z) - 36, '-' + k + ' STOLEN!' + (save.pouch ? ' (POUCH HALVED IT)' : ''), '#ff8a8a'); SFX.steal(); }
       else if (!(p.nothingT > frame)) { p.nothingT = frame + 180; popup(p.x - 16, sy(p.z) - 36, 'NOTHING TO STEAL LOL', '#ff8a8a'); }
-      if (isHost()) thiefFlee(e, k); else Net.send({ t: 'steal', i: e.id, k, l: lvl.n });
+      if (isHost()) thiefFlee(e, k + thiefBonus); else Net.send({ t: 'steal', i: e.id, k: k + thiefBonus, l: lvl.n });
     }
   }
   // enemy attacks that reach me
@@ -2582,7 +2583,7 @@ function drawHUD() {
   { const q = save.quick || 'brownie'; if (save[q] > 0) { ctx.drawImage(ICONS[ITEMS[q].icon], 250, 4); text('x' + save[q], 260, 3, '#fff6b0'); text('C', 262, 10, '#b0a8c0'); } }
   if (me.buffs.rage > 0) text('RAGE', 246, 20, frame % 20 < 12 ? '#ff5a6a' : '#ffd84a');
   let bx = 226;
-  for (const [k, ex, maxT] of [['speed', 'shatter', 600], ['magnet', 'kief', 720], ['power', 'hash', 720]]) if (me.buffs[k] > 0 && (me.buffs[k] > 120 || frame % 10 < 6)) { ctx.drawImage(EXTRAS[ex].img, bx, 4); R(ctx, '#1a1026', bx, 13, 9, 2); R(ctx, '#c8ffa0', bx, 13, Math.max(1, Math.round(9 * me.buffs[k] / maxT)), 2); bx += 11; }
+  for (const [k, ex, maxT] of [['dash', 'shatter', 600], ['magnet', 'kief', 720], ['crit', 'hash', 720]]) if (me.buffs[k] > 0 && (me.buffs[k] > 120 || frame % 10 < 6)) { ctx.drawImage(EXTRAS[ex].img, bx, 4); R(ctx, '#1a1026', bx, 13, 9, 2); R(ctx, '#c8ffa0', bx, 13, Math.max(1, Math.round(9 * me.buffs[k] / maxT)), 2); bx += 11; }
   // off-screen arrows toward crew who are behind, ahead, or downed
   if (Net.online) for (const [id, rp] of remotes) {
     const sx = rp.x - camX, off = sx < 6 || sx > W - 6, down = rp.b & 8;
@@ -2675,15 +2676,23 @@ function shopEntries(all) {
   const ups = WEAPONS.filter(w => save.weapons.includes(w.id)).map(w => ({ kind: 'upgrade', id: w.id, icon: w.icon, name: 'UPGRADE ' + w.name + (wlv(w.id) < 3 ? ' LV' + (wlv(w.id) + 1) : ''), price: 60 * wlv(w.id) + w.dmg * 20, desc: wlv(w.id) === 2 ? WEAPON_LV3[w.id] : '+1 DAMAGE AND STRONGER EFFECTS. MAX LV3' }));
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
   const nav = [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }];
-  const goods = [...ups, ...uses, ...SHOP];
+  const armorTier = Math.max(-1, ...save.armor.map(id => ARMORS.findIndex(a => a.id === id))); // ARMOR is an upgrade line now: only the highest tier owned counts (also migrates old saves that stacked several pieces)
+  const shopFixed = SHOP.map(g => {
+    if (g.kind !== 'armor') return g;
+    const idx = ARMORS.findIndex(a => a.id === g.id);
+    if (idx <= armorTier) return { ...g, owned: true };
+    const discount = armorTier >= 0 ? ARMORS[armorTier].price : 0;
+    return { ...g, price: Math.max(10, g.price - discount), desc: g.desc + (armorTier >= 0 ? ' (UPGRADE FROM ' + ARMORS[armorTier].name + ' - REPLACES IT)' : '') };
+  });
+  const goods = [...ups, ...uses, ...shopFixed];
   const tab = SHOP_TABS[shopTab];
   return [...nav, ...(all || tab === 'ALL' ? goods : goods.filter(g => SHOP_TAB_OF[g.kind] === tab))];
 }
 function itemStatus(it) {
   if (it.kind === 'weapon' && save.weapons.includes(it.id)) return 'OWNED';
-  if (it.kind === 'armor' && save.armor.includes(it.id)) return 'OWNED';
+  if (it.kind === 'armor' && it.owned) return 'OWNED';
   if (it.kind === 'item' && save.pouch) return 'OWNED';
-  if (it.kind === 'use' && save[it.id] >= MAX_ITEM + (Net.color === 3 && it.id === 'munchie' ? 1 : 0)) return 'MAX ' + (MAX_ITEM + (Net.color === 3 && it.id === 'munchie' ? 1 : 0));
+  if (it.kind === 'use' && save[it.id] >= itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0)) return 'MAX ' + (itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0));
   if (it.kind === 'upgrade' && wlv(it.id) >= 3) return 'MAXED';
   if (it.kind === 'ammo' && save.throws[it.id] >= 60) return 'FULL';
   if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (save.spots < SPOTS_TO_FARM) return 'LOCKED'; }
@@ -2718,9 +2727,9 @@ function shopConfirm() {
   if (save.coins < it.price) { SFX.bump(); results.msg = 'NEED ' + (it.price - save.coins) + ' MORE HASH COINS'; return; }
   save.coins -= it.price;
   if (it.kind === 'weapon') { save.weapons.push(it.id); save.weapon = it.id; }
-  else if (it.kind === 'armor') save.armor.push(it.id);
+  else if (it.kind === 'armor') save.armor = [it.id]; // an upgrade line: the new piece replaces whatever was worn before
   else if (it.kind === 'item') save.pouch = true;
-  else if (it.kind === 'use') save[it.id] = Math.min(MAX_ITEM + (Net.color === 3 && it.id === 'munchie' ? 1 : 0), save[it.id] + 1);
+  else if (it.kind === 'use') save[it.id] = Math.min(itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0), save[it.id] + 1);
   else if (it.kind === 'upgrade') save.wlv[it.id] = wlv(it.id) + 1;
   else if (it.kind === 'ammo') save.throws[it.id] = (save.throws[it.id] || 0) + (it.id === 'papers' ? 10 : 5);
   else if (it.kind === 'farm') { save.farm = true; results.farmScene = true; SFX.flag(); }
@@ -3363,7 +3372,7 @@ let invRow = 0, invCol = 0;
 const INV_ROWS = () => [
   { label: 'MELEE', items: WEAPONS.map(w => ({ kind: 'weapon', def: w, icon: ICONS[w.icon], has: save.weapons.includes(w.id), on: save.weapon === w.id })) },
   { label: 'THROW', items: THROWS.map(t => ({ kind: 'throw', def: t, icon: ICONS[t.id], has: save.throws[t.id] > 0, on: save.throwSel === t.id, count: save.throws[t.id] || 0 })) },
-  { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'MICE + SQUIRRELS CANT STEAL' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
+  { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'HALVES THEFT AMOUNT (THIEF GETS +1 BONUS COIN)' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
   { label: 'ITEMS', items: Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, def: { name: d.name, desc: d.desc + '. SPACE: USE NOW. ' + KL('quick') + ': QUICK-USE' + (save.quick === id ? ' (SET)' : '') }, icon: ICONS[d.icon], has: save[id] > 0, count: save[id] || 0, on: save.quick === id })) },
 ];
 function updateInventory() {

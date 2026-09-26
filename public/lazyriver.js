@@ -105,6 +105,7 @@
     }
 
     // ---- results / instructions ----
+    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
     const intro = T.showInstructionCard(ctx, {
       save, seenKey: 'seenLazyRiver', canvas,
       title: 'LAZY RIVER',
@@ -112,7 +113,6 @@
         ? ['A = left paddle  D = right paddle', 'Left paddle turns you RIGHT,', 'right paddle turns you LEFT.', 'Both together = straight & fast!']
         : ['Paddlers: coordinate left/right!', 'Extra crew: SPACE to fend off', 'hazards and grab snacks.']
     }, () => { running = true; });
-    let running = false;
     const results = T.makeResultsScreen();
 
     // ---- main loop ----

@@ -81,13 +81,13 @@
     let nextSwapAt = 900 + Math.random() * 700;
     function doBrainFreeze() { seats.push(seats.shift()); T.tone(150, 0.35, 'square', 0.2); }
 
+    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
     const intro = T.showInstructionCard(ctx, {
       save, seenKey: 'seenMunchieTruck', canvas, title: 'MUNCHIE TRUCK',
       lines: soloMode
         ? ['WASD/arrows to drive, SHIFT/SPACE', 'to handbrake-drift corners.', '1-4 pick snack, click to throw', 'at matching-color customers!']
         : ['Driver: WASD + SHIFT to drift.', 'Throwers: aim with MOUSE, click', 'to throw matching-color snacks.']
     }, () => { running = true; });
-    let running = false;
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;

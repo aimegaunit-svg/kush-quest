@@ -96,6 +96,7 @@
       T.tone(300, 0.3, 'triangle', 0.2);
     }
 
+    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
     const intro = T.showInstructionCard(ctx, {
       save, seenKey: 'seenSmokeBalloon', canvas, title: 'SMOKE BALLOON',
       lines: [
@@ -105,7 +106,6 @@
         "Don't get lit up by chopper lights!"
       ]
     }, () => { running = true; });
-    let running = false;
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;

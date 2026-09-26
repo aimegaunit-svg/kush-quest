@@ -100,13 +100,13 @@
     let nextSwapAt = 900 + Math.random() * 700;
     function doGust() { seats.push(seats.shift()); T.tone(220, 0.3, 'sawtooth', 0.2); }
 
+    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
     const intro = T.showInstructionCard(ctx, {
       save, seenKey: 'seenPaperPlane', canvas, title: 'PAPER PLANE',
       lines: soloMode
         ? ['Hold SPACE/click to DIVE (gain speed).', 'Release to PULL UP (gain height).', 'Ride updrafts, dodge gulls & pelicans!']
         : ['Pilot: hold to dive, release to climb.', 'Others: A/D to lean & grab coins —', "don't all lean the same way!"]
     }, () => { running = true; });
-    let running = false;
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;

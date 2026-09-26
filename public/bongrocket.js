@@ -106,13 +106,13 @@
     let nextSwapAt = 900 + Math.random() * 700;
     function doZeroG() { seats.push(seats.shift()); T.tone(400, 0.3, 'sine', 0.2); }
 
+    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
     const intro = T.showInstructionCard(ctx, {
       save, seenKey: 'seenBongRocket', canvas, title: 'BONG ROCKET',
       lines: soloMode
         ? ['WASD/arrows to fly freely, hold', 'SHIFT/SPACE to boost (burns fuel).', 'Auto-gun fires — press to fire manually.', 'Collect fuel bubbles, dodge drones!']
         : ['Pilot: free 8-way flight + boost.', 'Gunners: aim turret with MOUSE,', 'click to fire at drones & satellites.']
     }, () => { running = true; });
-    let running = false;
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;

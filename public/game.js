@@ -358,7 +358,7 @@ cv.addEventListener('mousemove', e => {
   const r = cv.getBoundingClientRect(); mouseG = { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
   const h = hotAt(mouseG.x, mouseG.y); if (h && h.hover) h.hover();
 });
-cv.addEventListener('wheel', e => { if (!running) return; e.preventDefault(); if (menu) return; if (state === 'results') { if (e.deltaY < 0) K.upPressed = true; else K.downPressed = true; } else if (state === 'play') cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: false });
+cv.addEventListener('wheel', e => { if (!running) return; e.preventDefault(); if (menu) return; if (state === 'results') { if (e.deltaY < 0) K.upPressed = true; else K.downPressed = true; } else if (state === 'play') cycleWeapon(); }, { passive: false });
 document.querySelectorAll('#touch button').forEach(b => {
   const k = b.dataset.k;
   b.addEventListener('pointerdown', e => {
@@ -779,6 +779,9 @@ const ENV_WEAPONS = {
   gravitybongcannon: { id: 'gravitybongcannon', name: 'GRAVITY BONG CANNON', dmg: 4, cd: 50, reach: 26, zr: 30, kb: 2.5, spin: 1, cost: 6, charge: 18, desc: 'A SLOW, HUGE SMOKE BLAST' },
   applepipe: { id: 'applepipe', name: 'APPLE PIPE', dmg: 1, cd: 18, reach: 22, zr: 10, kb: 1, cost: 0, charge: 0, infiniteCharge: true, desc: 'CHEAP AND WEAK. NEVER RUNS OUT (ITS A JOKE, OKAY)' },
 };
+// v1.2 fix (Step 1.4): Wild weapons have no dedicated icon art of their own - reuse the closest-themed
+// existing MELEE/THROW icon so the Bag's WILD row always has a real image to draw (never a blank/crash).
+const WILD_ICON_ID = { bonghammer: 'bong', bluntbat: 'blunt', rollingpapers: 'papers', nugbombs: 'bombs', dabtorch: 'dab', hackysack: 'grinder', leafblower: 'lighter', zippoflick: 'lighter', hookahwhip: 'bong', lavalampmace: 'bong', gravitybongcannon: 'bong', applepipe: 'joint' };
 // v1.1 A3: per-world Wild-weapon pool (brief's table, minus Astral Plane which doesn't exist in this
 // codebase yet - Gravity Bong Cannon is just available in HQ per the task instructions). A pickup rolls
 // one random id from its theme's pool instead of always the same fixed weapon.
@@ -1231,6 +1234,13 @@ const worldOf = n => {
 };
 const levelInWorld = n => isSecretLevel(n) ? WORLDS[worldOf(n)].levels.length : n - WORLD_START[worldOf(n)];
 const themeKeyFor = n => { const w = worldOf(n); return isSecretLevel(n) ? WORLDS[w].secretTheme : WORLDS[w].levels[levelInWorld(n)]; };
+// v1.2 fix (Step 1.6): world/level progress label ("WORLD 2-3") to replace the old flat "SMOKE SPOTS x/49"
+// text wherever it showed up (save slots, the Bag, the stats screen, the menu).
+function progressLabel(spots) {
+  if (spots >= TOTAL_LEVELS) return 'ALL WORLDS CLEARED';
+  const n = Math.max(0, Math.min(spots, TOTAL_LEVELS - 1));
+  return 'WORLD ' + (worldOf(n) + 1) + '-' + (levelInWorld(n) + 1);
+}
 // level TYPE tag (brief v1.1 B1 "level variety"): assigned deterministically per level number so every world
 // mixes at least 4 of the 6 types. GAUNTLET/ESCORT/CHASE are implemented as light variants of the standard
 // BRAWL flow rather than bespoke mechanics (see buildLevel/updateZones) - documented simplification.
@@ -1514,7 +1524,8 @@ function makePlayer() {
     puffed: false, flaps: 0, jumpBuf: 0, inv: 60, walkT: 0, sq: 0, star: 0,
     hp: maxHp(), cooked: 0, combo: 0, comboT: 0, best: 0, atkCd: 0, atkT: 0, chain: 0, chainT: 0,
     earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0, crit: 0, dash: 0 }, legendT: 0,
-    color: Net.color, name: Net.name, emote: null, stealCd: {}
+    color: Net.color, name: Net.name, emote: null, stealCd: {},
+    wildOn: false, // v1.2 fix: true = the held Wild weapon (me.envWeapon) is the active weapon; false = the Core weapon is active. Q toggles this - see cycleWeapon().
   };
 }
 function startLevel(n) {
@@ -1589,7 +1600,7 @@ function addCooked(k) {
   if (k < 0 && farmHas('chill')) k = Math.round(k * 0.7); // CHILL KUSH: fades 30% slower
   const was = me.cooked; me.cooked = Math.max(0, Math.min(100, me.cooked + k));
   if (k > 0 && was < 50 && me.cooked >= 50) { banner = { t: 120, a: 'YOU ARE COOKED!', b: 'THE SMOKE SPOT IS OPEN - KEEP GOING FOR ULTRA' }; SFX.power(); }
-  if (k > 0 && was < 100 && me.cooked >= 100) { banner = { t: 160, a: 'ULTRA COOKED!!', b: 'STRONGER HITS + INFINITE FLOAT + x2 COINS AT THE SPOT' }; SFX.power(); shake = 8; puff(me.x, sy(me.z) - 20, 40, ['#c070ff', '#c8ffa0', '#ffffff', '#ff9ab8'], 2.4); }
+  if (k > 0 && was < 100 && me.cooked >= 100) { banner = { t: 160, a: 'ULTRA COOKED!!', b: 'STRONGER HITS + INFINITE FLOAT + +25% COINS AT THE SPOT' }; SFX.power(); shake = 8; puff(me.x, sy(me.z) - 20, 40, ['#c070ff', '#c8ffa0', '#ffffff', '#ff9ab8'], 2.4); }
 }
 function spawnDrops(p) {
   p.drops.forEach((d, k) => {
@@ -1645,7 +1656,7 @@ function pickUp(it) {
   else if (ITEMS[it.kind] && !(it.kind === 'munchie' && me.hp < maxHp())) { save[it.kind] = Math.min(itemCap(it.kind), (save[it.kind] || 0) + 1); SFX.buy(); popup(x - 16, y - 6, '+1 ' + ITEMS[it.kind].name, '#fff6b0'); persist(); }
   else if (it.kind === 'papers' || it.kind === 'bombs' || it.kind === 'smoke') { const k = it.kind === 'papers' ? 5 : it.kind === 'bombs' ? 2 : 2; save.throws[it.kind] = (save.throws[it.kind] || 0) + k; SFX.buy(); popup(x - 16, y - 6, '+' + k + ' ' + (it.kind === 'papers' ? 'PAPERS' : it.kind === 'bombs' ? 'NUG BOMBS' : 'SMOKE GRENADES'), '#fff6b0'); }
   else if (it.kind === 'gold') { me.star = 540; SFX.star(); shake = 6; banner = { t: 150, a: 'GOLDEN LEAF!', b: 'UNSTOPPABLE - RUN INTO ENEMIES' }; }
-  else if (it.kind === 'envweapon') { me.envWeapon = { id: it.sub, charge: ENV_WEAPONS[it.sub].charge }; popup(x - 24, y - 10, 'PICKED UP ' + ENV_WEAPONS[it.sub].name, '#fff6b0'); SFX.buy(); }
+  else if (it.kind === 'envweapon') { me.envWeapon = { id: it.sub, charge: ENV_WEAPONS[it.sub].charge }; me.wildOn = true; popup(x - 24, y - 10, 'PICKED UP ' + ENV_WEAPONS[it.sub].name, '#fff6b0'); SFX.buy(); }
   else if (it.kind === 'extra') {
     const d = EXTRAS[it.sub];
     addCoins(d.coins); if (d.cooked) addCooked(d.cooked); if (d.buff) me.buffs[d.buff] = d.time;
@@ -1701,12 +1712,14 @@ function knockedOutFinal() {
 function restartLevelOutOfLives() {
   const coinLoss = Math.ceil(save.coins * 0.5), resinLoss = Math.ceil(save.resin * 0.5);
   save.coins -= coinLoss; save.resin -= resinLoss; persist();
-  if (isHost()) Net.send({ t: 'wipe', l: lvl.n });
   banner = null;
   const n = lvl.n;
   lvl = buildLevel(n, lvl.remix);
   me = makePlayer();
   crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; camX = 0;
+  // v1.2 fix (Step 1.2): send the actual reset lives count so non-host clients apply the real number
+  // instead of a hardcoded 5 (which drifted from this formula the moment it stopped always being 5).
+  if (isHost()) Net.send({ t: 'wipe', l: n, n: crewLives });
   banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL - LOST HALF YOUR COINS + RESIN' };
   SFX.bump();
 }
@@ -1738,17 +1751,14 @@ function useItem(id) {
 function useMunchies() {
   useItem('munchie');
 }
-function cycleWeapon(dir) {
-  if (me.envWeapon) { popup(me.x - 16, sy(me.z) - 34, 'DROPPED ' + ENV_WEAPONS[me.envWeapon.id].name, '#ff8a8a'); me.envWeapon = null; return; }
-  const owned = WEAPONS.filter(w => save.weapons.includes(w.id));
-  const i = owned.findIndex(w => w.id === save.weapon);
-  save.weapon = owned[(i + dir + owned.length) % owned.length].id; persist();
-  popup(me.x - 16, sy(me.z) - 34, weaponDef().name, '#fff6b0');
-}
-function selectWeapon(i) {
-  const w = WEAPONS[i]; if (!w) return;
-  if (!save.weapons.includes(w.id)) { popup(me.x - 16, sy(me.z) - 34, 'DONT HAVE IT YET', '#ff8a8a'); return; }
-  save.weapon = w.id; persist(); popup(me.x - 16, sy(me.z) - 34, w.name, '#fff6b0');
+// v1.2 fix (Step 1.1): Q used to just drop any held Wild weapon and cycle through the old, no-longer-used
+// 6-weapon `save.weapons` roster. It now just toggles which weapon is active - Core or the held Wild
+// weapon - and never drops anything. If no Wild weapon is held, Q is a no-op click (nothing to switch to).
+function cycleWeapon() {
+  if (!me.envWeapon) { SFX.bump(); popup(me.x - 16, sy(me.z) - 34, weaponDef().name, '#fff6b0'); return; }
+  me.wildOn = !me.wildOn;
+  SFX.buy();
+  popup(me.x - 16, sy(me.z) - 34, me.wildOn ? ENV_WEAPONS[me.envWeapon.id].name + ' (WILD)' : weaponDef().name + ' (CORE)', '#fff6b0');
 }
 
 // ============================================================
@@ -1944,7 +1954,8 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
 }
 function attack(charged) {
   if ((me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
-  const w = me.envWeapon ? ENV_WEAPONS[me.envWeapon.id] : weaponDef(), wi = me.envWeapon ? 0 : WEAPONS.indexOf(w);
+  const wildActive = !!(me.envWeapon && me.wildOn);
+  const w = wildActive ? ENV_WEAPONS[me.envWeapon.id] : weaponDef(), wi = wildActive ? 0 : WEAPONS.indexOf(w);
   if (me.puffed) { // exhale a smoke blast from the cloud
     me.puffed = false; me.flaps = 0; SFX.exhale(); me.atkCd = 16; me.atkT = 10;
     shots.push({ mine: true, x: me.x + me.face * 10, z: me.z, h: me.h + 8, vx: me.face * 3.6, life: 26, dmg: 2, kind: 5, hit: new Set() });
@@ -1955,7 +1966,7 @@ function attack(charged) {
   // cooldown/animation logic below doesn't need touching) but deals no damage and just clicks - the brief's
   // "does nothing (a 'click' sound) until more Resin is picked up". It stays held (me.envWeapon isn't
   // cleared) rather than breaking/dropping.
-  if (me.envWeapon && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge && me.envWeapon.charge < ENV_WEAPONS[me.envWeapon.id].cost) {
+  if (wildActive && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge && me.envWeapon.charge < ENV_WEAPONS[me.envWeapon.id].cost) {
     SFX.bump(); me.atkCd = 14; popup(me.x - 14, sy(me.z) - 34, '*CLICK*', '#8a809a');
     return;
   }
@@ -2028,7 +2039,7 @@ function attack(charged) {
   // v1.1 A3: drain the Wild weapon's Resin charge on every swing that actually attacked (the click-check
   // above already bailed out before this point if there wasn't enough charge), never below 0. It stays
   // held at 0 charge - no more "BROKE!"/auto-drop; gainResin() (see onKill) tops it back up from kills.
-  if (me.envWeapon && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge) me.envWeapon.charge = Math.max(0, me.envWeapon.charge - ENV_WEAPONS[me.envWeapon.id].cost);
+  if (wildActive && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge) me.envWeapon.charge = Math.max(0, me.envWeapon.charge - ENV_WEAPONS[me.envWeapon.id].cost);
 }
 function updateShots() {
   for (const s of shots) {
@@ -2352,7 +2363,7 @@ function sitDown() {
 function toResults() {
   if (state === 'results') return;
   const made = state === 'sitting';
-  const ultraBonus = made && ultra() ? me.earned : 0;
+  const ultraBonus = made && ultra() ? Math.round(me.earned * 0.25) : 0; // v1.2 fix (Step 1.3): was a full x2 (+100%) of earned coins - brief calls for +25%
   const spotBonus = made ? 50 + lvl.n * 10 : 0;
   addCoins(ultraBonus + spotBonus);
   if (made && !lvl.daily && !lvl.remix) save.spots = Math.max(save.spots, lvl.n + 1); // daily challenges + remix replays don't advance world progress
@@ -3197,9 +3208,14 @@ function drawHUD() {
   R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 30, 3, 1, 7); R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 54, 3, 1, 7);
   text(c >= 100 ? 'ULTRA COOKED!' : c >= 90 ? 'TOO HIGH ' + c + '%' : c >= 50 ? 'COOKED ' + c + '%' : 'SOBER-ISH ' + c + '%', mx + 9, 11, c >= 100 ? '#e4b3ff' : c >= 90 ? '#ff9a3a' : c >= 50 ? '#c8ffa0' : '#d8c8b0');
   // weapon + items
-  const w = weaponDef();
-  R(ctx, P.k, 146, 2, 14, 14); R(ctx, '#4a3a60', 147, 3, 12, 12); ctx.drawImage(ICONS[w.icon], 148, 4);
+  const wildOnHud = !!(me.envWeapon && me.wildOn), w = wildOnHud ? ENV_WEAPONS[me.envWeapon.id] : weaponDef();
+  R(ctx, P.k, 146, 2, 14, 14); R(ctx, wildOnHud ? '#7a2fc0' : '#4a3a60', 147, 3, 12, 12);
+  if (wildOnHud) { R(ctx, '#c0b0a0', 149, 5, 8, 8); text(w.name[0], 151, 10, '#2a1838'); } else ctx.drawImage(ICONS[w.icon], 148, 4);
   if (me.atkCd > 0) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(147, 3, 12, Math.round(12 * me.atkCd / w.cd)); }
+  if (me.envWeapon) { // Q swap indicator: a small dot shows whether Core or Wild is the currently-active weapon
+    R(ctx, wildOnHud ? '#4a3a60' : '#7a2fc0', 147, 16, 5, 3);
+    text(wildOnHud ? 'W' : 'C', 149, 18, '#ffffff', 1, 'center');
+  }
   if (save.munchie > 0) { ctx.drawImage(MUNCHIE, 164, 4); text('x' + save.munchie, 174, 3, '#ff9ab8'); text('E', 176, 10, '#b0a8c0'); }
   { const q = save.quick || 'brownie'; if (save[q] > 0) { ctx.drawImage(ICONS[ITEMS[q].icon], 250, 4); text('x' + save[q], 260, 3, '#fff6b0'); text('C', 262, 10, '#b0a8c0'); } }
   if (me.buffs.rage > 0) text('RAGE', 246, 20, frame % 20 < 12 ? '#ff5a6a' : '#ffd84a');
@@ -3398,7 +3414,7 @@ function shopConfirm() {
     return;
   }
   const st = itemStatus(it);
-  if (st) { SFX.bump(); results.msg = it.kind === 'coreup' && st === 'LOCKED' ? 'BEAT THE NEXT WORLD MINI-BOSS/BOSS TO RAISE THE CORE CAP' : st === 'LOCKED' ? 'REACH ' + SPOTS_TO_FARM + ' SMOKE SPOTS FIRST' : 'CANT BUY THAT'; return; }
+  if (st) { SFX.bump(); results.msg = it.kind === 'coreup' && st === 'LOCKED' ? 'BEAT THE NEXT WORLD MINI-BOSS/BOSS TO RAISE THE CORE CAP' : st === 'LOCKED' ? 'BEAT ALL 6 WORLDS FIRST' : 'CANT BUY THAT'; return; }
   if (it.kind === 'coreup') { // v1.1 A2: Core-weapon levels cost coins + Resin (+ a Seed on odd target levels), gated by save.coreCap above
     if (save.coins < it.coinPrice) { SFX.bump(); results.msg = 'NEED ' + (it.coinPrice - save.coins) + ' MORE HASH COINS'; return; }
     if (save.resin < it.resinPrice) { SFX.bump(); results.msg = 'NEED ' + (it.resinPrice - save.resin) + ' MORE RESIN'; return; }
@@ -3449,7 +3465,7 @@ function drawShop() {
   if (r.shopOnly) { text('THE HEAD SHOP', W / 2, 6, '#c8ffa0', 2, 'center'); text('SPEND COINS ON GEAR... OR SAVE THEM FOR THE FARM', W / 2, 24, '#ffffff', 1, 'center'); }
   else {
   text(r.made ? 'SMOKE SPOT ' + (lvl.n + 1) + ' REACHED!' : 'MISSION OVER', W / 2, 4, r.made ? '#c8ffa0' : '#ff8a8a', 2, 'center');
-  text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA x2!' : '') + (r.dailyBonus ? '   DAILY BONUS +' + r.dailyBonus + '!' : ''), W / 2, 18, '#ffffff', 1, 'center');
+  text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA +25%!' : '') + (r.dailyBonus ? '   DAILY BONUS +' + r.dailyBonus + '!' : ''), W / 2, 18, '#ffffff', 1, 'center');
   }
   drawMap(38);
   // tabs
@@ -3901,7 +3917,7 @@ function drawStatsPage() {
   const st = save.stats;
   const rows = [
     ['HASH COINS (LIFETIME)', st.coinsEarned || 0], ['BUZZKILLS TAKEN DOWN', st.kills], ['BOSSES BEATEN', st.bossesBeaten],
-    ['BEST COMBO', st.bestCombo + 'x'], ['TIMES KNOCKED OUT', st.deaths], ['SMOKE SPOTS', save.spots + '/' + TOTAL_LEVELS],
+    ['BEST COMBO', st.bestCombo + 'x'], ['TIMES KNOCKED OUT', st.deaths], ['PROGRESS', progressLabel(save.spots)],
   ];
   rows.forEach((rw, i) => { const y = 16 + i * 8; text(rw[0], 6, y, '#ffffff'); text(String(rw[1]), W - 6, y, '#c8ffa0', 1, 'right'); });
   const unlockedN = ACHV.filter(a => save.achv.includes(a.id)).length;
@@ -4169,9 +4185,14 @@ function drawBrief() {
 //  INVENTORY (the bag)
 // ============================================================
 let invRow = 0, invCol = 0;
+// v1.2 fix (Step 1.4): MELEE (the old 6-weapon roster) and THROW (papers/bombs/smoke ammo, which nothing
+// has granted since the A1/A2 shop rework - see the old `save.weapon(s)`/`throwsel`/`throws` reads this
+// replaces) are gone. The Bag's weapon section is now exactly what the brief's A1/A2 model actually is:
+// one fixed CORE weapon per homie (display-only - it's always equipped, nothing to pick) and the one WILD
+// weapon currently held, if any (confirming toggles it active/inactive, same as pressing Q).
 const INV_ROWS = () => [
-  { label: 'MELEE', items: WEAPONS.map(w => ({ kind: 'weapon', def: w, icon: ICONS[w.icon], has: save.weapons.includes(w.id), on: save.weapon === w.id })) },
-  { label: 'THROW', items: THROWS.map(t => ({ kind: 'throw', def: t, icon: ICONS[t.id], has: save.throws[t.id] > 0, on: save.throwSel === t.id, count: save.throws[t.id] || 0 })) },
+  { label: 'CORE', items: [(() => { const w = weaponDef(), lv = coreLevel(); return { kind: 'core', def: { name: w.name + ' - LV ' + lv, desc: w.desc, dmg: w.dmg + lv - 1, reach: w.reach }, icon: ICONS[w.icon], has: true, on: !(me.envWeapon && me.wildOn) }; })()] },
+  { label: 'WILD', items: [me.envWeapon ? { kind: 'wild', def: { ...ENV_WEAPONS[me.envWeapon.id], desc: ENV_WEAPONS[me.envWeapon.id].desc + ' - CHARGE ' + Math.round(me.envWeapon.charge) + '/' + ENV_WEAPONS[me.envWeapon.id].charge }, icon: ICONS[WILD_ICON_ID[me.envWeapon.id]] || ICONS.joint, has: true, on: !!me.wildOn } : { kind: 'wild', def: { name: 'NONE HELD', desc: 'PICK ONE UP OFF THE GROUND THIS MISSION, THEN PRESS ' + KL('weapon') + ' TO SWITCH TO IT' }, icon: ICONS.joint, has: false, on: false }] },
   { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'HALVES THEFT AMOUNT (THIEF GETS +1 BONUS COIN)' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
   { label: 'ITEMS', items: Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, def: { name: d.name, desc: d.desc + '. SPACE: USE NOW. ' + KL('quick') + ': QUICK-USE' + (save.quick === id ? ' (SET)' : '') }, icon: ICONS[d.icon], has: save[id] > 0, count: save[id] || 0, on: save.quick === id })) },
 ];
@@ -4190,8 +4211,8 @@ function invConfirm() {
   {
     const it = row.items[invCol];
     if (!it.has) SFX.bump();
-    else if (it.kind === 'weapon') { save.weapon = it.def.id; persist(); SFX.buy(); }
-    else if (it.kind === 'throw') { save.throwSel = it.def.id; persist(); SFX.buy(); }
+    else if (it.kind === 'core') { if (me.envWeapon && me.wildOn) cycleWeapon(); else SFX.buy(); } // switches TO Core if Wild is active; otherwise it's already equipped
+    else if (it.kind === 'wild') { if (me.envWeapon && !me.wildOn) cycleWeapon(); else SFX.buy(); } // switches TO Wild if it's held but not active
     else if (it.kind === 'use') { save.quick = it.id; persist(); if (state === 'play') useItem(it.id); else SFX.buy(); }
   }
 }
@@ -4216,13 +4237,13 @@ function drawInventory() {
   });
   const it = rows[invRow].items[invCol];
   R(ctx, '#4a3a60', 172, 42, W - 188, 98);
-  text(it.has ? it.def.name : '??? LOCKED', 178, 48, it.has ? '#ffd84a' : '#8a809a');
-  wrap(it.has ? it.def.desc : (it.def && it.def.id === 'blunt' ? 'FIND IT IN A CHEST - NOT SOLD IN SHOPS' : it.kind === 'use' ? 'BUY IT AT THE HEAD SHOP OR FIND IT IN A CHEST' : 'BUY IT AT THE HEAD SHOP'), 178, 60, 30, '#ffffff');
-  if (it.kind === 'weapon' && it.has) { text('LV ' + wlv(it.def.id) + '   DAMAGE ' + (it.def.dmg + wlv(it.def.id) - 1), 178, 96, '#ff9ab8'); text('REACH ' + it.def.reach, 178, 106, '#9ae8ff'); }
+  text(it.has || it.kind === 'wild' ? it.def.name : '??? LOCKED', 178, 48, it.has ? '#ffd84a' : '#8a809a');
+  wrap(it.has || it.kind === 'wild' ? it.def.desc : (it.def && it.def.id === 'blunt' ? 'FIND IT IN A CHEST - NOT SOLD IN SHOPS' : it.kind === 'use' ? 'BUY IT AT THE HEAD SHOP OR FIND IT IN A CHEST' : 'BUY IT AT THE HEAD SHOP'), 178, 60, 30, '#ffffff');
+  if ((it.kind === 'core' || it.kind === 'wild') && it.has) { text('DAMAGE ' + it.def.dmg, 178, 96, '#ff9ab8'); text('REACH ' + it.def.reach, 178, 106, '#9ae8ff'); }
   if (it.on) text('EQUIPPED', 178, 126, '#7fe07a');
   R(ctx, '#4a3a60', 16, 150, W - 32, 30);
   text('THE GOAL: BUY THE POT FARM', 22, 154, '#c8ffa0');
-  text('SMOKE SPOTS ' + Math.min(save.spots, SPOTS_TO_FARM) + '/' + SPOTS_TO_FARM, W - 22, 154, '#ffffff', 1, 'right');
+  text(progressLabel(save.spots), W - 22, 154, '#ffffff', 1, 'right');
   R(ctx, P.k, 22, 166, W - 44, 7); R(ctx, '#ffd84a', 23, 167, Math.round((W - 46) * Math.min(1, save.coins / FARM_PRICE)), 5);
   text(save.coins + ' / ' + FARM_PRICE + ' HASH COINS', W / 2, 167, '#ffffff', 1, 'center');
 }
@@ -4312,7 +4333,7 @@ function onNet(m) {
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
     // v1.1 A5: non-host crewmates follow the host's authoritative life count / wipe-restart so everyone agrees.
     case 'lives': if (!isHost() && m.l === lvl.n) crewLives = m.n; break;
-    case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); crewLives = 5; checkpoint = null; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
+    case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); crewLives = typeof m.n === 'number' ? m.n : (Net.online && remotes.size > 0 ? 5 : 3); checkpoint = null; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
     case 'pass': if (m.who === Net.id) { addCooked(20); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); } break;
     case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'boss': if (m.l === lvl.n) bossIntro(lvl.enemies[m.i]); break;
@@ -4368,7 +4389,7 @@ function renderSlots() {
     const d = readSlot(i), b = document.createElement('button');
     b.className = d ? 'slot' : 'slot empty';
     b.innerHTML = d
-      ? '<b>SAVE ' + i + '</b><span>SMOKE SPOTS ' + Math.min(d.spots || 0, SPOTS_TO_FARM) + '/' + SPOTS_TO_FARM + ' &middot; ' + (d.coins || 0) + ' HASH COINS' + (d.farm ? ' &middot; FARM OWNER' : '') + '</span><small>CONTINUE' + (d.played ? ' &middot; LAST PLAYED ' + new Date(d.played).toLocaleDateString() : '') + '</small>'
+      ? '<b>SAVE ' + i + '</b><span>' + progressLabel(d.spots || 0) + ' &middot; ' + (d.coins || 0) + ' HASH COINS' + (d.farm ? ' &middot; FARM OWNER' : '') + '</span><small>CONTINUE' + (d.played ? ' &middot; LAST PLAYED ' + new Date(d.played).toLocaleDateString() : '') + '</small>'
       : '<b>SAVE ' + i + '</b><span>EMPTY</span><small>NEW GAME</small>';
     b.onclick = () => chooseSlot(i);
     box.appendChild(b);
@@ -4434,5 +4455,8 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   // v1.1 B1 debug hooks (used by the automated smoke tests; also handy for future debugging)
   buildLevel, mapNodes, bossDataFor, levelType, worldOf, levelInWorld, missionName, WORLDS, WORLD_START, TOTAL_LEVELS, isSecretLevel, setWorld, get curWorld() { return curWorld; },
   // v1.1 A2/A3 debug hooks (used by the automated smoke tests for the Core-cost curve + Wild charge economy)
-  shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, get shopSel() { return shopSel; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost };
+  shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, get shopSel() { return shopSel; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost,
+  // v1.2 fix (Step 1) debug hooks: crew-lives visibility + the real restart-out-of-lives path, for the
+  // automated 2-browser tests that verify the host/non-host crewLives-sync fix.
+  get crewLives() { return crewLives; }, restartLevelOutOfLives, cycleWeapon, progressLabel };
 })();

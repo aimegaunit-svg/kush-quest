@@ -19,7 +19,13 @@ const MIME = {
 const server = http.createServer((req, res) => {
   let url;
   try { url = decodeURIComponent((req.url || '/').split('?')[0]); } catch { res.writeHead(400); return res.end(); }
-  if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
+  if (url === '/health') {
+    // v1.2 fix (Step 1.7): report room/player counts, not just a bare "ok" - useful for Render's health
+    // check dashboard and for eyeballing server load without SSHing in.
+    let players = 0; for (const r of rooms.values()) players += r.players.size;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, rooms: rooms.size, players, connections: clients.size, uptime: Math.round(process.uptime()) }));
+  }
   if (url === '/') url = '/index.html';
   const file = path.normalize(path.join(PUBLIC, url));
   if (file !== PUBLIC && !file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end(); }
@@ -163,9 +169,17 @@ function handle(client, m) {
     case 's': // player state, relayed to the rest of the room
       if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0, hp: Math.max(0, Math.min(20, m.hp | 0)), mh: Math.max(1, Math.min(20, m.mh | 0)) }, client.id);
       break;
-    case 'fx': // visual-only effects (attacks)
-      if (room) broadcast(room, { t: 'fx', id: client.id, k: m.k | 0, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, f: m.f | 0 }, client.id);
+    case 'fx': { // visual-only effects (attacks)
+      if (!room) return;
+      // v1.2 fix (Step 1.7): fx-specific rate limit. Legit combat can fire these fairly often (an attack
+      // per swing), so this is generous compared to chat's, but still catches a client blasting far more
+      // fx than any real attack cadence could produce.
+      const now = Date.now();
+      if (now - (client.fxWinAt || 0) > 1000) { client.fxWinAt = now; client.fxWin = 0; }
+      if (++client.fxWin > 40) return;
+      broadcast(room, { t: 'fx', id: client.id, k: m.k | 0, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, f: m.f | 0 }, client.id);
       break;
+    }
     case 'col': { // something was collected / defeated: first one wins
       if (!room || (m.l | 0) !== room.level) return;
       const id = String(m.id).slice(0, 20);
@@ -218,7 +232,7 @@ function handle(client, m) {
     // v1.1 A5: crew-lives system. Host is authoritative on the shared life count and on level restarts
     // when it hits 0, so every client agrees on both without a full state-sync protocol.
     case 'lives': if (room && client.id === room.host) broadcast(room, { t: 'lives', n: Math.max(0, Math.min(9, m.n | 0)), l: m.l | 0 }, client.id); break;
-    case 'wipe': if (room && client.id === room.host) broadcast(room, { t: 'wipe', l: m.l | 0 }, client.id); break;
+    case 'wipe': if (room && client.id === room.host) broadcast(room, { t: 'wipe', l: m.l | 0, n: Math.max(0, Math.min(9, m.n | 0)) }, client.id); break;
     // v1.1 A6: eshot/kill widened with a few extra whitelisted fields for the new world-specific enemy tricks (thrown sand/pinecone kind + arc height, HQ robot-mouse explosion)
     case 'eshot': if (room && client.id === room.host) broadcast(room, { t: 'eshot', x: +m.x || 0, z: +m.z || 0, vx: Math.max(-4, Math.min(4, +m.vx || 0)), l: m.l | 0, k: String(m.k || '').slice(0, 12), h: Math.max(0, Math.min(60, +m.h || 0)), vh: Math.max(-6, Math.min(6, +m.vh || 0)) }, client.id); break;
     case 'kill': if (room && client.id === room.host) broadcast(room, { t: 'kill', i: m.i | 0, by: String(m.by).slice(0, 12), st: m.st | 0, l: m.l | 0, ex: m.ex ? 1 : 0, exx: Math.round(+m.exx || 0), exz: Math.round(+m.exz || 0) }, client.id); break;
@@ -242,6 +256,11 @@ function handle(client, m) {
       break;
     case 'chat': {
       if (!room) return;
+      // v1.2 fix (Step 1.7): dedicated chat rate limit (separate from the blanket 120msg/sec socket-level
+      // limit above, which is generous enough that a spam client could still flood the room with chat alone).
+      const now = Date.now();
+      if (now - (client.chatAt || 0) < 800) return;
+      client.chatAt = now;
       const msg = String(m.msg || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 60);
       if (msg) broadcast(room, { t: 'chat', id: client.id, msg }, client.id);
       break;
@@ -280,6 +299,11 @@ setInterval(() => {
   }
   for (const [code, r] of rooms) if (r.players.size === 0 && r.emptySince && now - r.emptySince > 120000) rooms.delete(code);
 }, 25000);
+
+// v1.2 fix (Step 1.7): keep the process alive on an unexpected error instead of letting one bad
+// message/client take the whole server (and every room on it) down. Just logs and carries on.
+process.on('uncaughtException', err => { console.error('[uncaughtException]', err && err.stack || err); });
+process.on('unhandledRejection', err => { console.error('[unhandledRejection]', err && err.stack || err); });
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log('\n  KUSH QUEST server running!');

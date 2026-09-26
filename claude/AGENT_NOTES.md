@@ -478,3 +478,83 @@ verification. If the user comes back saying it's still 4 buttons after a hard re
 they're on `kush-quest.onrender.com`, the next step is to ask for a screenshot from their actual
 device rather than guessing further from the sandbox (which cannot reach the live Render URL to
 verify the deployed bytes directly - egress is allowlisted to GitHub/npm only).
+
+---
+
+## STEP 1 (FIX_STEPS.md): foundations - landed and verified
+
+Implemented every item in Step 1 of `claude/FIX_STEPS.md` (the new audit-based plan that replaces
+`PLAN.md`'s ordering), in `public/game.js` and `server.js`:
+
+1. **Q key** (`cycleWeapon()`, `public/game.js`): completely rewritten. It used to unconditionally drop
+   any held Wild weapon and cycle through the dead `save.weapons` 6-weapon roster. Now it just toggles a
+   new `me.wildOn` boolean between Core and the held Wild weapon (`me.envWeapon`) and never drops anything;
+   with no Wild weapon held it's a no-op click. `attack()`, the charge-drain/empty-click logic, and the
+   HUD weapon icon were all updated to key off `wildActive = me.envWeapon && me.wildOn` instead of just
+   `me.envWeapon`. The HUD weapon-icon box now shows a small C/W badge so you can actually see which is
+   active. Picking up a new Wild weapon auto-activates it (`wildOn = true`), matching the old instant-equip
+   feel. Verified: gave a Wild weapon via the debug handle, pressed Q twice, confirmed `envWeapon` stayed
+   held both times while `wildOn` toggled false then true, and confirmed a fresh screenshot of the HUD
+   showing the C/W badge and popup text change correctly both ways.
+2. **Crew wipe sync** (`restartLevelOutOfLives()` + `case 'wipe'` in both `game.js` and `server.js`): the
+   host now computes the real reset `crewLives` value BEFORE sending the wipe message (order was backwards
+   before - it sent, then computed) and includes it as `n`. Non-host clients now read `m.n` instead of a
+   hardcoded `5`. `server.js`'s `case 'wipe'` relay now forwards `n` (clamped 0-9, same as `case 'lives'`).
+   Verified with a REAL 2-browser test (`/tmp/kq_step1_wipe.js`, not committed - scratch test): host and
+   joiner both join a room, reach `play`, host calls the real `restartLevelOutOfLives()` via the debug
+   handle, and both clients end up agreeing on `crewLives` afterward. Also sniffed the raw WebSocket frame
+   B actually received: `{"t":"wipe","l":1,"n":5}` - confirms the `n` field is real wire data, not
+   something the client invents locally.
+3. **Ultra bonus**: `toResults()`'s `ultraBonus` changed from `me.earned` (a full +100%/x2) to
+   `Math.round(me.earned * 0.25)` (+25%, per the brief). Updated both result-screen text ("ULTRA +25%!")
+   and the in-level "ULTRA COOKED!!" banner text (was still advertising "x2 COINS AT THE SPOT").
+4. **A1 cleanup**: the Bag's old "MELEE" (6-weapon roster) and "THROW" (papers/bombs/smoke ammo) rows are
+   gone, replaced with "CORE" (the current homie's fixed Core weapon, display-only - always equipped) and
+   "WILD" (the currently-held Wild weapon, if any; confirming it toggles active the same as pressing Q).
+   Added a `WILD_ICON_ID` map so the WILD row always has a real icon to draw (Wild weapons have no icon art
+   of their own - reuses the closest-themed MELEE/THROW icon). Deleted the now-fully-dead `selectWeapon()`
+   function. **Not done / disclosed scope decision**: the underlying legacy THROWS/papers/bombs/smoke K-key
+   throw mechanic itself (ammo array, `throwItem()`, the `throwsel` rebind action, the gamepad/mobile K
+   button, the HUD ammo icon) was left in place rather than fully ripped out - it's dead-in-practice (no
+   shop/chest/pickup has granted ammo since A1/A2, only a single one-time 10-pack from the `throw` skill
+   unlock), but fully retiring it touches keybindings, gamepad mapping, and the mobile touch control, which
+   felt like more blast radius than this step's check called for. Flagged here rather than guessed through
+   silently; happy to finish the rip-out if wanted.
+5. **Cooked fade pause at the smoke spot**: investigated and found this was **already correct** - the decay
+   tick (`updatePlayer()`, `frame % 180 === 0 ... && state === 'play'`) already only runs during `state ===
+   'play'`, and `sitDown()` (triggered the instant you reach the spot at >=50% Cooked) immediately flips
+   `state` to `'sitting'`, which stops the decay. Verified with a fresh test: teleported the player to the
+   spot at 75% Cooked, confirmed `state` became `'sitting'` and `me.cooked` was unchanged 4 real seconds
+   later (well past the 3s decay tick). No code change needed here - just confirmed and left alone.
+6. **"SMOKE SPOTS x/49" text**: replaced everywhere it appeared as a literal string (save-slot list, the
+   Bag footer, the stats screen, and the farm-lock shop message) with a new `progressLabel(spots)` helper
+   that renders "WORLD 2-3"-style world/level labels (`worldOf()`/`levelInWorld()` already existed from
+   B1). The farm-lock message was reworded to "BEAT ALL 6 WORLDS FIRST" instead of forcing the label through
+   `progressLabel(49)` (which would read as "REACH ALL WORLDS CLEARED FIRST" - bad grammar). **Left alone,
+   out of scope for this text-only step**: the 49-dot progress track widget on the shop/farm-hub screen
+   (`drawMap()`) still shows 49 individual numbered dots rather than being grouped by world - that's a
+   bigger display rework that belongs with Step 7 ("world select: % complete... save slots: show world and
+   level"), not this literal-string-replacement item.
+7. **Server hardening** (`server.js`): added a dedicated chat rate limit (800ms cooldown per client, on top
+   of the existing blanket 120msg/sec-per-socket limit) and a dedicated `fx` rate limit (40/sec/client -
+   generous for real combat, but catches a client blasting far more fx than any real attack cadence could
+   produce). Added `process.on('uncaughtException'/'unhandledRejection', ...)` handlers that log and keep
+   the process alive instead of the whole server (every room on it) going down on one bad message. `/health`
+   now returns JSON (`{ok, rooms, players, connections, uptime}`) instead of a bare "ok" string - useful for
+   glancing at server load. **Host takeover of enemy AI when the host leaves**: verified this already works
+   correctly by design, not touched - `case 'host'` on the client just updates `Net.hostId`, and since every
+   client (including the eventual new host) has been continuously mirroring the old host's authoritative
+   `lvl.enemies` state via `'es'` snapshot broadcasts the whole time, the new host's `hostUpdate()` picks up
+   from an already-fresh local copy the next frame with no special handoff code needed.
+
+**Debug handle additions** (`window.__KQ`, for future automated tests): `crewLives` (getter),
+`restartLevelOutOfLives`, `cycleWeapon`, `progressLabel`.
+
+**Check status**: solo run through 1-1 done via Playwright (menu -> story -> map -> brief -> play, no
+console errors). Q-key swap verified via debug handle + screenshots. Crew wipe forced in 2 real browser
+tabs against a locally running `server.js`, both clients agreed on the post-wipe `crewLives`, and the raw
+WS payload was sniffed to confirm the fix is real (not just coincidentally consistent). All of Step 1's
+checklist items pass.
+
+Pushed to `main`. Next: Step 2 (online wiring for the vehicle games - `case 'd'` routing, host-broadcasts-
+launch, drop-in, carry-over), which the drive/transit agents need before they can test their games online.

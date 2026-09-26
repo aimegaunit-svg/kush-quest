@@ -253,6 +253,7 @@ addEventListener('keydown', e => {
   if (menuish && (nav || a === 'jump' || a === 'attack' || c === 'Enter')) { e.preventDefault(); if (a === 'jump') press('jump', true); if (c === 'Enter') press('enter', true); if (a === 'attack') K.attackPressed = true; return; }
   if (a === 'chat' && Net.online) { e.preventDefault(); openChat(); return; }
   if (c === 'KeyH' && state === 'map') { K.shopPressed = true; return; }
+  if (c === 'KeyG' && state === 'map') { K.dailyPressed = true; return; }
   if ((state === 'map' || state === 'results') && (c === 'KeyQ' || c === 'BracketLeft')) { K.worldPrev = true; return; }
   if ((state === 'map' || state === 'results') && (c === 'KeyE' || c === 'BracketRight')) { K.worldNext = true; return; }
   if (a === 'up') K.upPressed = true;
@@ -673,6 +674,24 @@ const ARMORS = [
   { id: 'crown', name: 'RASTA CROWN', icon: 'crown', hp: 3, price: 300, desc: '+3 MAX HEARTS' },
 ];
 const FARM_PRICE = 1500, SPOTS_TO_FARM = 5;
+// ---- Farm Hub (Phase 7): 4 plots growing passive-buff strains, + a farm pet ----
+const STRAINS = [
+  { id: 'sunny', name: 'SUNNY HAZE', desc: '+10% HASH COINS' },
+  { id: 'chill', name: 'CHILL KUSH', desc: 'COOKED FADES 30% SLOWER' },
+  { id: 'fire', name: 'FIRE OG', desc: '+1 BURN DURATION ON EVERY HIT' },
+  { id: 'sticky', name: 'STICKY WIDOW', desc: '+15% CRIT CHANCE' },
+  { id: 'giggle', name: 'GIGGLE GAS', desc: 'START EVERY MISSION AT +10% COOKED' },
+];
+const PETS = [
+  { id: 'sproutly', name: 'SPROUTLY', metric: 'none', need: 0, desc: 'A LITTLE SEEDLING BUDDY. +5% HASH COINS' },
+  { id: 'munchkin', name: 'MUNCHKIN', metric: 'bosses', need: 1, desc: '1 BOSS BEATEN. FREE MUNCHIE EVERY MISSION START' },
+  { id: 'zippy', name: 'ZIPPY', metric: 'bosses', need: 3, desc: '3 BOSSES BEATEN. +10% MOVE SPEED' },
+  { id: 'puffball', name: 'PUFFBALL', metric: 'bosses', need: 10, desc: '10 BOSSES BEATEN. +5% COOKED GAINS' },
+  { id: 'kushling', name: 'KUSHLING', metric: 'kills', need: 100, desc: '100 KOs. +1 MAX HEART' },
+];
+function petUnlocked(p) { return p.metric === 'none' || (p.metric === 'bosses' ? save.stats.bossesBeaten : save.stats.kills) >= p.need; }
+function farmHas(strainId) { return (save.farmPlots || []).includes(strainId); }
+const farmSpeedMul = () => (save.pet === 'zippy' ? 1.1 : 1);
 const SHOP = [
   ...WEAPONS.slice(1).map(w => ({ kind: 'weapon', ...w })),
   ...ARMORS.map(a => ({ kind: 'armor', ...a })),
@@ -1058,15 +1077,15 @@ function drawLayer(img, factor, camX, drift = 0, yOff = 0) {
 const FLOOR_Y = 110, ZMAX = 66;                 // screen y of the back edge of the street, depth of the street
 const sy = (z, h = 0) => FLOOR_Y + z - h;        // world (z,h) -> screen y (feet)
 const MISSION_LOOT = ['lighter', 'papers', 'blunt', 'hoodie', 'bombs', 'dab', 'vest', 'bong', 'grinder', 'crown', 'pouch'];
-function missionName(n) {
+function missionName(n, remix) {
   const th = THEMES[themeKeyFor(n)];
-  return ['WORLD ' + (worldOf(n) % WORLDS.length + 1) + '-' + (n % LEVELS_PER_WORLD + 1), th.name + (n >= TOTAL_LEVELS ? ' REMIX' : '')];
+  return ['WORLD ' + (worldOf(n) % WORLDS.length + 1) + '-' + (n % LEVELS_PER_WORLD + 1), th.name + (n >= TOTAL_LEVELS || remix ? ' REMIX' : '')];
 }
 let LEN = 0;
-function buildLevel(n) {
+function buildLevel(n, remix) {
   const themeKey = themeKeyFor(n), theme = THEMES[themeKey];
-  const diff = Math.min(n, 12);
-  let s = 1000 + n * 7919; const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const diff = Math.min(n, 12) + (remix ? 4 : 0);
+  let s = 1000 + (remix ? n + 90000 : n) * 7919; const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const pick = a => a[Math.floor(rand() * a.length)];
   const rz = () => 6 + Math.floor(rand() * (ZMAX - 12));
 
@@ -1131,7 +1150,7 @@ function buildLevel(n) {
   const chestLoot = (lootPool.length ? lootPool : MISSION_LOOT)[Math.floor(rand() * (lootPool.length ? lootPool.length : MISSION_LOOT.length))];
 
   return {
-    n, themeKey, theme, name: missionName(n), items, props, enemies, zones, deco, legend, spot, chestLoot,
+    n, themeKey, theme, name: missionName(n, remix), items, props, enemies, zones, deco, legend, spot, chestLoot, remix,
     zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: []
   };
 }
@@ -1142,19 +1161,20 @@ function buildLevel(n) {
 let SAVE_KEY = 'kq_save_v2_s1';
 const SLOT_COUNT = 3;
 try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.getItem('kq_save_v2_s1')) localStorage.setItem('kq_save_v2_s1', old); } catch (e) {}
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [] }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '' }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
   SAVE_KEY = 'kq_save_v2_s' + i;
   save = { ...defaultSave(), ...(readSlot(i) || {}) };
   save.throws = { papers: 0, bombs: 0, smoke: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
+  save.farmPlots = save.farmPlots && save.farmPlots.length === 4 ? save.farmPlots : [null, null, null, null]; save.pet = save.pet || null; save.dailyDate = save.dailyDate || '';
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
   if (!Array.isArray(save.skills)) save.skills = BOSSES.slice(0, Math.min(save.spots || 0, BOSSES.length)).map(b => b[2]);
 }
 loadSlot(1);
 function persist() { save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
-const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length + (Net.color === 0 ? 1 : 0);
+const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length + (Net.color === 0 ? 1 : 0) + (save.pet === 'kushling' ? 1 : 0);
 const weaponDef = () => WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];
 
 // ============================================================
@@ -1176,8 +1196,10 @@ function makePlayer() {
   };
 }
 function startLevel(n) {
-  lvl = buildLevel(n);
+  lvl = buildLevel(n, save.spots >= TOTAL_LEVELS && n < save.spots); // REMIX: once you've beaten every level, replaying an old one is harder + pays out more
   me = makePlayer();
+  if (farmHas('giggle')) me.cooked = 10; // GIGGLE GAS: start every mission at +10% Cooked
+  if (save.pet === 'munchkin' && save.munchie < 1) save.munchie = 1; // MUNCHKIN: a free munchie every mission start
   camX = 0; state = 'brief'; briefT = Net.online ? ([...new Set(lvl.theme.enemies)].some(k => !save.met.includes(k) && k === 'karen') ? 480 : 240) : 1200; particles = []; popups = []; shots = [];
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
   banner = null;
@@ -1225,8 +1247,10 @@ function addCombo(x, y) {
     const bonus = me.combo * (hasSkill('combo') ? 4 : 2); addCoins(bonus); popup(x, y - 10, 'COMBO BONUS +' + bonus, '#c8ffa0');
   }
 }
-function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; save.coins += k; me.earned += k; }
+function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; if (lvl && lvl.remix) k = Math.round(k * 1.3); if (farmHas('sunny')) k = Math.round(k * 1.1); if (save.pet === 'sproutly') k = Math.round(k * 1.05); save.coins += k; me.earned += k; }
 function addCooked(k) {
+  if (k > 0 && save.pet === 'puffball') k = Math.round(k * 1.05);
+  if (k < 0 && farmHas('chill')) k = Math.round(k * 0.7); // CHILL KUSH: fades 30% slower
   const was = me.cooked; me.cooked = Math.max(0, Math.min(100, me.cooked + k));
   if (k > 0 && was < 50 && me.cooked >= 50) { banner = { t: 120, a: 'YOU ARE COOKED!', b: 'THE SMOKE SPOT IS OPEN - KEEP GOING FOR ULTRA' }; SFX.power(); }
   if (k > 0 && was < 100 && me.cooked >= 100) { banner = { t: 160, a: 'ULTRA COOKED!!', b: 'STRONGER HITS + INFINITE FLOAT + x2 COINS AT THE SPOT' }; SFX.power(); shake = 8; puff(me.x, sy(me.z) - 20, 40, ['#c070ff', '#c8ffa0', '#ffffff', '#ff9ab8'], 2.4); }
@@ -1549,14 +1573,14 @@ function attack(charged) {
   if (charged) dmg = dmg * 2 + 2;
   const reach = w.reach + (charged ? 12 : 0) + (lv3 && w.id === 'grinder' ? 10 : 0);
   const baseBurn = w.id === 'puff' ? (hasSkill('cherry') ? w.burn : 0) : (w.burn || 0);
-  const fx = { burn: Math.max(baseBurn ? (baseBurn + (lv - 1)) * (lv3 && w.id === 'puff' ? 2 : 1) : 0, hasSkill('embers') ? 1 : 0), sp: w.spread ? (lv3 && w.id === 'lighter' ? 2 : 1) : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0, hrLv3: lv3 && w.id === 'blunt' && strong, air };
+  const fx = { burn: Math.max(baseBurn ? (baseBurn + (lv - 1)) * (lv3 && w.id === 'puff' ? 2 : 1) + (farmHas('fire') ? 1 : 0) : 0, hasSkill('embers') ? 1 : 0), sp: w.spread ? (lv3 && w.id === 'lighter' ? 2 : 1) : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0, hrLv3: lv3 && w.id === 'blunt' && strong, air };
   let hits = 0;
   const targets = lvl.enemies.filter(e => e.spawned && e.alive && e.state !== 5).map(e => ({ e, dx: e.x - me.x, dz: Math.abs(e.z - me.z) }))
     .filter(t => { const r = reach + (t.e.boss ? 14 : 0); return (w.spin || air ? Math.abs(t.dx) < r : t.dx * me.face > -6 && Math.abs(t.dx) < r) && t.dz < w.zr + (air ? 6 : 0) + (t.e.boss ? 10 : 0) && Math.abs(t.e.h - me.h) < 30; })
     .sort((a, b) => Math.abs(a.dx) - Math.abs(b.dx));
   let critChained = false;
   for (const t of (w.pierce || w.spin || w.id === 'lighter' || w.id === 'bong' || w.homer) ? targets : targets.slice(0, 2)) {
-    let d = dmg; const crit = Math.random() < (w.crit || 0) + (hasSkill('crit') ? 0.15 : 0) + (me.buffs.crit > 0 ? 0.25 : 0);
+    let d = dmg; const crit = Math.random() < (w.crit || 0) + (hasSkill('crit') ? 0.15 : 0) + (me.buffs.crit > 0 ? 0.25 : 0) + (farmHas('sticky') ? 0.15 : 0);
     if (crit) { d *= 2; popup(t.e.x - 10, sy(t.e.z) - 30, 'CRIT!', '#9ae8ff'); }
     hitEnemy(t.e, d, Math.sign(t.dx) || me.face, strong || crit, fx); hits++;
     if (w.id === 'puff' && lv3 && Math.random() < 0.15) lvl.items.push({ id: 'r' + Math.random(), kind: 'ring', x: t.e.x, z: t.e.z, h: 4, taken: false }); // JOINT LV3: hits sometimes drop a smoke ring
@@ -1729,7 +1753,7 @@ function updatePlayer() {
     }
     if (!passed) me.passT = 0;
   } else me.passT = 0;
-  const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1);
+  const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1) * farmSpeedMul();
   const highSlow = tooHigh() ? 0.9 : 1;
   const mx = (K.run ? 2.1 : 1.3) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow, mz = (K.run ? 1.3 : 0.9) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow;
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
@@ -1853,10 +1877,12 @@ function toResults() {
   const ultraBonus = made && ultra() ? me.earned : 0;
   const spotBonus = made ? 50 + lvl.n * 10 : 0;
   addCoins(ultraBonus + spotBonus);
-  if (made) save.spots = Math.max(save.spots, lvl.n + 1);
+  if (made && !lvl.daily && !lvl.remix) save.spots = Math.max(save.spots, lvl.n + 1); // daily challenges + remix replays don't advance world progress
+  let dailyBonus = 0;
+  if (made && lvl.daily && save.dailyDate !== todayStr()) { dailyBonus = 200; save.dailyDate = todayStr(); addCoins(dailyBonus); }
   save.stats.kills += me.kills; save.stats.bestCombo = Math.max(save.stats.bestCombo, me.best);
   persist();
-  results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs };
+  results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, dailyBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs };
   state = 'results'; shopSel = 0; hurryT = 0; banner = null;
 }
 
@@ -2703,7 +2729,52 @@ function itemStatus(it) {
   if (it.kind === 'ready') return readyInfo && readyInfo.me ? 'WAITING ' + readyInfo.n + '/' + readyInfo.of : '';
   return null;
 }
+let farmSel = 0;
+function farmHubEntries() { return [...STRAINS.map((_, i) => i), 'pet0', 'pet1', 'pet2', 'pet3', 'pet4', 'back']; }
+function updateFarmHub() {
+  const list = farmHubEntries();
+  if (K.upPressed) { farmSel = (farmSel - 1 + list.length) % list.length; SFX.tick(); }
+  if (K.downPressed) { farmSel = (farmSel + 1) % list.length; SFX.tick(); }
+  K.upPressed = K.downPressed = false;
+  if (!(K.enterPressed || K.jumpPressed || K.attackPressed)) return;
+  const sel = list[farmSel];
+  if (sel === 'back') { results.farmHub = false; go(openMap); return; }
+  if (typeof sel === 'number') { // cycle a plot through: empty -> strain0 -> strain1 -> ... -> empty
+    const cur = save.farmPlots[sel], curIdx = STRAINS.findIndex(s => s.id === cur);
+    save.farmPlots[sel] = curIdx >= STRAINS.length - 1 ? null : STRAINS[curIdx + 1].id;
+    persist(); SFX.buy(); return;
+  }
+  const p = PETS[Number(sel.slice(3))];
+  if (!petUnlocked(p)) { SFX.bump(); return; }
+  save.pet = save.pet === p.id ? null : p.id; persist(); SFX.buy();
+}
+function drawFarmHub() {
+  R(ctx, '#2a4a1e', 0, 0, W, H);
+  text('THE FARM', W / 2, 6, '#ffd84a', 2, 'center');
+  text('4 PLOTS GROW STRAINS THAT GIVE PASSIVE BUFFS - CLICK TO CYCLE', W / 2, 22, '#c8ffa0', 1, 'center');
+  const list = farmHubEntries();
+  for (let i = 0; i < 4; i++) {
+    const y = 34 + i * 16, id = save.farmPlots[i], s = STRAINS.find(st => st.id === id);
+    const on = farmSel === i;
+    R(ctx, on ? '#4a7a3a' : '#3a5a2e', 8, y, W - 16, 14);
+    text('PLOT ' + (i + 1) + ': ' + (s ? s.name : 'EMPTY'), 12, y + 3, s ? '#ffd84a' : '#8a809a');
+    text(s ? s.desc : 'CLICK TO PLANT', W - 12, y + 3, '#ffffff', 1, 'right');
+    hot(8, y, W - 16, 14, () => { farmSel = i; const curIdx = STRAINS.findIndex(st2 => st2.id === id); save.farmPlots[i] = curIdx >= STRAINS.length - 1 ? null : STRAINS[curIdx + 1].id; persist(); SFX.buy(); });
+  }
+  text('FARM PETS - EQUIP ONE FOR A SMALL BONUS', W / 2, 102, '#c8ffa0', 1, 'center');
+  PETS.forEach((p, i) => {
+    const y = 112 + i * 12, unlocked = petUnlocked(p), on = save.pet === p.id, sel = farmSel === i + 4;
+    R(ctx, sel ? '#4a7a3a' : '#3a5a2e', 8, y, W - 16, 10);
+    text((on ? '> ' : '') + p.name + (unlocked ? '' : ' (LOCKED)'), 12, y + 2, unlocked ? (on ? '#ffd84a' : '#ffffff') : '#6a6a6a');
+    text(p.desc, W - 12, y + 2, '#c8ffa0', 1, 'right');
+    hot(8, y, W - 16, 10, () => { if (!unlocked) { SFX.bump(); return; } save.pet = save.pet === p.id ? null : p.id; persist(); SFX.buy(); });
+  });
+  const by = 112 + PETS.length * 12 + 8;
+  R(ctx, farmSel === list.length - 1 ? '#4a7a3a' : '#3a5a2e', 8, by, W - 16, 12);
+  text('BACK TO THE MAP', W / 2, by + 2, '#ffffff', 1, 'center'); hot(8, by, W - 16, 12, () => { results.farmHub = false; go(openMap); });
+}
 function updateShop() {
+  if (results.farmHub) { updateFarmHub(); return; }
   if (results.statsScreen) { if (K.enterPressed || K.jumpPressed) { results.statsScreen = false; openMap(); } return; }
   if (results.farmScene) { if (K.enterPressed || K.jumpPressed) { results.farmScene = false; if (results.endingStats) results.statsScreen = true; else if (results.shopOnly) openMap(); } return; }
   if (K.worldPrev || K.worldNext || K.nav === 'left' || K.nav === 'right') { shopTab = (shopTab + (K.worldNext || K.nav === 'right' ? 1 : -1) + SHOP_TABS.length) % SHOP_TABS.length; shopSel = 0; SFX.tick(); }
@@ -2741,6 +2812,7 @@ function shopConfirm() {
 }
 function drawShop() {
   ctx.fillStyle = '#1e122c'; ctx.fillRect(0, 0, W, H);
+  if (results.farmHub) { drawFarmHub(); return; }
   if (results.statsScreen) {
     R(ctx, '#3a1a5a', 0, 0, W, H);
     text('THE ROAD TO THE FARM', W / 2, 10, '#ffd84a', 2, 'center');
@@ -2770,7 +2842,7 @@ function drawShop() {
   if (r.shopOnly) { text('THE HEAD SHOP', W / 2, 6, '#c8ffa0', 2, 'center'); text('SPEND COINS ON GEAR... OR SAVE THEM FOR THE FARM', W / 2, 24, '#ffffff', 1, 'center'); }
   else {
   text(r.made ? 'SMOKE SPOT ' + (lvl.n + 1) + ' REACHED!' : 'MISSION OVER', W / 2, 4, r.made ? '#c8ffa0' : '#ff8a8a', 2, 'center');
-  text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA x2!' : ''), W / 2, 18, '#ffffff', 1, 'center');
+  text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA x2!' : '') + (r.dailyBonus ? '   DAILY BONUS +' + r.dailyBonus + '!' : ''), W / 2, 18, '#ffffff', 1, 'center');
   }
   drawMap(38);
   // tabs
@@ -3122,7 +3194,7 @@ function updateMap() {
       else if (nd.kind === 'shop') go(openShop);
       else if (nd.kind === 'gate') { go(() => { setWorld(nd.to); mapSel = 0; Net.send({ t: 'mapsel', i: 0, w: curWorld }); }); }
       else if (nd.kind === 'farm') {
-        if (save.farm) { results = { shopOnly: true, farmScene: true }; state = 'results'; }
+        if (save.farm) { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }
         else if (save.coins >= FARM_PRICE) {
           save.coins -= FARM_PRICE; save.farm = true; persist(); SFX.flag();
           showDialogue([
@@ -3138,7 +3210,17 @@ function updateMap() {
   } else if (Net.mapCursor !== undefined) { if (Net.mapWorld !== undefined && Net.mapWorld !== curWorld) { curWorld = Net.mapWorld; MAP_NODES = mapNodes(curWorld); } mapSel = Net.mapCursor; }
   K.worldPrev = K.worldNext = false;
   if (K.shopPressed) go(openShop);
-  K.nav = null; K.shopPressed = false;
+  if (K.dailyPressed) startDaily();
+  K.nav = null; K.shopPressed = false; K.dailyPressed = false;
+}
+function todaySeed() { const d = new Date(); return d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate(); }
+function todayStr() { const d = new Date(); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); }
+function startDaily() {
+  if (save.dailyDate === todayStr()) { banner = { t: 120, a: 'ALREADY DONE TODAY', b: 'COME BACK TOMORROW FOR A NEW DAILY CHALLENGE' }; SFX.bump(); return; }
+  go(() => {
+    lvl = buildLevel(todaySeed() % TOTAL_LEVELS, true); lvl.daily = true; lvl.name = [lvl.name[0], "DAILY CHALLENGE - " + lvl.name[1].replace(' REMIX', '')];
+    me = makePlayer(); camX = 0; state = 'brief'; briefT = 240; particles = []; popups = []; shots = []; finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
+  });
 }
 function mapClick(gx, gy) {
   if (Net.online && !isHost()) return;
@@ -3623,5 +3705,5 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, K, remotes, Net, startLevel, toResults };
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; } };
 })();

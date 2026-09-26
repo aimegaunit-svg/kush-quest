@@ -167,7 +167,7 @@ function startMusic() {
   setInterval(() => {
     const target = wantedMusic() !== musicMode ? 0 : 1;
     musicVol += (target - musicVol) * (target ? 0.05 : 0.07); if (Math.abs(target - musicVol) < 0.01) musicVol = target;
-    bus.gain.setTargetAtTime(settings.music * musicVol * (musicOn ? 1 : 0), AC.currentTime, 0.05);
+    bus.gain.setTargetAtTime(settings.music * musicVol * (musicOn ? 1 : 0) * ((document.hidden && settings.muteHidden) ? 0 : 1), AC.currentTime, 0.05);
     const realMaster = master; master = bus;
     while (next < AC.currentTime + 0.25) {
       const song = SONGS[musicMode], step = 60 / song.bpm / song.div, s = i % song.steps, dt = next - AC.currentTime;
@@ -215,7 +215,7 @@ const K = { left: false, right: false, up: false, down: false, jump: false, run:
 // ---- settings (saved in this browser): volumes, toggles, custom key bindings ----
 const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT' };
 const ACTION_NAMES = { toke: 'HIT A TOKE (SKILL)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT' };
-let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, keys: { ...DEFAULT_KEYS } };
+let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, bigText: false, reduceFlash: false, colorblind: false, muteHidden: false, holdAttack: false, keys: { ...DEFAULT_KEYS } };
 try { const st = JSON.parse(localStorage.getItem('kq_settings')); if (st) settings = { ...settings, ...st, keys: { ...DEFAULT_KEYS, ...(st.keys || {}) } }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('kq_settings', JSON.stringify(settings)); } catch (e) {} if (master) master.gain.value = settings.sfx; }
 const keyLabel = c => ({ Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', Tab: 'TAB', Enter: 'ENTER', ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' }[c] || String(c).replace(/^Key|^Digit/, '').toUpperCase());
@@ -224,7 +224,7 @@ function actionOf(code) {
   return { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', ShiftRight: 'run', Enter: 'enter', KeyI: 'bag' }[code] || null;
 }
 const KL = a => keyLabel(settings.keys[a]);
-let rebinding = null, rebindWarn = null, chatOpen = false;
+let rebinding = null, rebindWarn = null, chatOpen = false, touchEmoteI = -1;
 function press(k, down) {
   if (down && !K[k]) { if (k === 'jump') K.jumpPressed = true; if (k === 'enter') K.enterPressed = true; if (k === 'attack') K.attackPressed = true; }
   K[k] = down;
@@ -324,12 +324,19 @@ document.querySelectorAll('#touch button').forEach(b => {
     e.preventDefault();
     if (['left', 'right', 'up', 'down'].includes(k)) K.nav = k;
     if (k === 'inv') { if (state !== 'results' && state !== 'story') invOpen = !invOpen; return; }
+    if (k === 'pause') { gpDispatch('Escape', true); return; }
+    if (k === 'emote') { if (state === 'play') emote((touchEmoteI = (touchEmoteI + 1) % 4)); return; }
+    if (k === 'weapon' || k === 'quick' || k === 'throw') { gpDispatch(settings.keys[k === 'throw' ? 'throw' : k], true); return; }
     if (state === 'map' || state === 'story' || invOpen) { if (k === 'jump' || k === 'attack') K.enterPressed = true; return; }
     if (state === 'results') { if (k === 'left' || k === 'up') K.upPressed = true; else if (k === 'right' || k === 'down') K.downPressed = true; else K.enterPressed = true; return; }
     if (state === 'sitting' && k === 'jump') K.enterPressed = true;
     press(k, true);
   });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, () => { if (k !== 'inv') press(k, false); }));
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, () => {
+    if (k === 'inv' || k === 'pause' || k === 'emote') return;
+    if (k === 'weapon' || k === 'quick' || k === 'throw') { gpDispatch(settings.keys[k === 'throw' ? 'throw' : k], false); return; }
+    press(k, false);
+  }));
 });
 
 // ============================================================
@@ -1497,7 +1504,7 @@ function update() {
   if (hurryT > 0 && --hurryT === 0) Net.send({ t: 'timeup' });
   K.jumpPressed = false; K.enterPressed = false; K.attackPressed = false; K.throwPressed = false; K.nav = nextNav(); K.escPressed = false;
   if (state !== 'results') K.upPressed = K.downPressed = false;
-  if (!settings.shake) shake = 0;
+  if (!settings.shake || settings.reduceFlash) shake = 0;
   for (const c of chatLog) if (c.t > 0) c.t--;
   if (me.say && --me.say.t <= 0) me.say = null;
   for (const r of remotes.values()) if (r.say && --r.say.t <= 0) r.say = null;
@@ -1601,6 +1608,7 @@ function updatePlayer() {
   }
 
   if (K.attackPressed) attack();
+  else if (settings.holdAttack && K.attack && !hasSkill('charge') && p.atkCd <= 0) attack();
   if (K.attack && hasSkill('charge')) { p.holdT = (p.holdT || 0) + 1; if (p.holdT > 30 && frame % 4 === 0) puff(p.x + p.face * 10, sy(p.z, p.h) - 14, 2, ['#ffd84a', '#ffffff'], .5, -0.03); }
   else { if (p.holdT > 30) attack(true); p.holdT = 0; }
   if (K.toke) { p.tokeT = (p.tokeT || 0) + 1; if (p.tokeT > 25 && hasSkill('breath') && p.cooked > 1) { p.cooked -= 0.3; if (frame % 5 === 0) breathFire(); } }
@@ -2182,6 +2190,11 @@ function menuOptions() {
       { label: 'SCREEN SHAKE: ' + (settings.shake ? 'ON' : 'OFF'), act: () => { settings.shake = !settings.shake; saveSettings(); } },
       { label: 'BLOOD: ' + (settings.blood ? 'ON' : 'OFF (SMOKE INSTEAD)'), act: () => { settings.blood = !settings.blood; saveSettings(); } },
       { label: 'FULLSCREEN (F)', act: toggleFullscreen },
+      { label: 'BIG TEXT: ' + (settings.bigText ? 'ON' : 'OFF'), act: () => { settings.bigText = !settings.bigText; saveSettings(); } },
+      { label: 'REDUCE FLASHING: ' + (settings.reduceFlash ? 'ON' : 'OFF'), act: () => { settings.reduceFlash = !settings.reduceFlash; saveSettings(); } },
+      { label: 'COLORBLIND MODE: ' + (settings.colorblind ? 'ON' : 'OFF'), act: () => { settings.colorblind = !settings.colorblind; saveSettings(); } },
+      { label: 'MUTE WHEN TAB HIDDEN: ' + (settings.muteHidden ? 'ON' : 'OFF'), act: () => { settings.muteHidden = !settings.muteHidden; saveSettings(); } },
+      { label: 'HOLD TO AUTO-SWING: ' + (settings.holdAttack ? 'ON' : 'OFF'), act: () => { settings.holdAttack = !settings.holdAttack; saveSettings(); } },
       { label: 'BACK', act: () => { menu.page = 'main'; menu.sel = 0; } },
     ];
   }
@@ -2352,8 +2365,8 @@ function drawHUD() {
   const mx = 72, c = Math.round(me.cooked);
   ctx.drawImage(LEAF_ICON, mx, 2);
   R(ctx, P.k, mx + 9, 3, 62, 7); R(ctx, '#4a3a60', mx + 10, 4, 60, 5);
-  R(ctx, c >= 100 ? ['#c070ff', '#c8ffa0', '#ff9ab8', '#ffd84a'][Math.floor(frame / 5) % 4] : c >= 50 ? '#7fe07a' : '#c8b890', mx + 10, 4, Math.round(60 * c / 100), 5);
-  R(ctx, '#ffffff', mx + 40, 3, 1, 7);
+  R(ctx, c >= 100 ? (settings.reduceFlash ? '#e4b3ff' : ['#c070ff', '#c8ffa0', '#ff9ab8', '#ffd84a'][Math.floor(frame / 5) % 4]) : c >= 50 ? '#7fe07a' : '#c8b890', mx + 10, 4, Math.round(60 * c / 100), 5);
+  R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 30, 3, 1, 7); R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 54, 3, 1, 7);
   text(c >= 100 ? 'ULTRA COOKED!' : c >= 50 ? 'COOKED ' + c + '%' : 'SOBER-ISH ' + c + '%', mx + 9, 11, c >= 100 ? '#e4b3ff' : c >= 50 ? '#c8ffa0' : '#d8c8b0');
   // weapon + items
   const w = weaponDef();
@@ -2386,22 +2399,23 @@ function drawHUD() {
   if (me.combo < 3 && state === 'play' && !banner) {
     const next = lvl.zones.find(z => !z.cleared);
     const goal = lvl.locked ? 'BEAT THE WAVE!' : me.cooked < 50 ? 'GOAL: GET COOKED (' + Math.round(me.cooked) + '/50%)' : !next ? 'GOAL: REACH THE SMOKE SPOT' : 'GOAL: KEEP MOVING - SMOKE SPOT AHEAD';
-    const gw = goal.length * 4 + 8; R(ctx, 'rgba(26,16,38,.75)', Math.round(W / 2 - gw / 2), 19, gw, 11);
-    text(goal, W / 2, 22, lvl.locked ? '#ff8a8a' : '#fff6b0', 1, 'center');
+    const gs = settings.bigText ? 2 : 1, gw = goal.length * 4 * gs + 8; R(ctx, 'rgba(26,16,38,.75)', Math.round(W / 2 - gw / 2), 19, gw, 11 * gs);
+    text(goal, W / 2, 22, lvl.locked ? '#ff8a8a' : '#fff6b0', gs, 'center');
     if (me.cooked >= 50 && !lvl.locked && lvl.spot.x > camX + W && frame % 30 < 20) { text('SMOKE SPOT', W - 44, 96, '#c8ffa0', 1, 'center'); R(ctx, '#c8ffa0', W - 10, 95, 4, 7); R(ctx, '#c8ffa0', W - 6, 97, 2, 3); }
   }
   if (me.combo >= 3) {
-    const col = me.combo >= 10 ? ['#c8ffa0', '#e4b3ff', '#ffd84a', '#ffffff'][Math.floor(frame / 4) % 4] : '#fff';
+    const col = me.combo >= 10 ? (settings.reduceFlash ? '#e4b3ff' : ['#c8ffa0', '#e4b3ff', '#ffd84a', '#ffffff'][Math.floor(frame / 4) % 4]) : '#fff';
     text(me.combo + 'x COMBO', W / 2, 22, col, 1, 'center');
     if (me.combo >= 10) text('BLAZED!', W / 2, 30, col, 2, 'center');
   }
   if (banner && skillPop) banner = null;
   if (banner) {
+    const bs = settings.bigText ? 2 : 1;
     ctx.globalAlpha = Math.min(1, banner.t / 20);
-    ctx.fillStyle = 'rgba(42,24,56,.75)'; ctx.fillRect(0, 62, W, banner.b ? 34 : 22);
-    text(banner.a, W / 2, 68, '#c8ffa0', 2, 'center');
-    if (banner.b) text(banner.b, W / 2, 84, '#fff', 1, 'center');
-    if (Net.rejoin) hot(0, 62, W, 34, () => Net.doRejoin());
+    ctx.fillStyle = 'rgba(42,24,56,.75)'; ctx.fillRect(0, 62, W, (banner.b ? 34 : 22) * bs);
+    text(banner.a, W / 2, 68, '#c8ffa0', 2 * bs, 'center');
+    if (banner.b) text(banner.b, W / 2, 68 + 16 * bs, '#fff', bs, 'center');
+    if (Net.rejoin) hot(0, 62, W, (banner.b ? 34 : 22) * bs, () => Net.doRejoin());
     ctx.globalAlpha = 1;
   }
   if (state === 'sitting') {
@@ -2543,13 +2557,40 @@ setInterval(() => {
   lastBg += steps * (1000 / 60);
   while (steps-- > 0) update();
 }, 100);
-document.addEventListener('visibilitychange', () => { last = 0; acc = 0; });
+document.addEventListener('visibilitychange', () => { last = 0; acc = 0; if (master) master.gain.value = (document.hidden && settings.muteHidden) ? 0 : settings.sfx; });
 function loop(t) {
   if (!last) last = t;
   acc += Math.min(100, t - last); last = t;
+  pollGamepad();
   while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
   draw();
   requestAnimationFrame(loop);
+}
+// ---- Gamepad: mirror standard-mapping buttons onto real key events, so every
+// existing keyboard-driven system (menus, nav, actions) works unchanged. ----
+let gpState = {};
+function gpDispatch(code, down) { if (!code) return; try { window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, repeat: false })); } catch (e) {} }
+function pollGamepad() {
+  if (chatOpen || rebinding) return;
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null; for (const p of pads) if (p) { gp = p; break; }
+  if (!gp) return;
+  const b = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  const ax = gp.axes || [];
+  const map = {
+    dUp: b(12) || ax[1] < -0.5, dDown: b(13) || ax[1] > 0.5, dLeft: b(14) || ax[0] < -0.5, dRight: b(15) || ax[0] > 0.5,
+    jump: b(0), attack: b(2), throw_: b(1), quick: b(3), weapon: b(4), throwsel: b(5), munchie: b(6), run: b(7), bag: b(8), esc: b(9),
+  };
+  const codes = {
+    dUp: 'ArrowUp', dDown: 'ArrowDown', dLeft: 'ArrowLeft', dRight: 'ArrowRight', esc: 'Escape',
+    jump: settings.keys.jump, attack: settings.keys.attack, throw_: settings.keys.throw, quick: settings.keys.quick,
+    weapon: settings.keys.weapon, throwsel: settings.keys.throwsel, munchie: settings.keys.munchie, run: settings.keys.run, bag: settings.keys.bag,
+  };
+  for (const k in map) {
+    const was = gpState[k], now = !!map[k];
+    if (now !== was) gpDispatch(codes[k], now);
+    gpState[k] = now;
+  }
 }
 
 // ============================================================

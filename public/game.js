@@ -117,6 +117,17 @@ const SFX = {
   cp: () => { tone(784, 0.1, 'square', 0.05); tone(1047, 0.2, 'square', 0.05, 0.1); },
   tick: () => tone(660, 0.03, 'square', 0.04),
   buy: () => { tone(1047, 0.08, 'square', 0.05); tone(1568, 0.2, 'square', 0.05, 0.08); },
+  // v1.1 A6: world-specific enemy trick sounds
+  taser: () => { tone(2400, 0.04, 'square', 0.05); tone(1900, 0.16, 'sawtooth', 0.05, 0.05, 0.35); },
+  spray: () => { if (AC) noise(0.3, 0.06, AC.currentTime, 3500); },
+  thud: () => tone(160, 0.12, 'square', 0.09, 0, 0.5),
+  trap: () => tone(520, 0.09, 'square', 0.05, 0, 0.4),
+  flash: () => { tone(1600, 0.06, 'square', 0.06); tone(2100, 0.1, 'square', 0.05, 0.05); },
+  net: () => tone(220, 0.22, 'sawtooth', 0.06, 0, 0.6),
+  drip: () => tone(900, 0.1, 'sine', 0.04, 0, 0.7),
+  boom: () => { tone(150, 0.25, 'sawtooth', 0.09, 0, 0.3); if (AC) noise(0.2, 0.07, AC.currentTime, 500); },
+  beep: () => tone(1300, 0.05, 'square', 0.05),
+  blow: () => { if (AC) noise(0.22, 0.07, AC.currentTime, 1200); tone(200, 0.15, 'sawtooth', 0.05, 0, 0.6); },
 };
 // ---- ADAPTIVE SOUNDTRACK ----
 // map: bouncy 8-bit theme | exploring: laid-back lo-fi chiptune | fights: 8-bit + drum & bass at 174 bpm
@@ -1212,7 +1223,9 @@ function buildLevel(n, remix) {
 
   return {
     n, themeKey, theme, name: missionName(n, remix), items, props, enemies, zones, deco, legend, spot, chestLoot, remix,
-    zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: []
+    zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: [],
+    // v1.1 A6: SUBURBIA mousetraps - a few placed on the ground in each fight area, telegraphed by being visible before they trigger
+    traps: (themeKey === 'suburb' || theme.base === 'suburb') ? zones.map(z => ({ x: z.x0 + 90 + Math.floor(rand() * 140), z: rz(), armed: true, flash: 0 })) : []
   };
 }
 
@@ -1594,6 +1607,10 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (e.kind === 'crab' && e.h > 0 && dmg > 0) { popup(e.x - 14, sy(e.z, e.h) - 30, 'PINCHED SHUT!', '#ffb0b0'); return; } // CRAB: can't be hit while pinching/hopping
   if (e.kind === 'securitybot' && dmg > 0 && !fx.stun) { popup(e.x - 10, sy(e.z, e.h) - 30, 'SHIELDED!', '#9ab0ff'); return; } // SECURITY BOT: shielded unless stunned (Bong)
   if (e.kind === 'owl' && dmg > 0 && !fx.air) dmg = Math.max(1, Math.floor(dmg / 3)); // OWL NARC: needs an air hit to really connect
+  // v1.1 A6: DOWNTOWN riot shields - cops block frontal damage; hit them from behind, or stun them first (fx.stun), to get through
+  if (e.ai === 'cop' && !e.boss && dmg > 0 && !fx.stun && e.state !== 4 && (lvl.theme.base || lvl.themeKey) === 'city' && dir === -e.dir) {
+    popup(e.x - 14, sy(e.z, e.h) - 30, 'SHIELDED!', '#9ab0ff'); SFX.bump(); return;
+  }
   if (by === Net.id && tooHigh() && dmg > 0) dmg += 1; // too-high zone (90-99% Cooked): hit harder, but slower on your feet
   let teamBonus = 0;
   if (by && e.lastHitBy && e.lastHitBy !== by && frame - (e.lastHitT || -999) < 30) { teamBonus = Math.max(1, Math.ceil(dmg * 0.5)); popup(e.x - 22, sy(e.z) - 30, 'TEAM UP!', '#ffd84a'); SFX.power(); }
@@ -1606,7 +1623,13 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (e.hotboxCd > 0) e.hotboxCd--;
   if (e.hp <= 0) {
     e.state = 5; e.t = 50; e.vx = dir * 2.6; e.vh = 3;
-    Net.send({ t: 'kill', i: e.id, by, st: e.stolen, l: lvl.n });
+    // HQ: robot mice detonate in a small radius when they die, whether that's from your attack or their own self-detonate timer
+    const wk4 = lvl.theme.base || lvl.themeKey, explodeMouse = e.ai === 'mouse' && wk4 === 'hq' && !e.reserve;
+    if (explodeMouse) {
+      SFX.boom(); shake = Math.max(shake, 6); puff(e.x, sy(e.z, e.h) - 6, 10, ['#ff5a6a', '#ffd84a', '#ffffff'], 1.4);
+      if (Math.abs(e.x - me.x) < 22 && Math.abs(e.z - me.z) < 14) hurt(1, 3, e.x);
+    }
+    Net.send({ t: 'kill', i: e.id, by, st: e.stolen, l: lvl.n, ex: explodeMouse ? 1 : 0, exx: Math.round(e.x), exz: Math.round(e.z) });
     onKill(e, by);
   } else {
     const kb = (fx.kb || 1) * (e.boss ? 0.25 : 1);
@@ -1775,13 +1798,30 @@ function updateShots() {
     if (s.kind === 7) for (const p of lvl.props) if (!p.broken && Math.abs(p.x - s.x) < 10 && Math.abs(p.z - s.z) < 10) { p.hp--; p.flash = 6; if (p.hp <= 0) breakProp(p); s.life = 0; }
   }
   shots = shots.filter(s => s.life > 0);
-  // purses thrown by Karens (simulated on every screen, each player checks themselves)
+  // purses thrown by Karens, and (v1.1 A6) the world-specific thrown tricks - simulated on every screen, each player checks themselves
   for (const s of lvl.eshots) {
     s.x += s.vx; s.life--; s.spin++;
-    if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 7) { s.life = 0; hurt(1, 8, s.x); }
+    if (s.k === 'pinecone') { // WOODS: an arcing pinecone that explodes in a small radius when it lands
+      s.h = (s.h == null ? 8 : s.h) + (s.vh = (s.vh == null ? 2.2 : s.vh) - 0.14);
+      if (s.h <= 0) {
+        s.h = 0; s.life = 0; SFX.boom(); puff(s.x, sy(s.z) - 4, 8, ['#8a5a2a', '#c8ffa0', '#ffffff'], 1.4); shake = Math.max(shake, 4);
+        if (state === 'play' && Math.abs(s.x - me.x) < 26 && Math.abs(s.z - me.z) < 16 && me.h < 20) hurt(1, 4, s.x);
+      }
+    } else if (s.k === 'sand') { // BEACH: sand throw that slows you down on hit, no direct damage
+      if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 7) { s.life = 0; me.slowT = Math.max(me.slowT || 0, 80); popup(me.x - 16, sy(me.z) - 34, 'SLOWED!', '#e8c896'); SFX.thud(); }
+    } else if (s.k === 'drone') { // HQ: the cop's flying drone shoots down from above
+      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 24) { s.life = 0; hurt(1, 3, s.x); }
+    } else if (!s.k) { // plain purse throw
+      if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 7) { s.life = 0; hurt(1, 8, s.x); }
+    }
     for (const p of shots) if (p.mine && Math.abs(p.x - s.x) < 10 && Math.abs(p.z - s.z) < 10) { s.life = 0; puff(s.x, sy(s.z, 14), 5, ['#ff7ac8', '#ffffff']); }
   }
   lvl.eshots = lvl.eshots.filter(s => s.life > 0);
+  // WOODS poison clouds (essential-oil diffuser): grows for ~20 frames, then drains Cooked% like a slow bleed while you stand in it
+  for (const c of lvl.clouds) if (c.poison) {
+    if (c.grow > 0) { c.grow--; c.r = Math.min(16, c.r + 0.6); }
+    else if (state === 'play' && Math.abs(me.x - c.x) < c.r && Math.abs(me.z - c.z) < c.r * 0.6 && frame % 40 === 0) { addCooked(-2); popup(me.x - 20, sy(me.z) - 34, 'YUCK!', '#c8ffa0'); SFX.drip(); }
+  }
 }
 
 // ============================================================
@@ -1904,11 +1944,17 @@ function updatePlayer() {
     }
     if (!passed) me.passT = 0;
   } else me.passT = 0;
-  const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1) * farmSpeedMul();
+  // v1.1 A6: world-trick status effects on the player (stun = can't move/attack, root = can't move but can still swing, slow = half speed, blind = white screen flash)
+  if (me.stunT > 0) me.stunT--;
+  if (me.rootT > 0) { me.rootT--; if (Net.online && remotes.size > 0) for (const r of remotes.values()) if (r.l === lvl.n && Math.abs(r.x - me.x) < 20 && Math.abs(r.z - me.z) < 14) { me.rootT -= 1.5; break; } } // a nearby teammate mashes you free faster (WOODS net launcher)
+  if (me.slowT > 0) me.slowT--;
+  if (me.blindT > 0) me.blindT--;
+  const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1) * farmSpeedMul() * (me.slowT > 0 ? 0.5 : 1);
   const highSlow = tooHigh() ? 0.9 : 1;
   const mx = (K.run ? 2.1 : 1.3) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow, mz = (K.run ? 1.3 : 0.9) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow;
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
   if (p.atkT > 6 && p.h === 0) { ix = 0; iz = 0; } // plant your feet while swinging
+  if (me.stunT > 0 || me.rootT > 0) { ix = 0; iz = 0; }
   if (ix) p.face = ix;
   if (mouseG && !chatOpen && p.atkT <= 6) { const sx = p.x - camX; if (Math.abs(mouseG.x - sx) > 3) p.face = mouseG.x > sx ? 1 : -1; } // aim with the mouse; WASD still moves
   if (p.roll > 0) { p.roll--; if (hasSkill('rollsmoke') && frame % 3 === 0) { puff(p.x, sy(p.z) - 6, 3, ['#ffffff', '#c8ffa0'], .6); for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - p.x) < 14 && Math.abs(e.z - p.z) < 10 && !(e.rollHit > frame)) { e.rollHit = frame + 30; hitEnemy(e, 1, Math.sign(e.x - p.x) || 1, false, { burn: 1 }); } } }
@@ -1941,7 +1987,8 @@ function updatePlayer() {
     if (next && next.started && p.x > next.x0 + ZW - 8) p.x = next.x0 + ZW - 8;
   }
 
-  if (K.attackPressed) attack();
+  if (me.stunT > 0) { /* BEACH taser / DOWNTOWN camera-flash: stunned, can't swing */ }
+  else if (K.attackPressed) attack();
   else if (settings.holdAttack && K.attack && !hasSkill('charge') && p.atkCd <= 0) attack();
   if (K.attack && hasSkill('charge')) { p.holdT = (p.holdT || 0) + 1; if (p.holdT > 30 && frame % 4 === 0) puff(p.x + p.face * 10, sy(p.z, p.h) - 14, 2, ['#ffd84a', '#ffffff'], .5, -0.03); }
   else { if (p.holdT > 30) attack(true); p.holdT = 0; }
@@ -1997,11 +2044,29 @@ function updatePlayer() {
   }
   // enemy attacks that reach me
   for (const e of lvl.enemies) {
-    if (!e.spawned || !e.alive || e.state !== 2 || (e.ai !== 'cop' && !e.boss)) continue;
-    if (e.hitMe === e.strikeN) continue;
-    const dx = p.x - e.x;
-    if (e.boss) { if ((e.dash ? Math.abs(dx) < 22 : dx * e.dir > -6 && Math.abs(dx) < 44) && Math.abs(e.z - p.z) < 14 && p.h < 20) { e.hitMe = e.strikeN; hurt(e.mega ? 2 : 1, 5, e.x); } continue; }
-    if (dx * e.dir > -4 && Math.abs(dx) < 28 && Math.abs(e.z - p.z) < 8 && p.h < 14) { e.hitMe = e.strikeN; hurt(1, 2, e.x); }
+    if (!e.spawned || !e.alive) continue;
+    const dx = p.x - e.x, dzp = p.z - e.z;
+    if (e.boss) {
+      if (e.state !== 2 || e.hitMe === e.strikeN) continue;
+      if ((e.dash ? Math.abs(dx) < 22 : dx * e.dir > -6 && Math.abs(dx) < 44) && Math.abs(dzp) < 14 && p.h < 20) { e.hitMe = e.strikeN; hurt(e.mega ? 2 : 1, 5, e.x); }
+      continue;
+    }
+    if (e.ai === 'cop') {
+      if (e.state === 2) { if (e.hitMe !== e.strikeN && dx * e.dir > -4 && Math.abs(dx) < 28 && Math.abs(dzp) < 8 && p.h < 14) { e.hitMe = e.strikeN; hurt(1, 2, e.x); } }
+      // v1.1 A6: BEACH taser lunge - a short stun, shorter range than the baton
+      else if (e.state === 11) { if (e.hitMe !== e.strikeN && dx * e.dir > -4 && Math.abs(dx) < 20 && Math.abs(dzp) < 8 && p.h < 12) { e.hitMe = e.strikeN; me.stunT = Math.max(me.stunT || 0, 46); shake = Math.max(shake, 6); SFX.taser(); popup(p.x - 14, sy(p.z) - 34, 'TASED!', '#9ae8ff'); } }
+      // SUBURBIA pepper-spray cone: damage + a short blind/slow
+      else if (e.state === 16) { if (e.hitMe !== e.strikeN && dx * e.dir > -6 && Math.abs(dx) < 40 && Math.abs(dzp) < 16 && p.h < 16) { e.hitMe = e.strikeN; me.blindT = Math.max(me.blindT || 0, 20); me.slowT = Math.max(me.slowT || 0, 60); hurt(1, 2, e.x); SFX.spray(); } }
+      // WOODS net launcher: no damage, but roots you for a while
+      else if (e.state === 18) { if (e.hitMe !== e.strikeN && dx * e.dir > -8 && Math.abs(dx) < 60 && Math.abs(dzp) < 14 && p.h < 20) { e.hitMe = e.strikeN; me.rootT = Math.max(me.rootT || 0, 105); SFX.net(); popup(p.x - 14, sy(p.z) - 34, 'NETTED!', '#c8ffa0'); } }
+    } else if (e.ai === 'karen') {
+      // BEACH sunscreen spray: a radial screen-blind, no real damage
+      if (e.state === 21) { if (e.hitMe !== e.strikeN && Math.abs(dx) < 90 && Math.abs(dzp) < 22) { e.hitMe = e.strikeN; me.blindT = Math.max(me.blindT || 0, 36); SFX.spray(); } }
+      // SUBURBIA leaf-blower: knocks you straight back
+      else if (e.state === 23) { if (e.hitMe !== e.strikeN && dx * e.dir > -8 && Math.abs(dx) < 70 && Math.abs(dzp) < 20) { e.hitMe = e.strikeN; me.vx = (dx > 0 ? 1 : -1) * 5.5; me.vz = Math.sign(dzp || 1) * 1.5; SFX.blow(); popup(p.x - 20, sy(p.z) - 34, 'BLOWN BACK!', '#c8ffa0'); } }
+      // DOWNTOWN camera flash: stuns + blinds (the backup call is handled host-side)
+      else if (e.state === 26) { if (e.hitMe !== e.strikeN && Math.abs(dx) < 70 && Math.abs(dzp) < 20) { e.hitMe = e.strikeN; me.stunT = Math.max(me.stunT || 0, 42); me.blindT = Math.max(me.blindT || 0, 26); SFX.flash(); } }
+    }
   }
   // legend
   const lg = lvl.legend;
@@ -2094,6 +2159,7 @@ function summonAdds(e, k) {
 function thiefFlee(e, k) { e.stolen += k; e.state = 6; e.t = 0; }
 function hostUpdate() {
   const players = playersList();
+  const wk = lvl.theme.base || lvl.themeKey; // v1.1 A6: which world's enemy tricks are active this mission
   // fight areas: start when someone walks in, clear when everyone's down
   const nz = lvl.zones.findIndex(z => !z.cleared);
   if (nz >= 0) {
@@ -2143,6 +2209,7 @@ function hostUpdate() {
     }
     if (!tgt) tgt = bestAny || players[0];
     const dx = tgt.x - e.x, dz = tgt.z - e.z;
+    if (e.buffed > 0) e.buffed--; // HQ clipboard Karen's write-up buff wears off
     e.vh -= 0.2; e.h = Math.max(0, e.h + e.vh); if (e.h === 0) e.vh = 0;
     if (e.burn > 0 && --e.burnT <= 0) {
       e.burnT = 36; e.burn--; e.hp -= 1; e.flash = 4;
@@ -2184,24 +2251,52 @@ function hostUpdate() {
       else if (e.state === 2) { sx = e.dir * 3; sz = 0; if (--e.t <= 0) { e.state = 3; e.t = 50; } }
       else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
     } else if (e.ai === 'cop') {
+      // v1.1 A6: world tricks, layered on top of the plain baton - state numbers 10+ are exclusive to a theme so they never collide
+      if (e.trickCd > 0) e.trickCd--;
+      if (wk === 'hq' && !e.boss) { // HQ: drone-backed cops - a small flying drone hovers over them and shoots from above
+        if (!e.drone) e.drone = { cd: 100 + (e.id * 13) % 80 };
+        e.drone.x = e.x; e.drone.z = e.z;
+        if (--e.drone.cd <= 0 && Math.abs(dz) < 26) {
+          e.drone.cd = 220 + (e.id * 11) % 100;
+          const shot = { x: e.x, z: e.z, vx: (Math.sign(dx) || e.dir) * 1.5, life: 140, spin: 0, k: 'drone' };
+          lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'drone' });
+        }
+      }
       if (e.state === 0) {
         e.dir = Math.sign(dx) || 1;
         // take turns: only a couple of cops go for you at once, the rest circle and wait
         const busy = lvl.enemies.filter(o => o !== e && o.ai === 'cop' && o.alive && (o.state === 1 || o.state === 2 || o.near)).length;
         e.near = busy < 1 + players.length;
-        const spdMul = e.kind === 'segway' ? 1.8 : 1; // DOWNTOWN: fast segway ram - jump (h>=14) to dodge, same as any melee contact
+        const spdMul = (e.kind === 'segway' ? 1.8 : 1) * (e.buffed > 0 ? 1.3 : 1); // DOWNTOWN: fast segway ram - jump (h>=14) to dodge, same as any melee contact. HQ: clipboard-buffed cops move faster too
         const wantX = inZone(tgt.x - e.dir * (e.near ? 20 : 52 + (e.id % 3) * 12));
         sx = Math.sign(wantX - e.x) * Math.min(0.9 * spdMul, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.9, Math.abs(dz));
-        if (e.near && Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = e.kind === 'segway' ? 14 : 26; }
+        if (e.near && wk === 'beach' && !(e.trickCd > 0) && Math.abs(dx) < 34 && Math.abs(dz) < 8) { e.state = 10; e.t = 26; e.trickCd = 260; } // BEACH: taser wind-up
+        else if (e.near && wk === 'suburb' && !(e.trickCd > 0) && Math.abs(dx) < 30 && Math.abs(dz) < 10) { e.state = 15; e.t = 24; e.trickCd = 280; } // SUBURBIA: pepper-spray wind-up
+        else if (!(e.trickCd > 0) && wk === 'woods' && Math.abs(dx) < 62 && Math.abs(dz) < 12) { e.state = 17; e.t = 22; e.trickCd = 340; } // WOODS: net-launcher aim
+        else if (e.near && Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = e.kind === 'segway' ? 14 : 26; }
       } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
       else if (e.state === 2) { if (--e.t <= 0) { e.state = 3; e.t = 44; } }
       else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
+      else if (e.state === 10) { if (--e.t <= 0) { e.state = 11; e.t = 12; e.strikeN = (e.strikeN || 0) + 1; e.dir = Math.sign(dx) || e.dir; SFX.taser(); } } // BEACH taser: lunges in fast, shorter range than the baton
+      else if (e.state === 11) { sx = e.dir * 2.5; if (--e.t <= 0) { e.state = 3; e.t = 50; } }
+      else if (e.state === 15) { if (--e.t <= 0) { e.state = 16; e.t = 14; e.strikeN = (e.strikeN || 0) + 1; SFX.spray(); } } // SUBURBIA pepper cone
+      else if (e.state === 16) { if (--e.t <= 0) { e.state = 3; e.t = 50; } }
+      else if (e.state === 17) { if (--e.t <= 0) { e.state = 18; e.t = 16; e.strikeN = (e.strikeN || 0) + 1; SFX.net(); } } // WOODS net launcher
+      else if (e.state === 18) { if (--e.t <= 0) { e.state = 3; e.t = 60; } }
     } else if (e.ai === 'karen') {
+      if (e.trickCd > 0) e.trickCd--;
+      if (wk === 'hq' && frame % 30 === 0) { // HQ clipboard Karen: "writing up" nearby cops/mice buffs them until she's KO'd
+        for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && (o.ai === 'cop' || o.ai === 'mouse') && Math.abs(o.x - e.x) < 70 && Math.abs(o.z - e.z) < 24) o.buffed = 40;
+      }
       if (e.state === 0) {
         const side = e.x < tgt.x ? -1 : 1, wantX = inZone(tgt.x + side * 56);
         e.dir = Math.sign(dx) || 1;
         sx = Math.sign(wantX - e.x) * Math.min(0.45, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.6, Math.abs(dz));
-        if (--e.cd <= 0 && Math.abs(dz) < 10) { e.state = 1; e.t = 16; }
+        if (wk === 'beach' && !(e.trickCd > 0) && Math.abs(dx) < 110 && Math.abs(dz) < 16) { e.state = 20; e.t = 24; e.trickCd = 300; } // BEACH: sunscreen spray wind-up
+        else if (wk === 'suburb' && !(e.trickCd > 0) && Math.abs(dx) < 70 && Math.abs(dz) < 14) { e.state = 22; e.t = 22; e.trickCd = 280; } // SUBURBIA: leaf-blower wind-up
+        else if (wk === 'woods' && !(e.trickCd > 0) && Math.abs(dz) < 20) { e.state = 24; e.t = 30; e.trickCd = 420; } // WOODS: essential-oil diffuser
+        else if (wk === 'city' && !(e.trickCd > 0) && Math.abs(dx) < 90 && Math.abs(dz) < 16) { e.state = 25; e.t = 20; e.trickCd = 320; } // DOWNTOWN: phone-camera flash
+        else if (--e.cd <= 0 && Math.abs(dz) < 10) { e.state = 1; e.t = 16; }
       } else if (e.state === 1) {
         if (--e.t <= 0) {
           e.state = 3; e.t = 70; e.cd = 170 + (e.id * 17) % 80;
@@ -2211,13 +2306,51 @@ function hostUpdate() {
           SFX.karen();
         }
       } else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
+      else if (e.state === 20) { if (--e.t <= 0) { e.state = 21; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; SFX.spray(); } } // BEACH sunscreen: radial screen-blind
+      else if (e.state === 21) { if (--e.t <= 0) { e.state = 3; e.t = 60; } }
+      else if (e.state === 22) { if (--e.t <= 0) { e.state = 23; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; SFX.blow(); for (const c of lvl.clouds) if (Math.abs(c.x - e.x) < 90 && Math.abs(c.z - e.z) < 20) c.x += (c.x < e.x ? -1 : 1) * 30; } } // SUBURBIA leaf-blower: also scatters nearby smoke clouds
+      else if (e.state === 23) { if (--e.t <= 0) { e.state = 3; e.t = 60; } }
+      else if (e.state === 24) { if (--e.t <= 0) { e.state = 3; e.t = 90; SFX.drip(); const c = { x: e.x, z: e.z, r: 4, grow: 20, t: 480, poison: true, by: e.id }; lvl.clouds.push(c); Net.send({ t: 'cloud', l: lvl.n, x: Math.round(e.x), z: Math.round(e.z) }); } } // WOODS diffuser: grows into a lingering poison cloud
+      else if (e.state === 25) {
+        if (--e.t <= 0) {
+          e.state = 26; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.flash();
+          const z = lvl.zones[lvl.zi], rsv = z && z.ids.map(i => lvl.enemies[i]).find(o => o.alive && !o.spawned && !o.boss); // DOWNTOWN: calls in a reserve early
+          if (rsv) { rsv.spawned = true; rsv.x = e.x + (e.id % 2 ? -30 : 30); rsv.z = e.z; rsv.dir = e.dir; popup(e.x - 20, sy(e.z) - 46, 'BACKUP!', '#ffb0b0'); }
+        }
+      }
+      else if (e.state === 26) { if (--e.t <= 0) { e.state = 3; e.t = 60; } }
     } else if (e.ai === 'mouse') {
-      e.dir = Math.sign(dx) || 1; sx = Math.sign(dx) * Math.min(1.8, Math.abs(dx)); sz = Math.sign(dz) * Math.min(1.1, Math.abs(dz));
+      // HQ: robot mice beep, then self-detonate in a small radius near their target (also see damageEnemy for a kill-triggered blast)
+      if (wk === 'hq' && !e.reserve && e.state !== 13 && e.state !== 14 && Math.abs(dx) < 20 && Math.abs(dz) < 12) { e.state = 13; e.t = 26; e.strikeN = (e.strikeN || 0) + 1; }
+      if (e.state === 13) { if (--e.t <= 0) { e.state = 14; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.beep(); } }
+      else if (e.state === 14) { if (--e.t <= 0) damageEnemy(e, 999, e.dir, true, e.id); }
+      else { e.dir = Math.sign(dx) || 1; sx = Math.sign(dx) * Math.min(1.8, Math.abs(dx)); sz = Math.sign(dz) * Math.min(1.1, Math.abs(dz)); }
     } else if (e.ai === 'squirrel') {
-      if (e.h === 0) { if (--e.cd <= 0) { e.cd = 24 + (e.id * 7) % 20; e.vh = 2.6; e.dir = Math.sign(dx) || 1; e.hx = Math.sign(dx) * 1.7; e.hz = Math.sign(dz) * Math.min(1, Math.abs(dz) / 10); } }
-      else { sx = e.hx || 0; sz = e.hz || 0; }
+      if (e.trickCd > 0) e.trickCd--;
+      if (e.h === 0) {
+        if ((wk === 'beach' || wk === 'woods') && !(e.trickCd > 0) && e.state !== 10 && Math.abs(dz) < 14 && Math.abs(dx) > 20 && Math.abs(dx) < 140) {
+          e.state = 10; e.t = wk === 'beach' ? 16 : 20; e.trickCd = 260; e.dir = Math.sign(dx) || 1;
+        } else if (e.state !== 10 && --e.cd <= 0) { e.cd = 24 + (e.id * 7) % 20; e.vh = 2.6; e.dir = Math.sign(dx) || 1; e.hx = Math.sign(dx) * 1.7; e.hz = Math.sign(dz) * Math.min(1, Math.abs(dz) / 10); }
+      } else { sx = e.hx || 0; sz = e.hz || 0; }
+      if (e.state === 10) {
+        if (--e.t <= 0) {
+          e.state = 0; e.strikeN = (e.strikeN || 0) + 1; SFX.thud();
+          if (wk === 'beach') { const shot = { x: e.x + e.dir * 8, z: e.z, vx: e.dir * 2.1, life: 110, spin: 0, k: 'sand' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'sand' }); }
+          else { const shot = { x: e.x + e.dir * 8, z: e.z, vx: e.dir * 1.5, life: 140, spin: 0, k: 'pinecone', h: 8, vh: 2.2 }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'pinecone', h: shot.h, vh: shot.vh }); }
+        }
+      }
     }
     e.x += sx; e.z = Math.max(0, Math.min(ZMAX, e.z + sz));
+  }
+  // SUBURBIA: mousetraps on the ground root anyone who walks into them (telegraphed - they're visible on the street before triggering)
+  if (wk === 'suburb') for (let ti = 0; ti < lvl.traps.length; ti++) {
+    const trap = lvl.traps[ti]; if (!trap.armed) continue;
+    for (const p of players) if (p.ok && Math.abs(p.x - trap.x) < 9 && Math.abs(p.z - trap.z) < 7) {
+      trap.armed = false; trap.flash = 30;
+      if (p.id === Net.id) { me.rootT = Math.max(me.rootT || 0, 34); SFX.trap(); popup(me.x - 16, sy(me.z) - 34, 'STUCK!', '#c8ffa0'); }
+      Net.send({ t: 'trap', l: lvl.n, i: ti, who: p.id });
+      break;
+    }
   }
   // enemies stay inside the fight like you do (thieves running off with coins are the only ones allowed to leave)
   const zb = lvl.zones[lvl.zi];
@@ -2453,6 +2586,21 @@ function drawEnemyB(e) {
   if (e.conf && frame % 30 < 20) text('?', e.x - camX, y - 12, '#e4b3ff', 1, 'center');
   if (e.dazed || e.stunned) for (let k = 0; k < 3; k++) { const a = frame / 8 + k * 2.1; R(ctx, '#ffd84a', Math.round(e.x - camX + Math.cos(a) * 7), Math.round(y - 3 + Math.sin(a) * 2), 2, 2); }
   if (e.stolen > 0 && frame % 30 < 20) draw_(COIN, e.x - 5, y - 11);
+  // v1.1 A6: world-trick telegraphs - a wind-up flash/symbol before each new attack lands
+  if (e.ai === 'cop' && e.state === 10 && frame % 6 < 3) text('~', e.x - camX, y - 8, '#9ae8ff', 1, 'center'); // BEACH taser crackle
+  if (e.ai === 'cop' && e.state === 11) text('!!', e.x - camX, y - 10, '#9ae8ff', 1, 'center');
+  if (e.ai === 'cop' && e.state === 15 && frame % 6 < 3) text('*', e.x - camX, y - 8, '#c8ffa0', 1, 'center'); // SUBURBIA pepper-spray wind-up
+  if (e.ai === 'cop' && e.state === 16) text('><', e.x - camX, y - 10, '#c8ffa0', 1, 'center');
+  if (e.ai === 'cop' && e.state === 17 && frame % 6 < 3) text('+', e.x - camX, y - 8, '#c8ffa0', 1, 'center'); // WOODS net-launcher aim
+  if (e.ai === 'cop' && e.state === 18) text('X', e.x - camX, y - 10, '#c8ffa0', 1, 'center');
+  if (e.ai === 'cop' && e.drone) { const dx3 = Math.round(e.x - camX); ctx.globalAlpha = .35; ctx.fillStyle = '#2a1838'; ctx.beginPath(); ctx.ellipse(dx3, sy(e.z) - 3, 7, 2.4, 0, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+    const dy3 = y - 20 + Math.sin(frame / 9 + e.id) * 2; R(ctx, '#7a90c0', dx3 - 4, dy3, 8, 3); R(ctx, '#c8e0ff', dx3 - 2, dy3 - 2, 4, 2);
+    if (e.drone.cd < 20) text('!', dx3, dy3 - 8, '#ff5a6a', 1, 'center'); } // HQ drone hovering above
+  if (e.ai === 'cop' && e.state !== 4 && (lvl.theme.base || lvl.themeKey) === 'city') { R(ctx, 'rgba(154,176,255,.55)', Math.round(e.x - camX + e.dir * 4 - 2), y + 2, 4, img.height - 4); } // DOWNTOWN riot-shield tint on their front side
+  if (e.ai === 'karen' && (e.state === 20 || e.state === 22 || e.state === 24 || e.state === 25) && frame % 6 < 3) text(e.state === 24 ? 'o' : '~', e.x - camX, y - 8, '#e4b3ff', 1, 'center'); // wind-up
+  if (e.ai === 'karen' && (e.state === 21 || e.state === 23 || e.state === 26)) text('!!', e.x - camX, y - 10, '#e4b3ff', 1, 'center'); // active
+  if (e.ai === 'karen' && e.buffed > 0) { R(ctx, '#ffe0a0', Math.round(e.x - camX - 4), y - 14, 8, 6); text('W', e.x - camX, y - 13, '#6a4428', 1, 'center'); } // HQ clipboard buff icon
+  if (e.ai === 'mouse' && (e.state === 13 || e.state === 14) && frame % 6 < 3) text(e.state === 14 ? '*BOOM*' : '!', e.x - camX, y - 10, '#ff5a6a', 1, 'center'); // HQ robot-mouse beep/detonate
   if (e.hp < e.maxHp && e.state !== 5) { R(ctx, P.k, Math.round(e.x - camX - 8), Math.round(y - 4), 16, 3); R(ctx, '#ff5a6a', Math.round(e.x - camX - 7), Math.round(y - 3), Math.round(14 * e.hp / e.maxHp), 1); }
 }
 function drawProp(p) {
@@ -2689,7 +2837,7 @@ function drawScene() {
   for (const c of lvl.clouds) {
     const a = Math.min(1, c.t / 60) * 0.55, X = Math.round(c.x - camX), Y = sy(c.z) - 10;
     ctx.globalAlpha = a;
-    for (let k = 0; k < 9; k++) { const ang = k / 9 * TAU + frame / 90, rx = Math.cos(ang) * c.r * 0.7, rz = Math.sin(ang) * c.r * 0.25; ctx.fillStyle = c.hot ? (k % 2 ? '#ffd0b0' : '#ffffff') : c.heal ? (k % 2 ? '#d8ffd0' : '#ffffff') : (k % 2 ? '#e8e4f4' : '#ffffff'); circle(X + rx, Y + rz, c.r * 0.38); }
+    for (let k = 0; k < 9; k++) { const ang = k / 9 * TAU + frame / 90, rx = Math.cos(ang) * c.r * 0.7, rz = Math.sin(ang) * c.r * 0.25; ctx.fillStyle = c.poison ? (k % 2 ? '#a0e070' : '#e8ffc8') : c.hot ? (k % 2 ? '#ffd0b0' : '#ffffff') : c.heal ? (k % 2 ? '#d8ffd0' : '#ffffff') : (k % 2 ? '#e8e4f4' : '#ffffff'); circle(X + rx, Y + rz, c.r * 0.38); }
     ctx.globalAlpha = 1;
   }
   // blood on the street + the fallen (stays for the whole mission)
@@ -2704,6 +2852,13 @@ function drawScene() {
   const list = [];
   for (const it of lvl.items) if (!it.taken && Math.abs(it.x - camX - W / 2) < W) list.push({ z: it.z, d: () => { shadow(it.x, it.z, it.h || 0, 4); drawItem(it); } });
   for (const p of lvl.props) if (!p.broken) list.push({ z: p.z, d: () => { shadow(p.x, p.z, 0, 8); drawProp(p); } });
+  // v1.1 A6: SUBURBIA mousetraps - visible on the ground before they trigger
+  for (const trap of lvl.traps) list.push({ z: trap.z, d: () => {
+    const X = Math.round(trap.x - camX), Y = sy(trap.z);
+    if (trap.flash > 0) { trap.flash--; ctx.globalAlpha = trap.flash / 30; ctx.fillStyle = '#ffffff'; circle(X, Y - 3, 10); ctx.globalAlpha = 1; }
+    if (!trap.armed) return;
+    R(ctx, '#5a5044', X - 6, Y - 3, 12, 3); R(ctx, '#8a7a5a', X - 5, Y - 4, 10, 1); R(ctx, '#c8302a', X - 1, Y - 5, 2, 2);
+  } });
   for (const e of lvl.enemies) if (e.spawned && e.alive) list.push({ z: e.z, d: () => { const fogA = lvl.hazardFog ? Math.max(0.15, 1 - Math.max(0, Math.abs(e.x - me.x) - 46) / 90) : 1; ctx.globalAlpha = fogA; shadow(e.x, e.z, e.h, e.ai === 'mouse' ? 5 : 7); drawEnemyB(e); ctx.globalAlpha = 1; } });
   const lg = lvl.legend;
   if (lg) list.push({ z: lg.z, d: () => {
@@ -2719,8 +2874,14 @@ function drawScene() {
   }
   list.push({ z: me.z + 0.01, d: () => { drawPlayer.roll = me.roll > 0 ? 20 - me.roll : 0; if (me.holdT > 30) { ctx.fillStyle = 'rgba(255,216,74,' + (0.25 + Math.sin(frame / 3) * 0.15) + ')'; circle(Math.round(me.x - camX), sy(me.z, me.h) - 9, 12); } shadow(me.x, me.z, me.h); drawPlayer.say = me.say && me.say.msg; { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash, me.down || 0); } });
   for (const s of lvl.eshots) list.push({ z: s.z, d: () => {
-    shadow(s.x, s.z, 5, 4); const x = Math.round(s.x - camX), y = sy(s.z, 5);
-    ctx.save(); ctx.translate(x, y); ctx.rotate(s.spin * 0.3); R(ctx, P.k, -4, -4, 8, 8); R(ctx, '#ff7ac8', -3, -3, 6, 6); R(ctx, '#ffd84a', -1, -5, 2, 2); ctx.restore();
+    const h = s.k === 'pinecone' ? (s.h || 0) : 5;
+    shadow(s.x, s.z, h, 4); const x = Math.round(s.x - camX), y = sy(s.z, h);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(s.spin * 0.3);
+    if (s.k === 'sand') { R(ctx, '#e8c896', -4, -4, 8, 8); R(ctx, '#fff0d0', -2, -2, 4, 4); }
+    else if (s.k === 'pinecone') { R(ctx, '#6a4a2a', -3, -4, 6, 8); R(ctx, '#8a6a3a', -2, -3, 4, 6); }
+    else if (s.k === 'drone') { R(ctx, '#7a90c0', -4, -3, 8, 6); R(ctx, '#c8e0ff', -2, -4, 4, 2); }
+    else { R(ctx, P.k, -4, -4, 8, 8); R(ctx, '#ff7ac8', -3, -3, 6, 6); R(ctx, '#ffd84a', -1, -5, 2, 2); }
+    ctx.restore();
   } });
   for (const s of shots) list.push({ z: s.z, d: () => {
     const x = Math.round(s.x - camX), y = sy(s.z, s.h);
@@ -2749,6 +2910,8 @@ function drawScene() {
 
   if (lvl.fightT > 0.02) { const a = lvl.fightT * 0.35; ctx.fillStyle = 'rgba(40,10,30,' + a.toFixed(3) + ')'; ctx.fillRect(0, 0, W, 6); ctx.fillRect(0, H - 6, W, 6); ctx.fillRect(0, 0, 6, H); ctx.fillRect(W - 6, 0, 6, H); }
   if (ultra() && state === 'play') { ctx.fillStyle = 'rgba(192,112,255,' + (0.06 + Math.sin(frame / 20) * 0.03) + ')'; ctx.fillRect(0, 0, W, H); }
+  // v1.1 A6: BEACH sunscreen spray / DOWNTOWN camera flash - blinds the screen for a moment, fading out
+  if (me.blindT > 0 && state === 'play') { ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.85, me.blindT / 40 * 0.85).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H); }
   if (tooHigh() && state === 'play' && !settings.reduceFlash) { ctx.fillStyle = 'rgba(150,80,200,' + (0.05 + Math.sin(frame / 14) * 0.02) + ')'; ctx.fillRect(0, 0, W, H); }
   // GO arrow after clearing a fight
   const next = lvl.zones.find(z => !z.cleared);
@@ -3811,8 +3974,12 @@ function onNet(m) {
     }
     case 'es': if (!isHost()) applySnapshot(m); break;
     case 'hit': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e && e.spawned) damageEnemy(e, m.d, m.dir, !!m.s, m.id, { burn: m.b, sp: m.sp, stun: m.st, bleed: m.bl, kb: m.kb || 1, hr: m.hr, air: !!m.a }); } break;
-    case 'kill': if (m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) { e.stolen = m.st || 0; onKill(e, m.by); } } break;
-    case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0 }); break;
+    case 'kill': if (m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) { e.stolen = m.st || 0; onKill(e, m.by); } if (m.ex && Math.abs(m.exx - me.x) < 22 && Math.abs(m.exz - me.z) < 14) { hurt(1, 3, m.exx); SFX.boom(); } } break;
+    case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0, k: m.k, h: m.h, vh: m.vh }); break;
+    // v1.1 A6: WOODS essential-oil diffuser - the cloud itself isn't tied to a player id, so it gets its own message
+    case 'cloud': if (m.l === lvl.n) lvl.clouds.push({ x: m.x, z: m.z, r: 4, grow: 20, t: 480, poison: true }); break;
+    // v1.1 A6: SUBURBIA mousetraps - disarm on every screen, and root whichever player tripped it
+    case 'trap': if (m.l === lvl.n && lvl.traps[m.i]) { lvl.traps[m.i].armed = false; lvl.traps[m.i].flash = 30; if (m.who === Net.id) { me.rootT = Math.max(me.rootT || 0, 34); SFX.trap(); popup(me.x - 16, sy(me.z) - 34, 'STUCK!', '#c8ffa0'); } } break;
     case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) thiefFlee(e, m.k); } break;
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
     // v1.1 A5: non-host crewmates follow the host's authoritative life count / wipe-restart so everyone agrees.

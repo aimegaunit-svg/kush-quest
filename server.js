@@ -219,8 +219,12 @@ function handle(client, m) {
     // when it hits 0, so every client agrees on both without a full state-sync protocol.
     case 'lives': if (room && client.id === room.host) broadcast(room, { t: 'lives', n: Math.max(0, Math.min(9, m.n | 0)), l: m.l | 0 }, client.id); break;
     case 'wipe': if (room && client.id === room.host) broadcast(room, { t: 'wipe', l: m.l | 0 }, client.id); break;
-    case 'eshot': if (room && client.id === room.host) broadcast(room, { t: 'eshot', x: +m.x || 0, z: +m.z || 0, vx: Math.max(-4, Math.min(4, +m.vx || 0)), l: m.l | 0 }, client.id); break;
-    case 'kill': if (room && client.id === room.host) broadcast(room, { t: 'kill', i: m.i | 0, by: String(m.by).slice(0, 12), st: m.st | 0, l: m.l | 0 }, client.id); break;
+    // v1.1 A6: eshot/kill widened with a few extra whitelisted fields for the new world-specific enemy tricks (thrown sand/pinecone kind + arc height, HQ robot-mouse explosion)
+    case 'eshot': if (room && client.id === room.host) broadcast(room, { t: 'eshot', x: +m.x || 0, z: +m.z || 0, vx: Math.max(-4, Math.min(4, +m.vx || 0)), l: m.l | 0, k: String(m.k || '').slice(0, 12), h: Math.max(0, Math.min(60, +m.h || 0)), vh: Math.max(-6, Math.min(6, +m.vh || 0)) }, client.id); break;
+    case 'kill': if (room && client.id === room.host) broadcast(room, { t: 'kill', i: m.i | 0, by: String(m.by).slice(0, 12), st: m.st | 0, l: m.l | 0, ex: m.ex ? 1 : 0, exx: Math.round(+m.exx || 0), exz: Math.round(+m.exz || 0) }, client.id); break;
+    // v1.1 A6: WOODS essential-oil diffuser cloud + SUBURBIA mousetraps - both host-authoritative, not tied to a player id
+    case 'cloud': if (room && client.id === room.host) broadcast(room, { t: 'cloud', x: +m.x || 0, z: +m.z || 0, l: m.l | 0 }, client.id); break;
+    case 'trap': if (room && client.id === room.host) broadcast(room, { t: 'trap', i: m.i | 0, l: m.l | 0, who: String(m.who || '').slice(0, 12) }, client.id); break;
     case 'hit': case 'steal': case 'rev': case 'pass': {
       if (!room) return;
       const out = { t: m.t, id: client.id, i: m.i | 0, l: m.l | 0, d: Math.max(0, Math.min(12, m.d | 0)), dir: Math.sign(+m.dir || 0), s: m.s ? 1 : 0, k: Math.max(0, Math.min(20, m.k | 0)), who: String(m.who || '').slice(0, 12),

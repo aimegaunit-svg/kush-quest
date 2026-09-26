@@ -1,5 +1,20 @@
 # AGENT_NOTES
 
+## Correction + status update (main session, after this landed)
+`public/drive.js` now exists — the main session built it (commit 7d02668), on top of this file's
+`transit.js` framework, since it turned out nothing had actually landed for it despite what
+`PLAN.md` said. See `Drive.needsDrive`/`Drive.start` in `public/drive.js` for its contract; it
+follows the same `net`/`makeSwapPool`/`makeNet` conventions as the 5 games below.
+
+The server relay this file's authors correctly flagged as missing is now added: `server.js`
+`case 'd':` in `handle()`, relaying `{t:'d', k, p, to?}` to the room (or unicast if `to` is set),
+tagging the sender id. Both `drive.js` and the 5 transit games below can rely on it now.
+
+**Still open, not yet done by the main session:** a real Playwright click-through of the 5
+transit games' `*-test.html` pages (only `drive-test.html` has been verified end-to-end so far),
+and wiring the online relay's incoming messages into each game's `net._deliver()` in the test
+pages / eventually in `game.js`'s own socket handler once these are hooked into the real map.
+
 ## Owned by the transit-games agent
 
 **Scope:** Part B3 of brief v1.1 — 5 transit mini-games + shared framework.

@@ -1239,6 +1239,12 @@ function loadSlot(i) {
   if (!Array.isArray(save.skills)) save.skills = BOSSES.slice(0, Math.min(save.spots || 0, BOSSES.length)).map(b => b[2]);
   save.cores = { rasta: 1, snapback: 1, bucket: 1, afro: 1, ...(save.cores || {}) };
   save.resin = save.resin || 0; save.seeds = save.seeds || 0; save.wild = save.wild || null;
+  // v1.1 A4: preroll/gold were dropped from ITEMS (trimmed to munchie+brownie+soda) - if an old save had
+  // its quick-use slot pointed at either, retarget it so useItem()'s HUD icon lookup never indexes a
+  // removed entry. (Checked by literal id here, not ITEMS[...], since ITEMS is declared later in this file
+  // and loadSlot(1) runs before that declaration executes - referencing it here would be a TDZ crash.)
+  if (save.quick !== 'munchie' && save.quick !== 'brownie' && save.quick !== 'soda') save.quick = 'brownie';
+  save.munchie = Math.min(save.munchie || 0, 3);
   // v1.1 one-time migration: never break old saves. Any pre-v1.1 save had `weapons`/`wlv`/`throws` counts
   // that no longer mean anything under the two-slot Core/Wild system, so bank their value as Resin/coins
   // instead of silently deleting it, and seed each homie's starting Core level from their old flat weapon level.
@@ -1443,12 +1449,16 @@ function knockedOutFinal() {
   SFX.hurt();
 }
 function emote(i) { me.emote = { e: i, t: 120 }; Net.send({ t: 'emote', e: i }); tone(660, 0.08, 'square', 0.04); tone(880, 0.1, 'square', 0.04, 0.08); }
+// v1.1 A4 (scoped): trimmed from 5 consumables to Munchies (cap 3, was 5) + 2 others. Kept brownie (rage
+// buff - the brief calls out its "pass the plate" shared version by name) and soda (speed/swing buff) as
+// the 2 others; dropped preroll and gold. NOT yet done: the shared "pass the plate" co-op buff broadcast
+// and a GIVE key for handing an item to a crewmate - both need real net-sync work, flagged as follow-up
+// rather than rushed. Old saves with leftover preroll/gold counts or save.quick pointed at either just sit
+// unused now (loadSlot() below resets save.quick off them so nothing tries to render a removed item's icon).
 const ITEMS = {
-  munchie: { name: 'MUNCHIES', icon: 'munchie', price: 25, desc: 'HEALS 2 HEARTS. QUICK KEY: E' },
+  munchie: { name: 'MUNCHIES', icon: 'munchie', price: 25, desc: 'HEALS 2 HEARTS. QUICK KEY: E', cap: 3 },
   brownie: { name: 'RAGE BROWNIE', icon: 'brownie', price: 45, desc: '+2 DAMAGE ON EVERY HIT FOR 20 SECONDS' },
   soda: { name: 'ENERGY SODA', icon: 'soda', price: 35, desc: 'RUN + SWING FASTER FOR 20 SECONDS' },
-  preroll: { name: 'PRE-ROLL', icon: 'preroll', price: 40, desc: '+30% COOKED RIGHT NOW' },
-  gold: { name: 'GOLDEN LEAF', icon: 'gold', price: 150, desc: 'INVINCIBLE FOR 10 SECONDS. SMASH THROUGH ANYTHING. CARRY MAX 2', cap: 2 },
 };
 const MAX_ITEM = 5;
 const itemCap = id => (ITEMS[id] && ITEMS[id].cap) || MAX_ITEM;

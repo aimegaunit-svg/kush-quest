@@ -1,4 +1,4 @@
-# KUSH QUEST: Road to the Farm (v0.7)
+# KUSH QUEST: Road to the Farm (v0.8)
 
 Cozy retro co-op platformer starring 4 stoner homies (Rasta, Snapback, Bucket Hat, Afro) swinging oversized weapons: Giant Joint, Giant Lighter, Mega Bong, Dab Tool, Giant Grinder. Up to 4 friends online. Save up hash coins to buy your own pot farm.
 
@@ -26,17 +26,26 @@ Your progress saves in your browser.
 4. Spend coins at the Head Shop, or save up **1500 hash coins** and walk to the Farm once all 6 smoke spots are done.
 Online: the room host picks the mission on the map. Anyone can press **H** on the map to shop.
 
-## Controls
-| | Keyboard + mouse | Phone |
-|---|---|---|
-| Move (all 4 directions) | WASD / Arrows | D-pad |
-| Jump | Space | A |
-| Sword swing (3-hit combo; Shift+swing = lunge, swing in the air = spin) | Left click / J | B |
-| Throw (Rolling Papers / Nug Bombs) | Right click / K | |
-| Switch sword / throwable | Q or wheel / R | |
-| Bag (inventory) | Tab | INV |
-| Munchies / Emotes | E / 1-4 | |
-| Pause (solo) / Music / Fullscreen | Esc / M / F | |
+## Controls (all rebindable: ESC > CONTROLS)
+| | Default | Mouse | Phone |
+|---|---|---|---|
+| Move (all 4 directions) | WASD / Arrows | | D-pad |
+| Jump | Space | | A |
+| Swing (3-hit combo; Shift+swing = lunge; in the air = spin) | J | Left click | B |
+| Throw (Rolling Papers / Nug Bombs) | K | Right click | |
+| Run | Shift | | |
+| Switch weapon / throwable | Q / R | Wheel | |
+| Munchies (hold next to a downed friend = revive) | E | | |
+| Quick item (Rage Brownie, Energy Soda...) | C | | |
+| Bag | Tab | | INV |
+| Chat (online) | T | | |
+| Emotes | 1 2 3 4 | | |
+| Menu: settings, controls, invite link, main menu | Esc | | |
+| Music / Fullscreen | M / F | | |
+
+All menus work with the mouse too: hover to highlight, click to select, click again to buy/equip.
+
+**Weapons:** Giant Joint (sword, light burn), Lighter Blade (close, spreading fire), Dab Saber (long, pierces, crits), Bong Hammer (heavy, stuns), Grinder Spin (all around, bleed), Blunt Bat (home runs). Upgrade each to LV3 at the Head Shop.
 
 At the smoke spot, press **Enter or Space** to call the crew (20 second timer for everyone else).
 

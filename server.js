@@ -155,7 +155,7 @@ function handle(client, m) {
     case 'join': {
       if (client.room) return;
       const code = String(m.code || '').toUpperCase().trim();
-      if (!rooms.has(code)) return client.send({ t: 'err', msg: 'No room with code ' + code });
+      if (!rooms.has(code)) return client.send({ t: 'err', msg: 'No room ' + code + ' - check the code, or ask your friend for the invite link (their ESC menu)' });
       enter(client, code, cleanName(m.name));
       break;
     }
@@ -214,6 +214,12 @@ function handle(client, m) {
     case 'mapsel': // host's cursor on the world map, so the crew can watch
       if (room && client.id === room.host) broadcast(room, { t: 'mapsel', i: m.i | 0 }, client.id);
       break;
+    case 'chat': {
+      if (!room) return;
+      const msg = String(m.msg || '').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 60);
+      if (msg) broadcast(room, { t: 'chat', id: client.id, msg }, client.id);
+      break;
+    }
     case 'emote':
       if (room) broadcast(room, { t: 'emote', id: client.id, e: m.e | 0 }, client.id);
       break;

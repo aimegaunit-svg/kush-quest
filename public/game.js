@@ -74,7 +74,7 @@ function initAudio() {
   if (AC) return;
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = 0.6; master.connect(AC.destination);
+    master = AC.createGain(); master.gain.value = settings.sfx; master.connect(AC.destination);
     noiseBuf = AC.createBuffer(1, AC.sampleRate * 0.2, AC.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     startMusic();
@@ -163,11 +163,11 @@ function wantedMusic() {
 function startMusic() {
   let next = AC.currentTime + 0.1, i = 0, bar = 0;
   // route all music through its own bus so it can fade without touching sound effects
-  const bus = AC.createGain(); bus.connect(AC.destination); bus.gain.value = 0.6;
+  const bus = AC.createGain(); bus.connect(AC.destination); bus.gain.value = settings.music;
   setInterval(() => {
     const target = wantedMusic() !== musicMode ? 0 : 1;
     musicVol += (target - musicVol) * (target ? 0.05 : 0.07); if (Math.abs(target - musicVol) < 0.01) musicVol = target;
-    bus.gain.setTargetAtTime(0.6 * musicVol, AC.currentTime, 0.05);
+    bus.gain.setTargetAtTime(settings.music * musicVol * (musicOn ? 1 : 0), AC.currentTime, 0.05);
     const realMaster = master; master = bus;
     while (next < AC.currentTime + 0.25) {
       const song = SONGS[musicMode], step = 60 / song.bpm / song.div, s = i % song.steps, dt = next - AC.currentTime;
@@ -212,53 +212,89 @@ function startMusic() {
 //  INPUT
 // ============================================================
 const K = { left: false, right: false, up: false, down: false, jump: false, run: false, attack: false, enter: false };
-const KEYMAP = {
-  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
-  ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
-  Space: 'jump',
-  KeyJ: 'attack', KeyX: 'attack',
-  ShiftLeft: 'run', ShiftRight: 'run', Enter: 'enter'
-};
+// ---- settings (saved in this browser): volumes, toggles, custom key bindings ----
+const DEFAULT_KEYS = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT' };
+const ACTION_NAMES = { up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT' };
+let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, keys: { ...DEFAULT_KEYS } };
+try { const st = JSON.parse(localStorage.getItem('kq_settings')); if (st) settings = { ...settings, ...st, keys: { ...DEFAULT_KEYS, ...(st.keys || {}) } }; } catch (e) {}
+function saveSettings() { try { localStorage.setItem('kq_settings', JSON.stringify(settings)); } catch (e) {} if (master) master.gain.value = settings.sfx; }
+const keyLabel = c => ({ Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', Tab: 'TAB', Enter: 'ENTER', ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' }[c] || String(c).replace(/^Key|^Digit/, '').toUpperCase());
+function actionOf(code) {
+  for (const a in settings.keys) if (settings.keys[a] === code) return a;
+  return { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', ShiftRight: 'run', Enter: 'enter', KeyI: 'bag' }[code] || null;
+}
+let rebinding = null, chatOpen = false;
 function press(k, down) {
   if (down && !K[k]) { if (k === 'jump') K.jumpPressed = true; if (k === 'enter') K.enterPressed = true; if (k === 'attack') K.attackPressed = true; }
   K[k] = down;
 }
 addEventListener('keydown', e => {
-  if (!running) return;
+  if (!running || chatOpen) return;
   const c = e.code;
-  const nav = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down' }[c];
-  if (nav && !e.repeat) K.nav = nav;
+  if (rebinding) { // waiting for a key to bind
+    e.preventDefault();
+    if (c !== 'Escape') { const old = settings.keys[rebinding]; for (const a in settings.keys) if (settings.keys[a] === c) settings.keys[a] = old; settings.keys[rebinding] = c; saveSettings(); SFX.buy(); }
+    rebinding = null; return;
+  }
+  const a = actionOf(c), nav = ['up', 'down', 'left', 'right'].includes(a) ? a : null;
+  if (nav && !e.repeat) { if (K.nav) (K.navQ = K.navQ || []).push(nav); else K.nav = nav; }
   if (c === 'Escape') {
-    K.escPressed = true;
-    if (menu) { closeMenu(); return; }
+    K.escPressed = true; e.preventDefault();
+    if (menu) { if (menu.page !== 'main') { menu.page = 'main'; menu.sel = 0; } else closeMenu(); return; }
     if (invOpen) { invOpen = false; return; }
     if (state === 'results' && results && results.shopOnly) { go(openMap); return; }
-    if (state === 'play' || state === 'sitting' || state === 'brief' || state === 'map') { openMenu(); return; }
+    if (state !== 'story') { openMenu(); return; }
   }
-  if (menu && (nav || c === 'Space' || c === 'Enter')) { e.preventDefault(); if (c === 'Space') press('jump', true); if (c === 'Enter') press('enter', true); return; }
+  const menuish = menu || state === 'map' || state === 'story' || invOpen;
+  if (menuish && !nav && (a === 'jump' || a === 'attack' || c === 'Enter') && (K.nav || (K.navQ && K.navQ.length))) { e.preventDefault(); (K.navQ = K.navQ || []).push('enter'); return; }
+  if (menuish && (nav || a === 'jump' || a === 'attack' || c === 'Enter')) { e.preventDefault(); if (a === 'jump') press('jump', true); if (c === 'Enter') press('enter', true); if (a === 'attack') K.attackPressed = true; return; }
+  if (a === 'chat' && Net.online) { e.preventDefault(); openChat(); return; }
   if (c === 'KeyH' && state === 'map') { K.shopPressed = true; return; }
-  if ((state === 'map' || state === 'story') && (nav || c === 'Space' || c === 'Enter')) { e.preventDefault(); if (c === 'Space') press('jump', true); if (c === 'Enter') press('enter', true); return; }
-  if (invOpen && (nav || c === 'Space' || c === 'Enter')) { e.preventDefault(); if (c === 'Space') press('jump', true); if (c === 'Enter') press('enter', true); return; }
-  if (c === 'ArrowUp' || c === 'KeyW') K.upPressed = true;
-  if (c === 'ArrowDown' || c === 'KeyS') K.downPressed = true;
-  if (state === 'results' && (c === 'ArrowUp' || c === 'ArrowDown' || c === 'KeyW' || c === 'KeyS' || c === 'Space')) { e.preventDefault(); if (c === 'Space') press('jump', true); return; }
+  if (a === 'up') K.upPressed = true;
+  if (a === 'down') K.downPressed = true;
+  if (state === 'results' && (nav || a === 'jump')) { e.preventDefault(); if (a === 'jump') press('jump', true); return; }
   if (c === 'KeyM') { musicOn = !musicOn; return; }
-  if (c === 'KeyF') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); return; }
+  if (c === 'KeyF') { toggleFullscreen(); return; }
   if (c === 'KeyP' && !Net.online && (state === 'play' || state === 'sitting' || state === 'brief')) { if (menu) closeMenu(); else openMenu(); return; }
-  if ((c === 'KeyI' || c === 'Tab') && state !== 'results' && state !== 'story') { e.preventDefault(); invOpen = !invOpen; for (const k in K) if (typeof K[k] === 'boolean') K[k] = false; return; }
+  if (a === 'bag' && state !== 'results' && state !== 'story') { e.preventDefault(); invOpen = !invOpen; for (const k in K) if (typeof K[k] === 'boolean') K[k] = false; return; }
   if (state === 'play') {
-
-    if (c === 'KeyQ') { cycleWeapon(1); return; }
-    if (c === 'KeyE') { K.use = true; if (![...remotes.values()].some(r => r.b & 8 && Math.abs(r.x - me.x) < 18)) useMunchies(); return; }
-    if (c === 'KeyC') { useItem(save.quick || 'brownie'); return; }
-    if (c === 'KeyK' || c === 'KeyL') { K.throwPressed = true; return; }
-    if (c === 'KeyR') { const i = THROWS.findIndex(t => t.id === save.throwSel); save.throwSel = THROWS[(i + 1) % THROWS.length].id; persist(); popup(me.x - 20, sy(me.z) - 34, THROWS.find(t => t.id === save.throwSel).name, '#fff6b0'); return; }
+    if (a === 'weapon') { cycleWeapon(1); return; }
+    if (a === 'munchie') { K.use = true; if (![...remotes.values()].some(r => r.b & 8 && Math.abs(r.x - me.x) < 18)) useMunchies(); return; }
+    if (a === 'quick') { useItem(save.quick || 'brownie'); return; }
+    if (a === 'throw') { K.throwPressed = true; return; }
+    if (a === 'throwsel') { const i = THROWS.findIndex(t => t.id === save.throwSel); save.throwSel = THROWS[(i + 1) % THROWS.length].id; persist(); popup(me.x - 20, sy(me.z) - 34, THROWS.find(t => t.id === save.throwSel).name, '#fff6b0'); return; }
     const em = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[c]; if (em !== undefined) { emote(em); return; }
   }
-  const k = KEYMAP[c]; if (!k) return;
-  e.preventDefault(); press(k, true);
+  if (['left', 'right', 'up', 'down', 'jump', 'attack', 'run', 'enter'].includes(a)) { e.preventDefault(); press(a, true); }
 });
-addEventListener('keyup', e => { if (e.code === 'KeyE') K.use = false; const k = KEYMAP[e.code]; if (k) press(k, false); });
+addEventListener('keyup', e => { const a = actionOf(e.code); if (a === 'munchie') K.use = false; if (['left', 'right', 'up', 'down', 'jump', 'attack', 'run', 'enter'].includes(a)) press(a, false); });
+function nextNav() { const n = K.navQ && K.navQ.shift(); if (n === 'enter') { K.enterPressed = true; return null; } return n || null; }
+function toggleFullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
+// ---- chat (online): T to type, ENTER to send ----
+const chatIn = document.createElement('input');
+chatIn.maxLength = 60; chatIn.placeholder = 'SAY SOMETHING... (ENTER SEND, ESC CANCEL)';
+chatIn.style.cssText = 'position:fixed;left:12px;bottom:12px;width:min(520px,70vw);z-index:6;display:none;font:18px VT323,monospace;padding:6px 10px;background:#2a1838;color:#fff;border:2px solid #c8ffa0;outline:none;text-transform:uppercase';
+document.body.appendChild(chatIn);
+const chatLog = [];
+function openChat() { chatOpen = true; for (const k in K) if (typeof K[k] === 'boolean') K[k] = false; chatIn.style.display = 'block'; chatIn.value = ''; setTimeout(() => chatIn.focus(), 0); }
+function closeChat() { chatOpen = false; chatIn.style.display = 'none'; chatIn.blur(); cv.focus && cv.focus(); }
+chatIn.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') { const msg = chatIn.value.trim().slice(0, 60); if (msg) { Net.send({ t: 'chat', msg }); addChat(Net.name, msg, SHIRTS[Net.color] || '#fff'); me.say = { msg, t: 300 }; } closeChat(); }
+  if (e.key === 'Escape') closeChat();
+});
+chatIn.addEventListener('blur', () => setTimeout(() => { if (chatOpen) closeChat(); }, 0));
+function addChat(name, msg, col) { chatLog.push({ name, msg: msg.toUpperCase(), col, t: 720 }); if (chatLog.length > 6) chatLog.shift(); tone(990, 0.05, 'square', 0.03); }
+function drawChat() {
+  let y = state === 'map' ? H - 46 : H - 30;
+  for (let i = chatLog.length - 1; i >= 0 && y > 60; i--) {
+    const c = chatLog[i]; if (c.t <= 0 && !chatOpen) continue;
+    ctx.globalAlpha = chatOpen ? 1 : Math.min(1, c.t / 60);
+    const line = c.name + ': ' + c.msg, w = line.length * 4 + 6;
+    R(ctx, 'rgba(26,16,38,.7)', 4, y - 2, w, 9); text(c.name + ':', 7, y, c.col); text(c.msg, 7 + (c.name.length + 2) * 4, y, '#ffffff');
+    ctx.globalAlpha = 1; y -= 10;
+  }
+}
 addEventListener('blur', () => { for (const k in K) K[k] = false; });
 cv.addEventListener('mousedown', e => {
   if (!running) return; e.preventDefault();
@@ -1132,6 +1168,7 @@ const REACH = {}; for (const w of WEAPONS) REACH[w.id] = w.reach;
 // ---- impact juice: cartoon blood, hit sparks, POW text, bodies that stay down ----
 const POWS = ['POW!', 'WHAM!', 'BONK!', 'SMACK!', 'CRACK!', 'OOF!'];
 function bleed(x, z, h, n, dir = 0) {
+  if (!settings.blood) { puff(x, sy(z, h) - 10, Math.ceil(n / 2), ['#ffffff', '#c8ffa0'], 1); return; }
   for (let i = 0; i < n; i++) particles.push({ x: x + (Math.random() - .5) * 6, y: sy(z, h) - 10 - Math.random() * 6, vx: dir * (0.6 + Math.random() * 1.6) + (Math.random() - .5), vy: -1 - Math.random() * 1.8, life: 22 + Math.random() * 14, col: Math.random() < .7 ? '#d82040' : '#a01830', s: 1 + Math.floor(Math.random() * 2), g: 0.16, drip: z });
   if (lvl.decals.length > 90) lvl.decals.shift();
   if (Math.random() < 0.6) lvl.decals.push({ x: x + dir * (4 + Math.random() * 10), z: z + (Math.random() - .5) * 4, r: 2 + Math.random() * 3 });
@@ -1146,7 +1183,7 @@ function layBody(e) {
   if (lvl.bodies.length > 45) lvl.bodies.shift();
   lvl.bodies.push({ kind: e.kind, x: e.x, z: e.z, dir: e.dir || 1 });
   if (lvl.decals.length > 90) lvl.decals.shift();
-  lvl.decals.push({ x: e.x, z: e.z + 1, r: e.kind === 'mouse' ? 3 : 6, pool: true });
+  if (settings.blood) lvl.decals.push({ x: e.x, z: e.z + 1, r: e.kind === 'mouse' ? 3 : 6, pool: true });
   puff(e.x, sy(e.z) - 2, 5, ['#e8e0d0', '#ffffff'], .8);
 }
 function hitEnemy(e, dmg, dir, strong, fx = {}) {
@@ -1266,7 +1303,7 @@ function update() {
   if (paused && !menu) return;
   frame++;
   if (banner && --banner.t <= 0) banner = null;
-  const clearIn = () => { K.jumpPressed = K.enterPressed = K.attackPressed = K.throwPressed = false; K.nav = null; K.escPressed = false; if (state !== 'results') K.upPressed = K.downPressed = false; };
+  const clearIn = () => { K.jumpPressed = K.enterPressed = K.attackPressed = K.throwPressed = false; K.nav = nextNav(); K.escPressed = false; if (state !== 'results') K.upPressed = K.downPressed = false; };
   if (updateTrans()) { clearIn(); return; }
   if (menu) { updateMenu(); clearIn(); if (!Net.online || !menu) return; }
   if (state === 'story') { updateStory(); clearIn(); return; }
@@ -1286,8 +1323,12 @@ function update() {
     if (Net.online && (K.enterPressed || K.jumpPressed) && !finInfo.hurried) { Net.send({ t: 'hurry' }); finInfo.hurried = true; }
   } else if (state === 'results') updateShop();
   if (hurryT > 0 && --hurryT === 0) Net.send({ t: 'timeup' });
-  K.jumpPressed = false; K.enterPressed = false; K.attackPressed = false; K.throwPressed = false; K.nav = null; K.escPressed = false;
+  K.jumpPressed = false; K.enterPressed = false; K.attackPressed = false; K.throwPressed = false; K.nav = nextNav(); K.escPressed = false;
   if (state !== 'results') K.upPressed = K.downPressed = false;
+  if (!settings.shake) shake = 0;
+  for (const c of chatLog) if (c.t > 0) c.t--;
+  if (me.say && --me.say.t <= 0) me.say = null;
+  for (const r of remotes.values()) if (r.say && --r.say.t <= 0) r.say = null;
   if (me.tipT > 0 && state === 'play' && !banner) me.tipT--;
   if (me.tipT > 0 && lvl.zones[0] && lvl.zones[0].cleared) me.tipT = 0;
   if (me.emote && --me.emote.t <= 0) me.emote = null;
@@ -1650,6 +1691,7 @@ function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, si
   if (slash && !sitting) drawSlash(x, y, face, slash);
   if (sitting && frame % 40 < 30) text('Z', x + 12 - camX, y - 8 - (frame % 40) / 8, '#e4b3ff');
   if (emote) bubble(EMOTES[emote.e], x + 5, y - (name ? 24 : 14));
+  if (drawPlayer.say) { const m = drawPlayer.say, w = Math.min(46, m.length) * 4 + 6, bx = Math.round(x + 5 - camX - w / 2), by = Math.round(y - (name ? 34 : 24)); R(ctx, P.k, bx - 1, by - 1, w + 2, 11); R(ctx, '#ffffff', bx, by, w, 9); text(m.slice(0, 46), bx + 3, by + 2, '#2a1838'); drawPlayer.say = null; }
   if (name) text(name, x + 5 - camX, y - 10, SHIRTS[color], 1, 'center');
 }
 // sword slash: a big white crescent in front of the homie
@@ -1885,40 +1927,68 @@ function drawTrans() {
 }
 let menu = null;
 function menuOptions() {
-  const o = ['RESUME'];
-  if (Net.online) o.push('COPY INVITE LINK');
-  if (!Net.online && (state === 'play' || state === 'brief' || state === 'sitting')) o.push('QUIT TO MAP');
-  o.push('MAIN MENU');
+  const m = menu || { page: 'main' };
+  if (m.page === 'settings') {
+    const bar = v => '[' + '#'.repeat(Math.round(v * 10)).padEnd(10, '-') + ']';
+    return [
+      { label: 'MUSIC   ' + bar(settings.music), adj: d => { settings.music = Math.max(0, Math.min(1, settings.music + d * 0.1)); saveSettings(); } },
+      { label: 'SOUND   ' + bar(settings.sfx), adj: d => { settings.sfx = Math.max(0, Math.min(1, settings.sfx + d * 0.1)); saveSettings(); SFX.coin(); } },
+      { label: 'SCREEN SHAKE: ' + (settings.shake ? 'ON' : 'OFF'), act: () => { settings.shake = !settings.shake; saveSettings(); } },
+      { label: 'BLOOD: ' + (settings.blood ? 'ON' : 'OFF (SMOKE INSTEAD)'), act: () => { settings.blood = !settings.blood; saveSettings(); } },
+      { label: 'FULLSCREEN (F)', act: toggleFullscreen },
+      { label: 'BACK', act: () => { menu.page = 'main'; menu.sel = 0; } },
+    ];
+  }
+  if (m.page === 'controls') {
+    return [
+      ...Object.keys(DEFAULT_KEYS).map(a => ({ label: ACTION_NAMES[a].padEnd(18, ' ') + (rebinding === a ? '...PRESS A KEY' : keyLabel(settings.keys[a])), act: () => { rebinding = a; } })),
+      { label: 'RESET TO DEFAULTS', act: () => { settings.keys = { ...DEFAULT_KEYS }; saveSettings(); } },
+      { label: 'BACK', act: () => { menu.page = 'main'; menu.sel = 0; } },
+    ];
+  }
+  const o = [{ label: 'RESUME', act: closeMenu }];
+  if (Net.online) o.push({ label: 'COPY INVITE LINK', act: copyInvite });
+  if (Net.online) o.push({ label: 'CHAT (' + keyLabel(settings.keys.chat) + ')', act: () => { closeMenu(); openChat(); } });
+  o.push({ label: 'SETTINGS', act: () => { menu.page = 'settings'; menu.sel = 0; } });
+  o.push({ label: 'CONTROLS', act: () => { menu.page = 'controls'; menu.sel = 0; } });
+  if (!Net.online && (state === 'play' || state === 'brief' || state === 'sitting')) o.push({ label: 'QUIT TO MAP', act: () => { closeMenu(); go(openMap); } });
+  o.push({ label: 'SAVE + MAIN MENU', act: () => { persist(); location.href = location.pathname; } });
   return o;
 }
-function openMenu() { menu = { sel: 0, msg: '' }; if (!Net.online) paused = true; }
-function closeMenu() { menu = null; paused = false; }
-function menuPick(i) {
-  const opt = menuOptions()[i]; if (!opt) return;
-  SFX.tick();
-  if (opt === 'RESUME') closeMenu();
-  else if (opt === 'COPY INVITE LINK') {
-    const link = location.origin + '/?room=' + Net.code;
-    (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => { menu.msg = 'COPIED! PASTE IT TO YOUR FRIENDS'; }, () => { menu.msg = link; });
-  }
-  else if (opt === 'QUIT TO MAP') { closeMenu(); go(openMap); }
-  else if (opt === 'MAIN MENU') { location.href = location.pathname; }
+function copyInvite() {
+  const link = location.origin + '/?room=' + Net.code;
+  (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => { menu.msg = 'COPIED! PASTE IT TO YOUR FRIENDS'; }, () => { menu.msg = link; });
 }
+function openMenu() { menu = { page: 'main', sel: 0, msg: '' }; if (!Net.online) paused = true; }
+function closeMenu() { menu = null; paused = false; rebinding = null; }
+function menuPick(i) { const o = menuOptions()[i]; if (!o) return; SFX.tick(); if (o.act) o.act(); else if (o.adj) o.adj(1); }
 function updateMenu() {
-  const n = menuOptions().length;
+  const o = menuOptions(), n = o.length;
+  if (rebinding) return;
   if (K.nav === 'up') { menu.sel = (menu.sel + n - 1) % n; SFX.tick(); }
   if (K.nav === 'down') { menu.sel = (menu.sel + 1) % n; SFX.tick(); }
+  const cur = o[menu.sel];
+  if (cur && cur.adj && (K.nav === 'left' || K.nav === 'right')) cur.adj(K.nav === 'right' ? 1 : -1);
   if (K.jumpPressed || K.enterPressed || K.attackPressed) menuPick(menu.sel);
 }
 function drawMenu() {
   TQ.length = 0;
-  const o = menuOptions(), h = 34 + o.length * 14 + (Net.online ? 16 : 0), y0 = Math.round((H - h) / 2), x0 = Math.round(W / 2 - 90);
-  ctx.fillStyle = 'rgba(20,12,32,.6)'; ctx.fillRect(0, 0, W, H);
-  R(ctx, P.k, x0 - 2, y0 - 2, 184, h + 4); R(ctx, '#2a1838', x0, y0, 180, h); R(ctx, '#c8ffa0', x0, y0, 180, 1);
-  text(Net.online ? 'MENU' : 'PAUSED', W / 2, y0 + 6, '#c8ffa0', 2, 'center');
-  o.forEach((t, i) => { const y = y0 + 26 + i * 14; hot(x0 + 8, y - 3, 164, 12, () => { menu.sel = i; menuPick(i); }, () => { menu.sel = i; }); if (i === menu.sel) R(ctx, '#4a3a60', x0 + 8, y - 3, 164, 12); text((i === menu.sel ? '> ' : '  ') + t, x0 + 16, y, i === menu.sel ? '#ffd84a' : '#ffffff'); menu['y' + i] = y; });
-  if (Net.online) text('ROOM CODE: ' + Net.code, W / 2, y0 + h - 14, '#e4b3ff', 1, 'center');
-  if (menu.msg) text(menu.msg, W / 2, y0 + h + 6, '#c8ffa0', 1, 'center');
+  const o = menuOptions(), rowH = menu.page === 'controls' ? 10 : 14, bw = menu.page === 'main' ? 180 : 240;
+  const h = 30 + o.length * rowH + (Net.online && menu.page === 'main' ? 14 : 0), y0 = Math.max(4, Math.round((H - h) / 2)), x0 = Math.round(W / 2 - bw / 2);
+  ctx.fillStyle = 'rgba(20,12,32,.65)'; ctx.fillRect(0, 0, W, H);
+  R(ctx, P.k, x0 - 2, y0 - 2, bw + 4, h + 4); R(ctx, '#2a1838', x0, y0, bw, h); R(ctx, '#c8ffa0', x0, y0, bw, 1);
+  text(menu.page === 'main' ? (Net.online ? 'MENU' : 'PAUSED') : menu.page.toUpperCase(), W / 2, y0 + 6, '#c8ffa0', 2, 'center');
+  o.forEach((t, i) => {
+    const y = y0 + 24 + i * rowH;
+    hot(x0 + 6, y - 2, bw - 12, rowH - 1, () => { menu.sel = i; menuPick(i); }, () => { menu.sel = i; });
+    if (i === menu.sel) R(ctx, '#4a3a60', x0 + 6, y - 2, bw - 12, rowH - 2);
+    text((i === menu.sel ? '> ' : '  ') + t.label, x0 + 12, y, i === menu.sel ? '#ffd84a' : '#ffffff');
+    if (t.adj) { hot(x0 + bw - 40, y - 2, 14, rowH - 1, () => t.adj(-1)); hot(x0 + bw - 22, y - 2, 14, rowH - 1, () => t.adj(1)); text('-  +', x0 + bw - 36, y, '#c8ffa0'); }
+  });
+  if (Net.online && menu.page === 'main') text('ROOM CODE: ' + Net.code, W / 2, y0 + h - 12, '#e4b3ff', 1, 'center');
+  if (menu.page === 'settings') text('LEFT/RIGHT OR -/+ CHANGES VOLUME', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
+  if (menu.page === 'controls') text(rebinding ? 'PRESS ANY KEY (ESC CANCELS)' : 'CLICK A ROW, THEN PRESS THE NEW KEY. ARROWS + MOUSE ALWAYS WORK', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
+  if (menu.msg) text(menu.msg, W / 2, y0 + h + 16, '#c8ffa0', 1, 'center');
 }
 function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
 function drawScene() {
@@ -1970,9 +2040,9 @@ function drawScene() {
   } });
   for (const r of remotes.values()) {
     if (r.tx < -500 || r.l !== lvl.n) continue;
-    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash, r.b & 8 ? true : 0); } });
+    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer.say = r.say && r.say.msg; drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash, r.b & 8 ? true : 0); } });
   }
-  list.push({ z: me.z + 0.01, d: () => { shadow(me.x, me.z, me.h); { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash, me.down || 0); } });
+  list.push({ z: me.z + 0.01, d: () => { shadow(me.x, me.z, me.h); drawPlayer.say = me.say && me.say.msg; { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash, me.down || 0); } });
   for (const s of lvl.eshots) list.push({ z: s.z, d: () => {
     shadow(s.x, s.z, 5, 4); const x = Math.round(s.x - camX), y = sy(s.z, 5);
     ctx.save(); ctx.translate(x, y); ctx.rotate(s.spin * 0.3); R(ctx, P.k, -4, -4, 8, 8); R(ctx, '#ff7ac8', -3, -3, 6, 6); R(ctx, '#ffd84a', -1, -5, 2, 2); ctx.restore();
@@ -2013,6 +2083,7 @@ function drawScene() {
     text('WASD MOVE  SPACE JUMP  CLICK HIT  K THROW  TAB BAG', W / 2, 180, '#fff6b0', 1, 'center');
   }
   drawHUD();
+  drawChat();
   if (state === 'brief') draw320(drawBrief);
   if (invOpen) draw320(drawInventory);
   if (state === 'results') draw320(drawShop, '#1e122c');
@@ -2447,6 +2518,7 @@ function drawMap_() {
     [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 50 + i * 12, H - 2 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
   } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 21, '#ffffff');
   else text(save.farm ? 'YOU OWN IT. HOME SWEET HOME' : 'COSTS ' + FARM_PRICE + ' HASH COINS. YOU HAVE ' + save.coins, 6, H - 21, '#ffffff');
+  drawChat();
   const hint = Net.online && !isHost() ? 'HOST PICKS   H SHOP   TAB BAG   ESC MENU' : 'ARROWS/CLICK PICK   SPACE GO   H SHOP   ESC MENU';
   text(hint, W - 4, H - 10, '#c8ffa0', 1, 'right');
   if (banner) { R(ctx, 'rgba(42,24,56,.85)', 0, 70, W, 30); text(banner.a, W / 2, 74, '#ff8a8a', 2, 'center'); text(banner.b, W / 2, 90, '#fff', 1, 'center'); }
@@ -2667,6 +2739,7 @@ function onNet(m) {
     case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0 }); break;
     case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) thiefFlee(e, m.k); } break;
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
+    case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); break;
     case 'pj': addRemote(m); popup(camX + W / 2 - 30, 60, m.name + ' JOINED!', '#c8ffa0'); SFX.cp(); break;
     case 'pl': { const r = remotes.get(m.id); if (r) popup(camX + W / 2 - 30, 60, r.name + ' LEFT', '#b0a8c0'); remotes.delete(m.id); break; }
@@ -2709,7 +2782,7 @@ function startGame() {
   else if (Net.online && Net.phase === 'shop') { results = { made: false, earned: 0, lost: 0, spotBonus: 0, ultraBonus: 0, cooked: 0, kills: 0, best: 0, msg: 'CREW IS SHOPPING - JOIN THEM' }; state = 'results'; }
   else if (!save.intro && !Net.online) { state = 'story'; storyPage = 0; }
   else openMap();
-  if (Net.online) setTimeout(() => { banner = { t: 600, a: 'ROOM CODE: ' + Net.code, b: 'ALWAYS ON THE MAP - ESC TO COPY THE INVITE LINK' }; }, 50);
+  if (Net.online) setTimeout(() => { banner = { t: 150, a: 'ROOM CODE: ' + Net.code, b: 'ALWAYS ON THE MAP - ESC TO COPY THE INVITE LINK' }; }, 50);
   requestAnimationFrame(loop);
 }
 function busy(on) { ['solo', 'create', 'join'].forEach(id => $(id).disabled = on); }
@@ -2731,5 +2804,5 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('err').textContent = 'ENTER YOUR NAME AND PRESS JOIN'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, K, remotes, Net, startLevel, toResults };
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, K, remotes, Net, startLevel, toResults };
 })();

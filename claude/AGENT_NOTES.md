@@ -897,3 +897,79 @@ console/page errors anywhere. `node --check` clean on `game.js` and `server.js`.
 Pushed to `main`. Next: Step 8 (Content that finishes the story - the Astral Plane level + THE PARANOIA
 boss + ending beats; the Astral Plane needs the transit agent for the harder/trippier Bong Rocket variant,
 per FIX_STEPS.md's own note - everything else in Step 8 is this session's).
+
+## STEP 8 (FIX_STEPS.md): Content that finishes the story (Brief v0.9 F1 + ending)
+
+All in `public/game.js`. Checked what already existed before building (a lot of the ending flow turned out
+to already be in place from earlier sessions - see "already existed" notes below), then built the rest.
+
+**The Astral Plane (brief v0.9 Phase F), unlocked by `astralUnlocked()` (S grade on all 6 world bosses -
+the v1.1 condition, which supersedes v0.9's older "100% every mission"):**
+- It's ONE level living past every normal/secret level number (`ASTRAL_LEVEL = TOTAL_LEVELS_WITH_SECRETS`,
+  `isAstralLevel(n)`), not a 7th world - it has no map-node/world-gate of its own. `worldOf`, `levelInWorld`,
+  `themeKeyFor`, `levelType`, `bossDataFor`, `missionName` were each given an `isAstralLevel(n)` branch so
+  `buildLevel(ASTRAL_LEVEL)` "just works" through the existing level-building pipeline unmodified.
+- New enemy kind `badtrip` ("shadow versions of the homies") and boss kind `paranoia` (THE PARANOIA) -
+  no new sprite art, both alias the existing `cop` base sprite with a shadowy purple/magenta recolor via
+  the same `tintSprites`/`swap` helper every other per-world enemy variant already uses. `BASE_AI.badtrip =
+  'cop'` (brawler), `BASE_AI.paranoia = 'karen'` (ranged - reused, tested phase-alternating shooter pattern
+  from `bossAI`, playing as "eye lasers").
+- New theme `THEMES.astral` ("THE ASTRAL PLANE") - a heavy purple tint over DOWNTOWN's base (`variantTheme`,
+  same recipe as every other reskin in the file), enemies `['badtrip','badtrip','badtrip','badtrip']`.
+- THE PARANOIA is `mega: true` in `bossDataFor`, so it gets the boss's existing periodic-summon behavior
+  (`summonAdds`, already fires every 300-420 frames for any mega boss) for free - that IS "a giant eye that
+  splits into copies" (brief's words), no new summon system was written. Its "giant eye" look is a
+  white-iris/dark-pupil overlay drawn on top of its (recolored cop) sprite in `drawEnemyB`'s boss-scaled
+  branch, tracking `e.state` (red pupil while winding up an attack) and drifting side to side.
+- Killing it sets a new `save.astralBeaten` flag (defaulted + migrated in `defaultSave`/`loadSlot`, same
+  pattern as `killjoyBeaten`) and shows a "COSMIC CLARITY ACHIEVED" banner - this is the "unique achievement"
+  from the brief; I did NOT add a separate cosmetic unlock system for the "unique cosmetic" half of that
+  line (scope trim - no cosmetic/skin system exists anywhere else in the game to hook into yet).
+- Reached from the Farm hub (`drawFarmHub`/`updateFarmHub`/`farmHubEntries`), not a map node or the Bong
+  Rocket transit game - the brief's "harder Bong Rocket variant" framing is the TRANSIT AGENT's file
+  (`bongrocket.js`), not mine, and I have no way to confirm it has (or should grow) an `astral` mode without
+  editing a file the standing rules say I don't own. The Farm hub already surfaces the unlock condition
+  ("ASTRAL PLANE: UNLOCKED..." - added in Step 7), so a new "ENTER THE ASTRAL PLANE" button there,
+  appearing only once `astralUnlocked()`, launches the level directly (`startLevel(ASTRAL_LEVEL)`). If the
+  transit agent's Bong Rocket ever grows a real astral-difficulty mode, this entry point can be swapped for
+  a `launchTransit` call with `astral:true` with no changes to anything above it.
+
+**Ending beats (brief v0.8/v0.9):**
+- Grandma hands over the deed: ALREADY EXISTED (the farm-purchase dialogue in `shopConfirm`'s `kind ===
+  'farm'` branch) - untouched.
+- Credits + final stats screen: ALREADY EXISTED (`results.statsScreen` in `drawShop`) - untouched.
+- Sunset smoke session: EXISTED but was a flat daytime blue-sky/green-field palette, not sunset-toned as
+  the brief specifically calls for. Re-did `results.farmScene`'s background with the same `gradient()`
+  helper every sunset-styled theme in the file uses (SUBURBIA, SUNSET BEACH) plus a setting-sun disc and a
+  dusk-purple ground, keeping the same layout (crew lineup, farm icon, plants, dialogue lines).
+- Slow-motion on the last boss hit: DID NOT EXIST. Added a new `slowmo` counter (module-level, alongside
+  `hitstop`): `update()` now runs at 1/3 speed while `slowmo > 0` instead of the hard full-stop `hitstop`
+  already does elsewhere, which reads as genuine slow-motion since `draw()` keeps rendering every real
+  frame. Fires (`slowmo = 50`) on the killing blow against a world's own mega boss (Mr. Killjoy) OR THE
+  PARANOIA, in the existing `onKill` boss-defeat block - no new event, runs identically on every synced
+  client the same way the existing seed/cap grants there already do (confirmed online, see below).
+
+**Boss HP bars always visible:** turned out to be ALREADY DONE, not a bug - re-checked before touching
+anything. `lvl.boss` (set for every `e.boss`, mega OR mini, in the boss-intro banner code) drives a HUD-level
+bar (`drawHUD`) gated only on `lvl.boss.alive && state==='play'`, not on damage taken - it was always
+visible. The thing I mis-remembered as broken was a SEPARATE, smaller per-sprite bar inside `drawEnemyB`
+(`if (e.hp < e.maxHp ...)`) - but that whole code path is skipped for bosses/minis anyway (they return
+early from the `bs > 1` scaled-sprite branch), so it was never the actual boss-health UI and didn't need a
+fix. Boss HP scaling with crew size: confirmed still working via the pre-existing `bhp` formula in
+`buildLevel` (unchanged, not touched this step).
+
+**Testing:** `kq_step8_test.js` - astral level number/type/boss-data resolve correctly through every
+special-cased function; `buildLevel(ASTRAL_LEVEL)` produces only `badtrip` enemies + one `mega:true`
+`paranoia` boss with no crash; the Farm hub's Astral entry only appears once `astralUnlocked()` flips true;
+a real kill of THE PARANOIA (via the exposed `onKill`) sets `save.astralBeaten` and fires `slowmo`. A
+separate visual pass (`kq_step8_visual.js`, screenshots) confirmed the sunset farm scene, the Farm hub's new
+button, and the in-level look of THE PARANOIA (purple theme + eye overlay) all render as intended - caught
+and fixed one real bug this way (`bossDataFor`'s skill slot was `null`, which crashed `drawBrief` reading
+`SKILLS[null].name`; changed to reuse `'ultimate'`, safe since `learnSkill` no-ops on an already-owned
+skill). Re-ran every prior step's regression script (`kq_step1_solo/wipe`, `kq_step2_test`, `kq_step6_test`,
+`kq_step7_test`) - all still pass. `kq_step8_online.js` - 2-tab online test: host launches the Astral Plane,
+kills THE PARANOIA, `onKill`+`slowmo` run cleanly for several real seconds with a connected guest, zero
+console/page errors either side. `node --check` clean on `game.js` and `server.js`.
+
+Pushed to `main`. Next: Step 9 (Items, gear and the garage - garage excluded, that's the drive agent's),
+then Step 10 (Co-op and personality), Step 11 (Replay and sharing), Step 12 (Final full-game test).

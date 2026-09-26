@@ -1149,8 +1149,8 @@ function variantTheme(base, name, tint, a, enemies) {
   return { name, tiles: b.tiles, sky: tl(b.sky), clouds: b.clouds, far: tl(b.far), near: tl(b.near), enemies, base, floorTint: [tint, a * 0.7] };
 }
 // enemy variants: same moves as the originals, new looks, a bit tougher
-const BASE_AI = { ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop' };
-const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2 };
+const BASE_AI = { ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop', badtrip: 'cop', paranoia: 'karen' };
+const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2, badtrip: 1 };
 {
   const tintSprites = (src, map) => src.map(img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { const key = d.data[i] + ',' + d.data[i + 1] + ',' + d.data[i + 2]; if (map[key]) { d.data[i] = map[key][0]; d.data[i + 1] = map[key][1]; d.data[i + 2] = map[key][2]; } } g.putImageData(d, 0, 0); return c; });
   const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -1166,7 +1166,11 @@ const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, 
   ENEMY_IMG.segway = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#3a6a9a'], [P.D, '#1e3a6a'], [P.y, '#e8e8f0']])); // Downtown: MALL COP ON A SEGWAY
   ENEMY_IMG.owl = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#8a6a4a'], [P.T, '#5a3a20'], [P.y, '#e8e0c8']])); // Misty Woods: OWL NARC
   ENEMY_IMG.securitybot = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#2a2a3a'], [P.D, '#15151f'], [P.y, '#ff3a3a']])); // Buzzkill HQ: SECURITY BOT
-  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
+  // v1.2 (Step 8): Astral Plane enemies (brief v0.9 Phase F). No new sprite art was built for these - they
+  // alias existing base sprites with a shadowy/psychedelic recolor, same approach as every variant above.
+  ENEMY_IMG.badtrip = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#5a1a8a'], [P.D, '#2e0a58'], [P.y, '#ff6aff']])); // BAD TRIP: shadow-homie
+  ENEMY_IMG.paranoia = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#160a28'], [P.D, '#0a0414'], [P.y, '#ff2af0']])); // THE PARANOIA's body - the giant eye is drawn on top of this in drawEnemyB
+  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot', 'badtrip', 'paranoia']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
 }
 Object.assign(THEMES, {
   nightwoods: variantTheme('woods', 'MIDNIGHT WOODS', '#101a4a', 0.5, ['ranger', 'raccoon', 'squirrel', 'ranger', 'mouse']),
@@ -1189,6 +1193,11 @@ Object.assign(THEMES, {
   vault: variantTheme('hq', 'THE VAULT', '#1a1a2a', 0.5, ['guard', 'suit', 'guard', 'guard', 'raccoon']),
   penthouse: variantTheme('city', 'THE PENTHOUSE', '#ff3a4a', 0.35, ['suit', 'guard', 'suit', 'guard', 'karen']),
 });
+// v1.2 (Step 8): THE ASTRAL PLANE - the trippy end-game theme (brief v0.9 Phase F), unlocked once every
+// world boss is graded S (astralUnlocked(), below). Built the same way every other reskin here is: a heavy
+// tint over an existing base (DOWNTOWN's skyline, since its night palette reads well under a deep-purple
+// wash) rather than new hand-painted art, and its own enemy kind (badtrip/paranoia, defined just above).
+THEMES.astral = variantTheme('city', 'THE ASTRAL PLANE', '#8a2aff', 0.6, ['badtrip', 'badtrip', 'badtrip', 'badtrip']);
 // ============================================================
 //  v1.1 Part B1: 6 worlds, growing level counts, per-world mini-boss + boss + secret slot.
 //  Table (brief v1.1 B1): World / Levels / Mini-boss at / Boss at / +1 secret
@@ -1245,13 +1254,20 @@ const TOTAL_LEVELS = WORLD_START[WORLDS.length]; // 49 main levels
 const SECRET_BASE = TOTAL_LEVELS; // secret levels are n = 49..54, one per world, in world order
 const TOTAL_LEVELS_WITH_SECRETS = TOTAL_LEVELS + WORLDS.length;
 const isSecretLevel = n => n >= SECRET_BASE && n < TOTAL_LEVELS_WITH_SECRETS;
+// v1.2 (Step 8): the Astral Plane (brief v0.9 Phase F) is one extra level living past every normal/secret
+// level number, unlocked once astralUnlocked() is true (S grade on all 6 world bosses - see v1.1's tighter
+// condition, which supersedes v0.9's "100% every mission"). It's reached from the Farm hub, not through
+// mapNodes/a world gate, since it isn't part of any of the 6 worlds - see drawFarmHub/updateFarmHub.
+const ASTRAL_LEVEL = TOTAL_LEVELS_WITH_SECRETS;
+const isAstralLevel = n => n === ASTRAL_LEVEL;
 const worldOf = n => {
+  if (isAstralLevel(n)) return WORLDS.length - 1; // borrows the last world's numbering for skill-cap/HUD math; it has no world of its own
   if (isSecretLevel(n)) return n - SECRET_BASE;
   for (let w = 0; w < WORLDS.length; w++) if (n < WORLD_START[w + 1]) return w;
   return WORLDS.length - 1;
 };
 const levelInWorld = n => isSecretLevel(n) ? WORLDS[worldOf(n)].levels.length : n - WORLD_START[worldOf(n)];
-const themeKeyFor = n => { const w = worldOf(n); return isSecretLevel(n) ? WORLDS[w].secretTheme : WORLDS[w].levels[levelInWorld(n)]; };
+const themeKeyFor = n => { if (isAstralLevel(n)) return 'astral'; const w = worldOf(n); return isSecretLevel(n) ? WORLDS[w].secretTheme : WORLDS[w].levels[levelInWorld(n)]; };
 // v1.2 fix (Step 1.6): world/level progress label ("WORLD 2-3") to replace the old flat "SMOKE SPOTS x/49"
 // text wherever it showed up (save slots, the Bag, the stats screen, the menu).
 function progressLabel(spots) {
@@ -1269,9 +1285,10 @@ const LEVEL_TYPES = ['BRAWL', 'GAUNTLET', 'HAZARD', 'ESCORT', 'CHASE', 'BRAWL', 
 const TYPE_GOAL = {
   BRAWL: 'CLEAR THE STREETS', GAUNTLET: 'SURVIVE THE WAVES', HAZARD: 'WATCH THE HAZARD',
   ESCORT: 'PROTECT THE HOMIE', CHASE: "DON'T GET LEFT BEHIND", SECRET: 'FIND THE STASH',
-  MINIBOSS: 'BEAT THE MINI-BOSS', BOSS: 'BEAT THE BOSS',
+  MINIBOSS: 'BEAT THE MINI-BOSS', BOSS: 'BEAT THE BOSS', ASTRAL: 'BEAT THE PARANOIA',
 };
 function levelType(n) {
+  if (isAstralLevel(n)) return 'ASTRAL';
   if (isSecretLevel(n)) return 'SECRET';
   const w = worldOf(n), li = levelInWorld(n), wd = WORLDS[w];
   if (li === wd.bossAt) return 'BOSS';
@@ -1319,6 +1336,10 @@ const CAPTAIN_TITLES = ['SERGEANT', 'CAPTAIN', 'CHIEF', 'DEPUTY', 'INSPECTOR', '
 const CAPTAIN_NAMES = ['BOB', 'RICK', 'STEVE', 'DOUG', 'GARY', 'LARRY', 'KAREN', 'PAM', 'LINDA', 'CAROL'];
 function seededPick(n, salt, arr) { let s = (n * 7919 + salt * 104729 + 1) >>> 0; s = (s * 1103515245 + 12345) >>> 0; return arr[s % arr.length]; }
 function bossDataFor(n) {
+  // skill slot reuses 'ultimate' rather than null: every UI that shows "BEAT HIM TO LEARN X" (the brief
+  // panel, bossDataFor's callers) assumes a real skill id, and learnSkill() itself is already a no-op for
+  // a skill you've already got, which anyone who unlocked the Astral Plane necessarily has by now.
+  if (isAstralLevel(n)) return ['THE PARANOIA', 'paranoia', 'ultimate', "YOU CAN'T ESCAPE YOUR OWN HEAD.", true, false];
   const w = worldOf(n), li = levelInWorld(n), wd = WORLDS[w], theme = THEMES[themeKeyFor(n)];
   if (isSecretLevel(n)) return [wd.name + ' STASH GUARDIAN', seededPick(n, 1, theme.enemies), seededPick(n, 2, SKILL_ORDER), 'YOU FOUND MY SECRET SPOT?!', false, false];
   if (li === wd.bossAt) return [wd.bossName, seededPick(n, 0, theme.enemies), MEGA_SKILLS[w % MEGA_SKILLS.length], wd.bossName + " WON'T LET YOU THROUGH THIS EASY.", true, false];
@@ -1344,6 +1365,7 @@ const sy = (z, h = 0) => FLOOR_Y + z - h;        // world (z,h) -> screen y (fee
 const MISSION_LOOT = ['resin', 'hoodie', 'resin', 'vest', 'resin', 'crown', 'pouch'];
 function missionName(n, remix) {
   const th = THEMES[themeKeyFor(n)];
+  if (isAstralLevel(n)) return ['THE ASTRAL PLANE', 'FACE YOUR PARANOIA'];
   const label = isSecretLevel(n) ? 'WORLD ' + (worldOf(n) + 1) + ' SECRET' : 'WORLD ' + (worldOf(n) + 1) + '-' + (levelInWorld(n) + 1);
   return [label, th.name + (remix ? ' REMIX' : '')];
 }
@@ -1449,7 +1471,7 @@ try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.g
 // key used as the save.cores{} key; CORE_WEAPON_ID maps that key to the existing WEAPONS[] id it reuses/skins.
 const CORE_HOMIE = ['rasta', 'snapback', 'bucket', 'afro'];
 const CORE_WEAPON_ID = { rasta: 'puff', snapback: 'bong', bucket: 'grinder', afro: 'lighter' };
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [], grades: {}, killjoyBeaten: false }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [], grades: {}, killjoyBeaten: false, astralBeaten: false }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
@@ -1480,6 +1502,7 @@ function loadSlot(i) {
   // straight to the real flag rather than re-locking a save that's already earned the farm.
   save.grades = save.grades && typeof save.grades === 'object' ? save.grades : {};
   if (save.killjoyBeaten == null) save.killjoyBeaten = (save.spots || 0) >= TOTAL_LEVELS;
+  if (save.astralBeaten == null) save.astralBeaten = false;
   // v1.1 A2: save.coreCap is the per-save cap on how high ANY core can currently be leveled (separate from
   // save.cores[homie] itself - see coreLevel()/shopEntries()). Never lower it once set. A save that already
   // had migratedV11 (i.e. existed before this cap system landed, possibly with cores already leveled past
@@ -1555,7 +1578,7 @@ const weaponDef = () => WEAPONS.find(w => w.id === CORE_WEAPON_ID[CORE_HOMIE[Net
 //  WORLD STATE
 // ============================================================
 let lvl, me, camX = 0, state = 'play', frame = 0, running = false, paused = false, invOpen = false;
-let particles = [], popups = [], shots = [], banner = null, shake = 0, hitstop = 0;
+let particles = [], popups = [], shots = [], banner = null, shake = 0, hitstop = 0, slowmo = 0;
 let finInfo = null, hurryT = 0, results = null, shopSel = 0, readyInfo = null;
 // v1.1 A5: crew-lives. A shared life pool (3 solo / 5 co-op) that any player's final knockout spends one
 // of; while lives remain, that player respawns at the last-cleared zone (the checkpoint) instead of always
@@ -2019,7 +2042,11 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
     // v1.2 (Step 7.5): a real "Killjoy beaten" flag instead of inferring it from save.spots>=SPOTS_TO_FARM -
     // set the instant the LAST world's boss (Buzzkill HQ's Mr. Killjoy) dies, runs identically on every
     // client for the same reason the Seed grant above does (onKill() is itself the synced event).
-    if (e.mega && worldOf(lvl.n) === WORLDS.length - 1) save.killjoyBeaten = true;
+    // v1.2 (Step 8.4): the killing blow on the run's climactic mega boss (Mr. Killjoy, or THE PARANOIA in
+    // the Astral Plane) gets a beat of slow-motion (see `slowmo` in update()) instead of just the usual
+    // hitstop every knockout already gets, so the moment reads as bigger.
+    if (e.mega && isAstralLevel(lvl.n)) { save.astralBeaten = true; slowmo = 50; banner = { t: 200, a: 'THE PARANOIA IS GONE.', b: 'COSMIC CLARITY ACHIEVED' }; }
+    else if (e.mega && worldOf(lvl.n) === WORLDS.length - 1) { save.killjoyBeaten = true; slowmo = 50; }
   }
   puff(e.x, sy(e.z) - 10, 8, ['#ffffff', '#e8e4f4', '#c8ffa0'], 1.4); bleed(e.x, e.z, e.h, 8, e.vx > 0 ? 1 : -1);
   const zn = lvl.zones[lvl.zi];
@@ -2231,6 +2258,10 @@ function updateShots() {
 // ============================================================
 function update() {
   if (paused && !menu) return;
+  // v1.2 (Step 8.4): slow-motion on a big story beat (currently: the killing blow on a world's mega
+  // boss - see onKill). Runs updates at 1/3 speed for slowmo frames while draw() keeps rendering every
+  // rAF, which reads as smooth slow-mo rather than the hard freeze `hitstop` gives.
+  if (slowmo > 0) { slowmo--; if (slowmo % 3) return; }
   frame++;
   if (frame % 600 === 0 && running) { save.stats.playSec += 10; }
   if (banner && --banner.t <= 0) banner = null;
@@ -3086,6 +3117,14 @@ function drawEnemyB(e) {
     ctx.save(); ctx.translate(X + (fl ? img.width * bs : 0), Y); ctx.scale(fl ? -bs : bs, bs); ctx.drawImage(img, 0, 0); ctx.restore(); ctx.filter = 'none'; ctx.globalAlpha = 1;
     if (e.state === 1) text(e.dash ? '!!' : '!', e.x - camX, Y - 10, '#ff5a6a', 2, 'center');
     if (e.mega && frame % 4 === 0) puff(e.x, Y + 6, 1, ['#ff5a6a', '#ffd84a'], .4, -0.03);
+    // v1.2 (Step 8): THE PARANOIA is "a giant eye that splits into copies" (brief v0.9 F) - no new sprite
+    // was drawn for this, an iris/pupil is just layered on top of its (recolored cop) base sprite.
+    if (e.kind === 'paranoia') {
+      const ex = Math.round(e.x - camX), ey = Y + img.height * bs * 0.38;
+      ctx.save(); ctx.beginPath(); ctx.ellipse(ex, ey, 11 * (bs / 2.5 || 1), 6 * (bs / 2.5 || 1), 0, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + Math.sin(frame / 17) * 4, ey, 3, 0, TAU); ctx.fillStyle = e.state === 1 ? '#ff3a3a' : '#2a0a3a'; ctx.fill();
+      ctx.restore();
+    }
     return; }
   if (e.state === 5 && e.t < 20 && frame % 4 < 2) return;
   const flip = e.ai === 'mouse' || e.ai === 'squirrel' ? e.dir > 0 : e.dir < 0;
@@ -3618,7 +3657,9 @@ function itemStatus(it) {
   return null;
 }
 let farmSel = 0;
-function farmHubEntries() { return [...STRAINS.map((_, i) => i), 'pet0', 'pet1', 'pet2', 'pet3', 'pet4', 'back']; }
+// v1.2 (Step 8): the Astral Plane is reached from here, not a map node - it isn't part of any of the 6
+// worlds (see ASTRAL_LEVEL's comment), and the Farm is where the game already surfaces its unlock text.
+function farmHubEntries() { return [...STRAINS.map((_, i) => i), 'pet0', 'pet1', 'pet2', 'pet3', 'pet4', ...(astralUnlocked() ? ['astral'] : []), 'back']; }
 function updateFarmHub() {
   const list = farmHubEntries();
   if (K.upPressed) { farmSel = (farmSel - 1 + list.length) % list.length; SFX.tick(); }
@@ -3627,6 +3668,7 @@ function updateFarmHub() {
   if (!(K.enterPressed || K.jumpPressed || K.attackPressed)) return;
   const sel = list[farmSel];
   if (sel === 'back') { results.farmHub = false; go(openMap); return; }
+  if (sel === 'astral') { results.farmHub = false; go(() => startLevel(ASTRAL_LEVEL)); return; }
   if (typeof sel === 'number') { // cycle a plot through: empty -> strain0 -> strain1 -> ... -> empty
     const cur = save.farmPlots[sel], curIdx = STRAINS.findIndex(s => s.id === cur);
     save.farmPlots[sel] = curIdx >= STRAINS.length - 1 ? null : STRAINS[curIdx + 1].id;
@@ -3660,7 +3702,14 @@ function drawFarmHub() {
     text(p.desc, W - 12, y + 2, '#c8ffa0', 1, 'right');
     hot(8, y, W - 16, 10, () => { if (!unlocked) { SFX.bump(); return; } save.pet = save.pet === p.id ? null : p.id; persist(); SFX.buy(); });
   });
-  const by = 112 + PETS.length * 12 + 8;
+  let by = 112 + PETS.length * 12 + 8;
+  const astralIdx = list.indexOf('astral');
+  if (astralIdx >= 0) {
+    R(ctx, farmSel === astralIdx ? '#5a1a8a' : '#3a1a5a', 8, by, W - 16, 12);
+    text('ENTER THE ASTRAL PLANE - BEAT THE PARANOIA', W / 2, by + 2, '#e4b3ff', 1, 'center');
+    hot(8, by, W - 16, 12, () => { results.farmHub = false; go(() => startLevel(ASTRAL_LEVEL)); });
+    by += 16;
+  }
   R(ctx, farmSel === list.length - 1 ? '#4a7a3a' : '#3a5a2e', 8, by, W - 16, 12);
   text('BACK TO THE MAP', W / 2, by + 2, '#ffffff', 1, 'center'); hot(8, by, W - 16, 12, () => { results.farmHub = false; go(openMap); });
 }
@@ -3732,7 +3781,12 @@ function drawShop() {
     return;
   }
   if (results.farmScene) {
-    const g = ctx; R(g, '#9ad8ff', 0, 0, W, 120); R(g, '#7fe07a', 0, 120, W, 72);
+    // v1.2 (Step 8): sunset-toned, per the ending beat brief calls for ("a sunset smoke session") - was a
+    // flat daytime blue-sky/green-field palette before.
+    const g = ctx;
+    gradient(g, ['#6a4ac8', '#9a5ac0', '#c86ab0', '#e8869a', '#ff9a7a', '#ffb87a', '#ffce8a', '#ffe0a0']);
+    g.fillStyle = '#fff0b0'; for (let y = -14; y <= 14; y++) { const w = Math.floor(Math.sqrt(196 - y * y)); g.fillRect(W - 60 - w, 50 + y, w * 2, 1); } // setting sun
+    R(g, '#4a2a5a', 0, 118, W, 74);
     for (let i = 0; i < 14; i++) g.drawImage(PLANT, 8 + i * 22, 110 + (i % 2) * 8);
     g.drawImage(ICONS.farm, W / 2 - 6, 60);
     hot(0, 0, W, H, () => shopConfirm());
@@ -4845,7 +4899,8 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt,
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; },
+  openFarmScene: () => { results = { shopOnly: true, farmScene: true, endingStats: true }; state = 'results'; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt,
   // v1.1 B1 debug hooks (used by the automated smoke tests; also handy for future debugging)
   buildLevel, mapNodes, bossDataFor, levelType, worldOf, levelInWorld, missionName, WORLDS, WORLD_START, TOTAL_LEVELS, isSecretLevel, setWorld, get curWorld() { return curWorld; },
   // v1.1 A2/A3 debug hooks (used by the automated smoke tests for the Core-cost curve + Wild charge economy)
@@ -4861,5 +4916,6 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   TYPE_GOAL, foundSecretExit, hostUpdate, applyHazards, nodeUnlocked, get checkpoint() { return checkpoint; },
   breakProp, get particles() { return particles; },
   // v1.2 (Step 7) debug hooks: grades, Killjoy-beaten, Astral-unlock, for the automated seeded-save check.
-  computeGrade, saveBestGrade, astralUnlocked, get crewLivesStart() { return lvl && lvl.livesStart; } };
+  computeGrade, saveBestGrade, astralUnlocked, get crewLivesStart() { return lvl && lvl.livesStart; },
+  ASTRAL_LEVEL, isAstralLevel, farmHubEntries, get slowmo() { return slowmo; }, set slowmo(v) { slowmo = v; } };
 })();

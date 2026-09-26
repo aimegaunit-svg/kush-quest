@@ -2832,6 +2832,18 @@ function getName() {
   return n;
 }
 let slotSel = 0;
+const CREW_NAMES = ['AK', 'LOG', 'G-RAT', 'ELIJAH', 'GRYPH', 'TG', 'OGMUDBONE'];
+function renderNames() {
+  const box = $('names'); box.innerHTML = '';
+  for (const n of CREW_NAMES) {
+    const b = document.createElement('button'); b.textContent = n; b.type = 'button';
+    if (($('name').value || '').toUpperCase() === n) b.className = 'on';
+    b.onclick = () => { $('name').value = n; renderNames(); };
+    box.appendChild(b);
+  }
+}
+$('name').addEventListener('input', renderNames);
+setTimeout(renderNames, 0);
 function renderSlots() {
   const box = $('slots'); box.innerHTML = '';
   for (let i = 1; i <= SLOT_COUNT; i++) {

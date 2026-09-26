@@ -1,5 +1,36 @@
 # AGENT_NOTES
 
+## v1.1 Section A progress (main session, latest)
+Commits `100a4ed`..`c295b95` on `main` land brief v1.1 Section A1-A4 in `public/game.js`:
+- **A1/A2 done**: `save.cores{rasta,snapback,bucket,afro}` (1-10 Core-weapon levels), `save.resin`,
+  `coreLevel()`, `weaponDef()`/`wlv()` rewired so each homie has one fixed Core weapon
+  (rasta->puff, snapback->bong, bucket->grinder, afro->lighter) that levels via a Resin-paid shop
+  entry (`kind: 'coreup'`) instead of the old shop-bought weapon roster. Weapon buying + throwable
+  ammo (papers/bombs/smoke) removed from the shop and from chest loot (chests now drop Resin).
+  One-time `migratedV11` pass banks old `save.weapons`/`save.throws` counts into Resin and seeds
+  `save.cores` from old `save.wlv`.
+- **A3 (scoped)**: Dab Saber folded into the existing enviro-weapon pickup system as a rarer (15%)
+  Wild-weapon drop, alongside lid/cone/surfboard/chair. That per-level "uses" pickup system IS
+  being reused as the Wild-weapon pool for now. NOT done: a persistent `save.wild` slot (Wild
+  weapons still reset every level) and Resin-funded refill/reroll from the shop.
+- **A4 (scoped)**: `ITEMS` trimmed to munchie(cap 3)/brownie/soda, preroll+gold removed. Fixed a
+  real latent crash this caused (`save.quick` pointing at a removed item -> `ITEMS[q].icon` throws
+  in the HUD draw) by retargeting `save.quick` in `loadSlot()` if it's not one of the 3 survivors.
+  NOT done: brownie's "pass the plate" shared co-op buff, a GIVE key to hand items to crewmates.
+- **Still open in Section A**: A5 (crew lives 3 solo/5 co-op replacing per-player deaths, checkpoints,
+  economy retune ~60-100 coins/level), A6 (new per-world enemy weapons/telegraphs), and the two
+  pieces of A1/A4 flagged above (THROWS system full removal, GIVE key). A7 was already handled
+  earlier (only the map-overlap bug reproduced; everything else checked-but-not-reproduced).
+- **Every commit in this range was verified** with `node --check public/game.js` plus a Playwright
+  pass that: loads fresh, picks a save slot + character, starts solo, attacks repeatedly (exercises
+  weaponDef/wlv/coreLevel), forces into the shop/results state via the `window.__KQ` debug handle
+  and cycles every tab + buys through every entry via keyboard, and (for A4) seeds an old save with
+  a since-removed quick-item id to confirm the migration path doesn't crash. All passes: `errors: []`.
+- **Next up per `PLAN.md`'s build order**: finish A5/A6, then Part B1 (the 6-world/49-level rebuild -
+  by far the biggest remaining task), then B2/B4/B5, then hook the 5 transit games + drive.js into
+  the new per-world map, then mobile/touch polish (per the user's explicit instruction, this comes
+  *before* the final dedicated bug-review pass), then that bug-review pass itself.
+
 ## Correction + status update (main session, after this landed)
 `public/drive.js` now exists — the main session built it (commit 7d02668), on top of this file's
 `transit.js` framework, since it turned out nothing had actually landed for it despite what

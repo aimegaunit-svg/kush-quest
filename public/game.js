@@ -115,8 +115,9 @@ const K = { left: false, right: false, up: false, down: false, jump: false, run:
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
-  Space: 'jump', KeyZ: 'jump', KeyL: 'jump',
-  ShiftLeft: 'run', ShiftRight: 'run', KeyX: 'attack', KeyJ: 'attack', KeyK: 'attack', Enter: 'enter'
+  Space: 'jump', KeyK: 'jump',
+  KeyJ: 'attack', KeyX: 'attack',
+  ShiftLeft: 'run', ShiftRight: 'run', Enter: 'enter'
 };
 function press(k, down) {
   if (down && !K[k]) { if (k === 'jump') K.jumpPressed = true; if (k === 'enter') K.enterPressed = true; if (k === 'attack') K.attackPressed = true; }
@@ -130,18 +131,23 @@ addEventListener('keydown', e => {
   if (state === 'results' && (c === 'ArrowUp' || c === 'ArrowDown' || c === 'KeyW' || c === 'KeyS' || c === 'Space')) { e.preventDefault(); if (c === 'Space') press('jump', true); return; }
   if (c === 'KeyM') { musicOn = !musicOn; return; }
   if ((c === 'KeyP' || c === 'Escape') && !Net.online && state !== 'results') { paused = !paused; return; }
-  if ((c === 'KeyI' || c === 'Tab') && state !== 'results') { e.preventDefault(); invOpen = !invOpen; return; }
+  if ((c === 'KeyI' || c === 'Tab') && state !== 'results') { e.preventDefault(); invOpen = !invOpen; for (const k in K) if (typeof K[k] === 'boolean') K[k] = false; return; }
+  if (c === 'Escape' && invOpen) { invOpen = false; return; }
   if (state === 'play') {
-    if (/^Digit[1-5]$/.test(c)) { selectWeapon(+c[5] - 1); return; }
+
     if (c === 'KeyQ') { cycleWeapon(1); return; }
-    if (c === 'KeyC') { useMunchies(); return; }
-    const em = { Digit7: 0, Digit8: 1, Digit9: 2, Digit0: 3 }[c]; if (em !== undefined) { emote(em); return; }
+    if (c === 'KeyE') { useMunchies(); return; }
+    const em = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[c]; if (em !== undefined) { emote(em); return; }
   }
   const k = KEYMAP[c]; if (!k) return;
   e.preventDefault(); press(k, true);
 });
 addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) press(k, false); });
 addEventListener('blur', () => { for (const k in K) K[k] = false; });
+cv.addEventListener('mousedown', e => { if (!running) return; e.preventDefault(); if (state === 'results') { K.enterPressed = true; return; } if (e.button === 0) press('attack', true); else if (e.button === 2) press('jump', true); });
+addEventListener('mouseup', e => { if (e.button === 0) press('attack', false); else if (e.button === 2) press('jump', false); });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('wheel', e => { if (!running) return; e.preventDefault(); if (state === 'results') { if (e.deltaY < 0) K.upPressed = true; else K.downPressed = true; } else if (state === 'play') cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: false });
 document.querySelectorAll('#touch button').forEach(b => {
   const k = b.dataset.k;
   b.addEventListener('pointerdown', e => {
@@ -289,15 +295,15 @@ for (const k in ENEMY_IMG) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
 // --- pickups & icons ---
 const COIN = sprite([
   '..kkkkkk..',
-  '.kYyyyyyk.',
-  'kYyOyOyyyk',
-  'kyOOOOOyyk',
-  'kyyOyOyyOk',
-  'kyOOOOOyOk',
-  'kyyOyOyyOk',
+  '.kyYyyyyk.',
+  'kyhtNtthyk',
+  'kytNNNtTyk',
+  'kyNtNtNTyk',
+  'kyhtNtTTyk',
+  'kytTNTTTyk',
   '.kyyyyyOk.',
   '..kkkkkk..',
-]);
+], { ...P, y: '#e8b84a', Y: '#fff0b0', O: '#b88a2a', t: '#b87a3e', h: '#d89a5a', T: '#8a5428', N: '#4e2c14' });
 const NUG = sprite([
   '....G....',
   '...GgGk..',
@@ -464,7 +470,7 @@ const SHOP = [
   ...WEAPONS.slice(1).map(w => ({ kind: 'weapon', ...w })),
   ...ARMORS.map(a => ({ kind: 'armor', ...a })),
   { kind: 'item', id: 'pouch', name: 'STASH POUCH', icon: 'pouch', price: 130, desc: 'MICE + SQUIRRELS CANT STEAL' },
-  { kind: 'use', id: 'munchie', name: 'MUNCHIES', icon: 'munchie', price: 25, desc: 'HEAL 2 HEARTS - PRESS C (MAX 3)' },
+  { kind: 'use', id: 'munchie', name: 'MUNCHIES', icon: 'munchie', price: 25, desc: 'HEAL 2 HEARTS - PRESS E (MAX 3)' },
   { kind: 'use', id: 'preroll', name: 'PRE-ROLL', icon: 'preroll', price: 40, desc: 'START NEXT MISSION 40% COOKED' },
   { kind: 'use', id: 'gold', name: 'GOLDEN LEAF', icon: 'gold', price: 75, desc: 'START NEXT MISSION INVINCIBLE' },
   { kind: 'farm', id: 'farm', name: 'THE POT FARM', icon: 'farm', price: FARM_PRICE, desc: 'THE DREAM. REACH ' + SPOTS_TO_FARM + ' SMOKE SPOTS' },
@@ -754,6 +760,7 @@ function startLevel(n) {
   camX = 0; state = 'play'; particles = []; popups = []; shots = [];
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
   banner = { t: 200, a: lvl.name[0] + ' - ' + lvl.name[1], b: 'BEAT THE BUZZKILLS, GET COOKED, FIND THE SMOKE SPOT' };
+  if (n === 0 && save.spots === 0) me.tipT = 900;
   if (save.preroll > 0) { save.preroll--; me.cooked = 40; popup(me.x, sy(me.z) - 30, 'PRE-ROLL! 40%', '#c8ffa0'); }
   if (save.gold > 0) { save.gold--; me.star = 720; }
   persist();
@@ -813,7 +820,7 @@ function openChest(c) {
     if (WEAPONS.some(w => w.id === loot)) { save.weapons.push(loot); save.weapon = loot; }
     else if (loot === 'pouch') save.pouch = true;
     else { save.armor.push(loot); me.hp = maxHp(); }
-    banner = { t: 180, a: 'FOUND: ' + def.name + '!', b: WEAPONS.some(w => w.id === loot) ? 'EQUIPPED - X TO SWING, Q TO SWITCH' : 'CHECK YOUR INVENTORY WITH I' };
+    banner = { t: 180, a: 'FOUND: ' + def.name + '!', b: WEAPONS.some(w => w.id === loot) ? 'EQUIPPED - CLICK OR J TO SWING, Q TO SWITCH' : 'CHECK YOUR INVENTORY WITH I' };
   }
   persist();
 }
@@ -918,6 +925,7 @@ function attack() {
     Net.send({ t: 'fx', k: 5, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
     return;
   }
+  if (K.left !== K.right) me.face = K.right ? 1 : -1;
   me.chain = me.chainT > 0 ? (me.chain + 1) % 3 : 0;
   const strong = me.chain === 2;
   me.atkCd = Math.round(w.cd * (strong ? 1.3 : 0.75)); me.atkT = 12; me.chainT = me.atkCd + 16;
@@ -975,7 +983,7 @@ function update() {
     me.vx = me.vz = 0;
     if (frame % 8 === 0) puff(lvl.spot.x + 40, sy(-2) - 14, 1, ['#ffffff', '#e8e4f4', '#d4c8f8'], .3, -0.03);
     if (!Net.online && finInfo && --finInfo.t <= 0) toResults();
-    if (Net.online && K.enterPressed && !finInfo.hurried) { Net.send({ t: 'hurry' }); finInfo.hurried = true; }
+    if (Net.online && (K.enterPressed || K.jumpPressed) && !finInfo.hurried) { Net.send({ t: 'hurry' }); finInfo.hurried = true; }
   } else if (state === 'results') updateShop();
   if (hurryT > 0 && --hurryT === 0) Net.send({ t: 'timeup' });
   K.jumpPressed = false; K.enterPressed = false; K.attackPressed = false;
@@ -1042,7 +1050,7 @@ function updatePlayer() {
   p.x += p.vx; p.z += p.vz;
   p.z = Math.max(0, Math.min(ZMAX, p.z));
   const zn = lvl.zones[lvl.zi];
-  const left = lvl.locked && zn ? zn.x0 + 8 : camX + 8, right = lvl.locked && zn ? zn.x0 + W - 8 : LEN - 8;
+  const left = lvl.locked && zn ? zn.x0 + 8 : Math.max(8, camX - 40), right = lvl.locked && zn ? zn.x0 + W - 8 : LEN - 8;
   p.x = Math.max(left, Math.min(right, p.x));
   if (!lvl.locked) { // can't run past the next fight until it's started
     const next = lvl.zones.find(z => !z.cleared);
@@ -1221,7 +1229,7 @@ function hostUpdate() {
   if (Net.online && frame % 4 === 0) {
     Net.send({
       t: 'es', l: lvl.n, zi: lvl.zi, lk: lvl.locked ? 1 : 0, zc: lvl.zones.filter(z => z.cleared).length,
-      e: lvl.enemies.filter(e => e.spawned).map(e => [e.id, Math.round(e.x), Math.round(e.z), Math.round(e.h), e.alive ? e.state : 7, e.dir, e.hp, e.strikeN || 0])
+      e: lvl.enemies.filter(e => e.spawned && (e.alive || !e.sentDead && (e.sentDead = frame))).map(e => [e.id, Math.round(e.x), Math.round(e.z), Math.round(e.h), e.alive ? e.state : 7, e.dir, e.hp, e.strikeN || 0])
     });
   }
 }
@@ -1297,6 +1305,30 @@ function drawHeld(x, y, face, wi, atkT, anim) {
 }
 function circle(cx, cy, r) { for (let y = -r; y <= r; y++) { const w = Math.sqrt(r * r - y * y); ctx.fillRect(Math.round(cx - w), Math.round(cy + y), Math.round(w * 2), 1); } }
 
+// each area gets its own street surface (64px repeating strip)
+function makeFloor(key, tiles) {
+  const c = document.createElement('canvas'); c.width = 64; c.height = H - FLOOR_Y + 12;
+  const g = c.getContext('2d'), top = 12;
+  let sd = 7; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  const specks = (y0, y1, cols, n) => { for (let i = 0; i < n; i++) R(g, cols[i % cols.length], Math.floor(rr() * 64), y0 + Math.floor(rr() * (y1 - y0)), 1 + Math.floor(rr() * 2), 1); };
+  for (let x = 0; x < 64; x += 16) g.drawImage(tiles[TOP], x, 0);
+  if (key === 'park') {
+    R(g, '#8ad890', 0, top, 64, c.height); specks(top, c.height, ['#6ac070', '#a8f0a0'], 60);
+    for (let x = 0; x < 64; x++) { const w1 = Math.round(Math.sin(x / 64 * TAU * 2) * 2), w2 = Math.round(Math.cos(x / 64 * TAU) * 2);
+      R(g, '#c8a070', x, top + 20 + w1, 1, 1); R(g, '#ecd0a0', x, top + 21 + w1, 1, 30 - w1 + w2); R(g, '#c8a070', x, top + 51 + w2, 1, 1); }
+    specks(top + 24, top + 48, ['#d8b888', '#fff0d0'], 25);
+  } else if (key === 'suburb') {
+    R(g, '#e8e4f0', 0, top, 64, 26); for (let x = 0; x < 64; x += 16) R(g, '#c8c0d8', x, top, 1, 26); R(g, '#c8c0d8', 0, top + 13, 64, 1);
+    R(g, '#b0a8c8', 0, top + 26, 64, 3); R(g, '#8a80a8', 0, top + 29, 64, 1);
+    R(g, '#6a6480', 0, top + 30, 64, c.height); specks(top + 30, c.height, ['#7a7490', '#5a5470'], 50);
+    R(g, '#ffffff', 8, top + 58, 22, 2);
+  } else {
+    R(g, '#4a3a70', 0, top, 64, 22); for (let x = 0; x < 64; x += 16) R(g, '#3a2c5c', x, top, 1, 22); R(g, '#3a2c5c', 0, top + 11, 64, 1);
+    R(g, '#8a80b8', 0, top + 22, 64, 2); R(g, '#2e2448', 0, top + 24, 64, c.height); specks(top + 24, c.height, ['#3a3058', '#262040'], 50);
+    R(g, '#ffd84a', 4, top + 50, 24, 2); R(g, '#ffd84a', 36, top + 50, 24, 2);
+  }
+  return c;
+}
 function shadow(x, z, h, w = 7) {
   const X = Math.round(x - camX), Y = sy(z);
   ctx.globalAlpha = Math.max(0.12, 0.3 - h / 200); ctx.fillStyle = '#2a1838';
@@ -1367,14 +1399,8 @@ function draw() {
   drawLayer(th.far, 0.2, camX, 0, -78);
   drawLayer(th.near, 0.45, camX, 0, -80);
   // the street
-  const tiles = th.tiles, t0 = Math.floor(camX / T);
-  for (let tx = t0; tx <= t0 + Math.ceil(W / T) + 1; tx++) {
-    const X = Math.round(tx * T - camX);
-    ctx.drawImage(tiles[TOP], X, FLOOR_Y - 12);
-    for (let y = FLOOR_Y + 4; y < H; y += T) ctx.drawImage(tiles[FILL], X, y);
-  }
-  if (lvl.themeKey === 'city') for (let x = -((camX * 1) % 40); x < W; x += 40) R(ctx, '#ffd84a', Math.round(x), FLOOR_Y + 40, 20, 2);
-  if (lvl.themeKey === 'suburb') R(ctx, '#e8e0f0', 0, FLOOR_Y + 2, W, 1);
+  if (!th.floor) th.floor = makeFloor(lvl.themeKey, th.tiles);
+  for (let X = -Math.floor(((camX % 64) + 64) % 64); X < W; X += 64) ctx.drawImage(th.floor, X, FLOOR_Y - 12);
   for (const x of lvl.deco) draw_(PLANT, x, FLOOR_Y - 24);
   drawSpot();
   // fight area edges
@@ -1428,6 +1454,11 @@ function draw() {
   if (state === 'play' && !lvl.locked && frame % 40 < 26 && (!next || me.x < next.x0 + 40)) {
     text('GO', W - 30, 60, '#ffd84a', 2); R(ctx, '#ffd84a', W - 12, 62, 4, 6); R(ctx, '#ffd84a', W - 8, 64, 2, 2);
   }
+  if (me.tipT > 0 && state === 'play' && !banner) {
+    me.tipT--;
+    ctx.fillStyle = 'rgba(42,24,56,.8)'; ctx.fillRect(40, 176, W - 80, 13);
+    text('WASD MOVE  SPACE JUMP  CLICK/J HIT  SHIFT RUN', W / 2, 180, '#fff6b0', 1, 'center');
+  }
   drawHUD();
   if (invOpen) drawInventory();
   if (state === 'results') drawShop();
@@ -1449,7 +1480,7 @@ function drawHUD() {
   const w = weaponDef();
   R(ctx, P.k, 146, 2, 14, 14); R(ctx, '#4a3a60', 147, 3, 12, 12); ctx.drawImage(ICONS[w.icon], 148, 4);
   if (me.atkCd > 0) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(147, 3, 12, Math.round(12 * me.atkCd / w.cd)); }
-  if (save.munchie > 0) { ctx.drawImage(MUNCHIE, 164, 4); text('x' + save.munchie, 174, 6, '#ff9ab8'); }
+  if (save.munchie > 0) { ctx.drawImage(MUNCHIE, 164, 4); text('x' + save.munchie, 174, 3, '#ff9ab8'); text('E', 176, 10, '#b0a8c0'); }
   let bx = 212;
   for (const [k, ex] of [['speed', 'shatter'], ['magnet', 'kief'], ['power', 'hash']]) if (me.buffs[k] > 0 && (me.buffs[k] > 120 || frame % 10 < 6)) { ctx.drawImage(EXTRAS[ex].img, bx, 4); bx += 11; }
   if (me.star > 0) { ctx.drawImage(GOLD_LEAF, 188, 4); R(ctx, '#ffd84a', 198, 8, Math.ceil(me.star / 540 * 20), 3); }
@@ -1476,7 +1507,7 @@ function drawHUD() {
     text('CHILLING AT THE SMOKE SPOT', W / 2, 115, '#c8ffa0', 1, 'center');
     if (Net.online) {
       text((finInfo ? finInfo.n : 1) + '/' + (remotes.size + 1) + ' OF THE CREW MADE IT', W / 2, 125, '#ffffff', 1, 'center');
-      text(hurryT > 0 ? 'CREW HAS ' + Math.ceil(hurryT / 60) + 'S TO GET HERE' : finInfo && finInfo.hurried ? 'CALLED THE CREW...' : 'ENTER = CALL THE CREW (20S TIMER)', W / 2, 135, '#e4b3ff', 1, 'center');
+      text(hurryT > 0 ? 'CREW HAS ' + Math.ceil(hurryT / 60) + 'S TO GET HERE' : finInfo && finInfo.hurried ? 'CALLED THE CREW...' : 'ENTER OR SPACE = CALL THE CREW (20S)', W / 2, 135, '#e4b3ff', 1, 'center');
     }
   } else if (hurryT > 0 && state === 'play') {
     ctx.fillStyle = 'rgba(42,24,56,.75)'; ctx.fillRect(60, 24, W - 120, 20);
@@ -1490,12 +1521,12 @@ function drawInventory() {
   ctx.fillStyle = '#2a1838'; ctx.fillRect(16, 20, W - 32, H - 34);
   R(ctx, '#c8ffa0', 16, 20, W - 32, 1);
   text('INVENTORY', W / 2, 25, '#c8ffa0', 2, 'center');
-  text('WEAPONS  (1-5 OR Q TO SWITCH)', 26, 42, '#ffd84a');
+  text('WEAPONS  (Q OR MOUSE WHEEL TO SWITCH)', 26, 42, '#ffd84a');
   WEAPONS.forEach((w, i) => {
     const has = save.weapons.includes(w.id), sel = save.weapon === w.id, x = 28 + i * 54;
     R(ctx, sel ? '#c8ffa0' : P.k, x - 2, 51, 16, 16); R(ctx, '#4a3a60', x - 1, 52, 14, 14);
     ctx.globalAlpha = has ? 1 : .25; ctx.drawImage(ICONS[w.icon], x + 1, 54); ctx.globalAlpha = 1;
-    text((i + 1) + '', x + 16, 52, '#b0a8c0');
+    
     text(has ? w.name.split(' ').pop() : '???', x + 6, 70, has ? '#fff' : '#6a6080', 1, 'center');
   });
   text('ARMOR', 26, 84, '#ffd84a');
@@ -1505,7 +1536,7 @@ function drawInventory() {
     text(has ? a.name : '???', x + 12, 95, has ? '#fff' : '#6a6080');
   });
   text('ITEMS', 26, 112, '#ffd84a');
-  ctx.drawImage(ICONS.munchie, 28, 120); text('MUNCHIES x' + save.munchie + ' (C)', 40, 122, '#fff');
+  ctx.drawImage(ICONS.munchie, 28, 120); text('MUNCHIES x' + save.munchie + ' (E)', 40, 122, '#fff');
   ctx.drawImage(ICONS.preroll, 130, 121); text('PRE-ROLL x' + save.preroll, 142, 122, '#fff');
   ctx.drawImage(ICONS.gold, 212, 119); text('GOLD LEAF x' + save.gold, 224, 122, '#fff');
   text('FARM FUND  ' + save.coins + ' / ' + FARM_PRICE + '    SMOKE SPOTS ' + Math.min(save.spots, SPOTS_TO_FARM) + ' / ' + SPOTS_TO_FARM, W / 2, 140, '#c8ffa0', 1, 'center');

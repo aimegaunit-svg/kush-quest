@@ -17,19 +17,19 @@ Legendary stoners hang out at checkpoints and share wisdom (and a gift).
 Your progress saves in your browser.
 
 ## Controls
-| | Keyboard | Phone |
+| | Keyboard + mouse | Phone |
 |---|---|---|
-| Move (all 4 directions) | Arrows / WASD | D-pad |
-| Jump / Float (tap jump again in the air) | Space / Z | A |
-| Attack, 3-hit combo (while floating = smoke blast) | X / J / K | B |
+| Move (all 4 directions) | WASD / Arrows | D-pad |
+| Jump (press again in the air to float) | Space | A |
+| Hit (3-hit combo; while floating = smoke blast) | Left click / J | B |
 | Run | Shift | |
-| Switch weapon | Q or 1-5 | |
-| Inventory | I / Tab | INV |
-| Eat munchies | C | |
-| Emotes | 7 8 9 0 | |
-| Pause (solo) / Music | P / M | |
+| Switch weapon | Q / mouse wheel | |
+| Eat munchies | E | |
+| Inventory | Tab / I | INV |
+| Emotes | 1 2 3 4 | |
+| Pause (solo) / Music | Esc / M | |
 
-At the smoke spot, press **Enter** to call the crew (20 second timer for everyone else).
+At the smoke spot, press **Enter or Space** to call the crew (20 second timer for everyone else).
 
 ## Run it on your PC
 Install Node.js LTS (https://nodejs.org), then double-click **start.bat**.

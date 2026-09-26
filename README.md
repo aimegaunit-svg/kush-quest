@@ -42,9 +42,10 @@ Online: the room host picks the mission on the map. Anyone can press **H** on th
 |---|---|---|---|
 | Move (all 4 directions) | WASD / Arrows | | D-pad |
 | Jump | Space | | A |
-| Swing (3-hit combo; Shift+swing = lunge; in the air = spin) | J | Left click | B |
-| Throw (Rolling Papers / Nug Bombs) | K | Right click | |
-| Run | Shift | | |
+| Swing (3-hit combo; swing while running = lunge; in the air = spin; hold = charged swing*) | J | Left click | B |
+| Throw (Rolling Papers / Nug Bombs)* | K | Right click | |
+| Run (hold while moving) / Shift+Space = dodge roll* | Shift | | |
+| Hit a Toke: smoke cloud, hold = dragon breath, full Cooked = ultimate* | V | | |
 | Switch weapon / throwable | Q / R | Wheel | |
 | Munchies (hold next to a downed friend = revive) | E | | |
 | Quick item (Rage Brownie, Energy Soda...) | C | | |
@@ -54,9 +55,11 @@ Online: the room host picks the mission on the map. Anyone can press **H** on th
 | Menu: settings, controls, invite link, main menu | Esc | | |
 | Music / Fullscreen | M / F | | |
 
+\* Learned from bosses. Every boss at the end of a level teaches a skill.
+
 All menus work with the mouse too: hover to highlight, click to select, click again to buy/equip.
 
-**Weapons:** Giant Joint (sword, light burn), Lighter Blade (close, spreading fire), Dab Saber (long, pierces, crits), Bong Hammer (heavy, stuns), Grinder Spin (all around, bleed), Blunt Bat (home runs). Upgrade each to LV3 at the Head Shop.
+**Weapons:** Giant Joint (medium-reach swing, light burn once you learn Light the Cherry), Lighter Blade (close, spreading fire), Dab Saber (long, pierces, crits), Bong Hammer (heavy, stuns), Grinder Spin (all around, bleed), Blunt Bat (home runs). Upgrade each to LV3 at the Head Shop.
 
 At the smoke spot, press **Enter or Space** to call the crew (20 second timer for everyone else).
 

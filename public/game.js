@@ -223,7 +223,8 @@ function actionOf(code) {
   for (const a in settings.keys) if (settings.keys[a] === code) return a;
   return { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', ShiftRight: 'run', Enter: 'enter', KeyI: 'bag' }[code] || null;
 }
-let rebinding = null, chatOpen = false;
+const KL = a => keyLabel(settings.keys[a]);
+let rebinding = null, rebindWarn = null, chatOpen = false;
 function press(k, down) {
   if (down && !K[k]) { if (k === 'jump') K.jumpPressed = true; if (k === 'enter') K.enterPressed = true; if (k === 'attack') K.attackPressed = true; }
   K[k] = down;
@@ -231,9 +232,10 @@ function press(k, down) {
 addEventListener('keydown', e => {
   if (!running || chatOpen) return;
   const c = e.code;
+  if (Net.rejoin && e.code === 'Enter') { Net.doRejoin(); return; }
   if (rebinding) { // waiting for a key to bind
     e.preventDefault();
-    if (c !== 'Escape') { const old = settings.keys[rebinding]; for (const a in settings.keys) if (settings.keys[a] === c) settings.keys[a] = old; settings.keys[rebinding] = c; saveSettings(); SFX.buy(); }
+    if (c !== 'Escape') { const old = settings.keys[rebinding]; for (const a in settings.keys) if (a !== rebinding && settings.keys[a] === c) { settings.keys[a] = old; rebindWarn = { t: 240, m: keyLabel(c) + ' WAS ' + ACTION_NAMES[a] + ' - SWAPPED, THAT IS NOW ' + keyLabel(old) }; } settings.keys[rebinding] = c; saveSettings(); SFX.buy(); }
     rebinding = null; return;
   }
   const a = actionOf(c), nav = ['up', 'down', 'left', 'right'].includes(a) ? a : null;
@@ -635,7 +637,7 @@ ICONS.joint = sprite(['.........k', 'kkkkkkkkoy', 'kwwwwwwwyr', 'kkkkkkkkoo']);
 ICONS.dab = sprite(['........kk', 'kkkkkkkkEk', 'kEEEEEWWk.', 'kkkkkkkk..'], { ...P, E: '#b8b8d0', W: '#ffffff' });
 // --- weapons, armor, shop ---
 const WEAPONS = [
-  { id: 'puff', name: 'GIANT JOINT', icon: 'joint', dmg: 1, cd: 16, reach: 32, zr: 12, burn: 1, price: 0, desc: 'SWORD. MEDIUM REACH. HITS LEAVE A LITTLE BURN' },
+  { id: 'puff', name: 'GIANT JOINT', icon: 'joint', dmg: 1, cd: 16, reach: 32, zr: 12, burn: 1, price: 0, desc: 'MELEE SWING. MEDIUM REACH. HITS LEAVE A LITTLE BURN' },
   { id: 'lighter', name: 'LIGHTER BLADE', icon: 'lighter', dmg: 1, cd: 12, reach: 26, zr: 18, burn: 3, spread: 1, price: 90, desc: 'CLOSE + WIDE. BIG BURN THAT SPREADS TO NEIGHBORS' },
   { id: 'dab', name: 'DAB SABER', icon: 'dab', dmg: 2, cd: 10, reach: 46, zr: 8, crit: 0.25, pierce: 1, price: 180, desc: 'LONG + THIN + FAST. HITS THE WHOLE LINE. 25% CRITS' },
   { id: 'bong', name: 'BONG HAMMER', icon: 'bong', dmg: 3, cd: 26, reach: 30, zr: 22, stun: 60, kb: 1.6, price: 160, desc: 'SLOW + HEAVY. STUNS EVERYONE IT SMASHES' },
@@ -653,7 +655,7 @@ const SHOP = [
   ...WEAPONS.slice(1).map(w => ({ kind: 'weapon', ...w })),
   ...ARMORS.map(a => ({ kind: 'armor', ...a })),
   { kind: 'item', id: 'pouch', name: 'STASH POUCH', icon: 'pouch', price: 130, desc: 'MICE + SQUIRRELS CANT STEAL' },
-  { kind: 'ammo', id: 'papers', name: 'ROLLING PAPERS x10', icon: 'papers', price: 30, desc: 'THROWING STARS. PRESS K OR RIGHT-CLICK' },
+  { kind: 'ammo', id: 'papers', name: 'ROLLING PAPERS x10', icon: 'papers', price: 30, desc: 'THROWING STARS. THROW KEY OR RIGHT-CLICK' },
   { kind: 'ammo', id: 'bombs', name: 'NUG BOMBS x5', icon: 'bombs', price: 60, desc: 'LOB A SMOKY BOMB INTO A CROWD' },
 ];
 // rare bonus pickups: coins + a special effect
@@ -959,7 +961,7 @@ const SKILLS = {
   charge: { name: 'CHARGED SWING', desc: 'HOLD SWING, THEN LET GO FOR A HUGE HIT' },
   throw: { name: 'THROWING', desc: 'THROW ROLLING PAPERS + NUG BOMBS (K / RIGHT-CLICK). +10 PAPERS' },
   roll: { name: 'DODGE ROLL', desc: 'HOLD RUN + PRESS JUMP TO ROLL THROUGH ATTACKS' },
-  toke: { name: 'HIT A TOKE', desc: 'PRESS V: BLOW A SMOKE SCREEN. BUZZKILLS INSIDE GET CONFUSED. COSTS 20% COOKED' },
+  toke: { name: 'HIT A TOKE', desc: 'PRESS THE TOKE KEY: BLOW A SMOKE SCREEN. BUZZKILLS INSIDE GET CONFUSED. COSTS 20% COOKED' },
   pound: { name: 'GROUND POUND', desc: 'SWING WHILE FALLING TO SLAM THE GROUND AND STUN EVERYONE NEAR' },
   heart1: { name: 'IRON LUNGS', desc: '+1 MAX HEART' },
   hotbox: { name: 'HOTBOX', desc: 'YOUR SMOKE SCREEN IS BIGGER AND HURTS BUZZKILLS INSIDE' },
@@ -969,7 +971,7 @@ const SKILLS = {
   magnet: { name: 'STICKY FINGERS', desc: 'HASH COINS FLY TO YOU' },
   twothrow: { name: 'DOUBLE ROLL', desc: 'THROW TWO ROLLING PAPERS AT ONCE' },
   heart2: { name: 'BIG LUNGS', desc: '+1 MAX HEART' },
-  breath: { name: 'DRAGON BREATH', desc: 'HOLD V TO BREATHE FIRE. COSTS COOKED WHILE YOU HOLD' },
+  breath: { name: 'DRAGON BREATH', desc: 'HOLD THE TOKE KEY TO BREATHE FIRE. COSTS COOKED WHILE YOU HOLD' },
   rage: { name: 'COUCH LOCK RAGE', desc: 'AT ULTRA COOKED YOU HIT TWICE AS HARD' },
   rollsmoke: { name: 'SMOKE ROLL', desc: 'YOUR DODGE ROLL LEAVES A DAMAGING SMOKE TRAIL' },
   crit: { name: 'THIRD EYE', desc: '15% CRITICAL HITS WITH EVERY WEAPON' },
@@ -979,7 +981,7 @@ const SKILLS = {
   combo: { name: 'FLOW STATE', desc: 'COMBOS PAY OUT DOUBLE HASH COINS' },
   heart4: { name: 'ZEN MASTER', desc: '+1 MAX HEART' },
   sprint: { name: 'MUNCHIES RUN', desc: 'YOU MOVE 20% FASTER' },
-  ultimate: { name: 'THE ULTIMATE HIGH', desc: 'AT 100% COOKED PRESS V: A BLAST THAT HITS EVERYTHING ON SCREEN' },
+  ultimate: { name: 'THE ULTIMATE HIGH', desc: 'AT 100% COOKED PRESS THE TOKE KEY: A BLAST THAT HITS EVERYTHING ON SCREEN' },
 };
 // one boss per level; every 5th is a MEGA boss
 const BOSSES = [
@@ -1189,7 +1191,7 @@ function openChest(c) {
   SFX.power(); shake = 5;
   if (loot === 'papers' || loot === 'bombs') {
     save.throws[loot] = (save.throws[loot] || 0) + (loot === 'papers' ? 15 : 6); save.throwSel = loot; persist();
-    banner = loot === 'papers' ? { t: 260, a: 'FOUND: ROLLING PAPERS x15!', b: 'THROW WITH K OR RIGHT-CLICK. GREAT FOR BUZZKILLS WHO KEEP THEIR DISTANCE...' } : { t: 220, a: 'FOUND: NUG BOMBS x6!', b: 'PRESS R TO SWITCH, K TO LOB ONE INTO A CROWD' };
+    banner = loot === 'papers' ? { t: 260, a: 'FOUND: ROLLING PAPERS x15!', b: 'THROW WITH ' + KL('throw') + ' OR RIGHT-CLICK. GREAT FOR BUZZKILLS WHO KEEP THEIR DISTANCE...' } : { t: 220, a: 'FOUND: NUG BOMBS x6!', b: 'PRESS ' + KL('throwsel') + ' TO SWITCH, ' + KL('throw') + ' TO LOB ONE INTO A CROWD' };
     return;
   }
   const def = [...WEAPONS, ...ARMORS, { id: 'pouch', name: 'STASH POUCH' }].find(i => i.id === loot);
@@ -1199,7 +1201,7 @@ function openChest(c) {
     if (WEAPONS.some(w => w.id === loot)) { save.weapons.push(loot); save.weapon = loot; }
     else if (loot === 'pouch') save.pouch = true;
     else { save.armor.push(loot); me.hp = maxHp(); }
-    banner = { t: 180, a: 'FOUND: ' + def.name + '!', b: WEAPONS.some(w => w.id === loot) ? 'EQUIPPED - CLICK OR J TO SWING, Q TO SWITCH' : 'CHECK YOUR INVENTORY WITH I' };
+    banner = { t: 180, a: 'FOUND: ' + def.name + '!', b: WEAPONS.some(w => w.id === loot) ? 'EQUIPPED - CLICK OR ' + KL('attack') + ' TO SWING, ' + KL('weapon') + ' TO SWITCH' : 'SAVED IN YOUR BAG - OPEN IT WITH ' + KL('bag') + ', QUICK-USE WITH ' + KL('quick') };
   }
   persist();
 }
@@ -1242,7 +1244,7 @@ function hurt(dmg = 1, cookedLoss = 0, fromX) {
 function knockedOut() {
   if (Net.online && remotes.size > 0 && !me.down) {
     me.down = 480; me.hp = 0; me.vx = me.vz = 0; me.h = 0; me.inv = 999; me.revive = 0;
-    banner = { t: 160, a: 'YOU GOT BEAT UP!', b: 'A HOMIE CAN REVIVE YOU - STAND NEXT TO YOU + HOLD E' };
+    banner = { t: 160, a: 'YOU GOT BEAT UP!', b: 'A HOMIE CAN REVIVE YOU - STAND NEXT TO YOU + HOLD ' + KL('munchie') };
     SFX.hurt(); return;
   }
   return knockedOutFinal();
@@ -1903,7 +1905,7 @@ function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, si
   if (down) {
     const img = PLAYER[color][0], X = Math.round(x - camX + 5), Y = Math.round(y + 14);
     ctx.save(); ctx.translate(X, Y); ctx.rotate(Math.PI / 2 * (face > 0 ? -1 : 1)); ctx.drawImage(img, -8, -10); ctx.restore();
-    if (frame % 40 < 28) text(down === true ? 'HOLD E TO REVIVE' : 'DOWN ' + Math.ceil(down / 60) + 'S', x + 5 - camX, y - 4, '#ff9ab8', 1, 'center');
+    if (frame % 40 < 28) text(down === true ? 'HOLD ' + KL('munchie') + ' TO REVIVE' : 'DOWN ' + Math.ceil(down / 60) + 'S', x + 5 - camX, y - 4, '#ff9ab8', 1, 'center');
     if (name) text(name, x + 5 - camX, y - 12, SHIRTS[color], 1, 'center');
     return;
   }
@@ -2231,7 +2233,7 @@ function drawMenu() {
   });
   if (Net.online && menu.page === 'main') text('ROOM CODE: ' + Net.code, W / 2, y0 + h - 12, '#e4b3ff', 1, 'center');
   if (menu.page === 'settings') text('LEFT/RIGHT OR -/+ CHANGES VOLUME', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
-  if (menu.page === 'controls') text(rebinding ? 'PRESS ANY KEY (ESC CANCELS)' : 'CLICK A ROW, THEN PRESS THE NEW KEY. ARROWS + MOUSE ALWAYS WORK', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
+  if (menu.page === 'controls') text(rebinding ? 'PRESS ANY KEY (ESC CANCELS)' : rebindWarn && rebindWarn.t-- > 0 ? rebindWarn.m : 'CLICK A ROW, THEN PRESS THE NEW KEY. ARROWS + MOUSE ALWAYS WORK', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
   if (menu.msg) text(menu.msg, W / 2, y0 + h + 16, '#c8ffa0', 1, 'center');
 }
 function draw() { TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
@@ -2399,6 +2401,7 @@ function drawHUD() {
     ctx.fillStyle = 'rgba(42,24,56,.75)'; ctx.fillRect(0, 62, W, banner.b ? 34 : 22);
     text(banner.a, W / 2, 68, '#c8ffa0', 2, 'center');
     if (banner.b) text(banner.b, W / 2, 84, '#fff', 1, 'center');
+    if (Net.rejoin) hot(0, 62, W, 34, () => Net.doRejoin());
     ctx.globalAlpha = 1;
   }
   if (state === 'sitting') {
@@ -2437,7 +2440,6 @@ function shopEntries() {
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
   return [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }, ...ups, ...uses, ...SHOP];
 }
-function shopEntriesOld() { return [...SHOP, { kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP' }]; }
 function itemStatus(it) {
   if (it.kind === 'weapon' && save.weapons.includes(it.id)) return 'OWNED';
   if (it.kind === 'armor' && save.armor.includes(it.id)) return 'OWNED';
@@ -2958,7 +2960,7 @@ const INV_ROWS = () => [
   { label: 'MELEE', items: WEAPONS.map(w => ({ kind: 'weapon', def: w, icon: ICONS[w.icon], has: save.weapons.includes(w.id), on: save.weapon === w.id })) },
   { label: 'THROW', items: THROWS.map(t => ({ kind: 'throw', def: t, icon: ICONS[t.id], has: save.throws[t.id] > 0, on: save.throwSel === t.id, count: save.throws[t.id] || 0 })) },
   { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'MICE + SQUIRRELS CANT STEAL' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
-  { label: 'ITEMS', items: Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, def: { name: d.name, desc: d.desc + '. SPACE: USE NOW. C: QUICK-USE' + (save.quick === id ? ' (SET)' : '') }, icon: ICONS[d.icon], has: save[id] > 0, count: save[id] || 0, on: save.quick === id })) },
+  { label: 'ITEMS', items: Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, def: { name: d.name, desc: d.desc + '. SPACE: USE NOW. ' + KL('quick') + ': QUICK-USE' + (save.quick === id ? ' (SET)' : '') }, icon: ICONS[d.icon], has: save[id] > 0, count: save[id] || 0, on: save.quick === id })) },
 ];
 function updateInventory() {
   const rows = INV_ROWS();
@@ -3002,7 +3004,7 @@ function drawInventory() {
   const it = rows[invRow].items[invCol];
   R(ctx, '#4a3a60', 172, 42, W - 188, 98);
   text(it.has ? it.def.name : '??? LOCKED', 178, 48, it.has ? '#ffd84a' : '#8a809a');
-  wrap(it.has ? it.def.desc : 'FIND IT IN A CHEST OR BUY IT AT THE HEAD SHOP', 178, 60, 30, '#ffffff');
+  wrap(it.has ? it.def.desc : (it.def && it.def.id === 'blunt' ? 'FIND IT IN A CHEST - NOT SOLD IN SHOPS' : it.kind === 'use' ? 'BUY IT AT THE HEAD SHOP OR FIND IT IN A CHEST' : 'BUY IT AT THE HEAD SHOP'), 178, 60, 30, '#ffffff');
   if (it.kind === 'weapon' && it.has) { text('LV ' + wlv(it.def.id) + '   DAMAGE ' + (it.def.dmg + wlv(it.def.id) - 1), 178, 96, '#ff9ab8'); text('REACH ' + it.def.reach, 178, 106, '#9ae8ff'); }
   if (it.on) text('EQUIPPED', 178, 126, '#7fe07a');
   R(ctx, '#4a3a60', 16, 150, W - 32, 30);
@@ -3053,6 +3055,7 @@ const Net = {
       };
     });
   },
+  doRejoin() { if (!this.rejoin) return; this.rejoin = false; banner = null; this.lost(); },
   lost() {
     this.online = false; this.ws = null; remotes.clear(); this.hostId = this.id;
     if (this.reconnecting) return;
@@ -3061,7 +3064,7 @@ const Net = {
     let tries = 0;
     const attempt = () => {
       if (this.online) return;
-      if (++tries > 30) { this.reconnecting = false; banner = { t: 600, a: 'DISCONNECTED', b: 'REFRESH THE PAGE TO REJOIN' }; return; }
+      if (++tries > 30) { this.reconnecting = false; banner = { t: 99999, a: 'DISCONNECTED', b: 'CLICK HERE OR PRESS ENTER TO REJOIN' }; this.rejoin = true; return; }
       this.connect({ t: 'join', code: this.code, name: this.name }).catch(() => setTimeout(attempt, 2500));
     };
     setTimeout(attempt, 1000);

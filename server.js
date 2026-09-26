@@ -17,11 +17,12 @@ const MIME = {
 
 // ---------- static files ----------
 const server = http.createServer((req, res) => {
-  let url = decodeURIComponent((req.url || '/').split('?')[0]);
+  let url;
+  try { url = decodeURIComponent((req.url || '/').split('?')[0]); } catch { res.writeHead(400); return res.end(); }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
   if (url === '/') url = '/index.html';
   const file = path.normalize(path.join(PUBLIC, url));
-  if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  if (file !== PUBLIC && !file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
@@ -62,7 +63,8 @@ server.on('upgrade', (req, socket) => {
     client.seen = Date.now();
     buf = Buffer.concat([buf, chunk]);
     while (buf.length >= 2) {
-      const op = buf[0] & 0x0f, masked = buf[1] & 0x80;
+      const op = buf[0] & 0x0f, masked = buf[1] & 0x80, fin = buf[0] & 0x80;
+      if (!masked || !fin) { socket.end(frame(Buffer.from([0x03, 0xea]), 8)); return; } // 1002: protocol error
       let len = buf[1] & 0x7f, off = 2;
       if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
       else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
@@ -74,7 +76,11 @@ server.on('upgrade', (req, socket) => {
       buf = buf.subarray(off + len);
       if (op === 8) { socket.end(frame(Buffer.alloc(0), 8)); return; }
       if (op === 9) { socket.write(frame(payload, 10)); continue; }
-      if (op === 1) { let msg; try { msg = JSON.parse(payload.toString()); } catch { continue; } handle(client, msg); }
+      if (op === 1) {
+        const now = Date.now(); if (now - (client.rt || 0) > 1000) { client.rt = now; client.rn = 0; }
+        if (++client.rn > 120) continue; // max 120 messages/sec per player
+        let msg; try { msg = JSON.parse(payload.toString()); } catch { continue; } handle(client, msg);
+      }
     }
   });
   socket.on('close', () => { clients.delete(client); leave(client); });
@@ -117,7 +123,7 @@ function enter(client, code, name) {
 
 function startLevel(room, n) {
   room.level = Math.max(0, Math.min(MAX_LEVEL, n | 0));
-  room.phase = 'play'; room.fin.clear(); room.ready.clear(); room.collected.clear(); room.hurried = false;
+  room.phase = 'play'; room.fin.clear(); room.ready.clear(); room.collected.clear(); room.hurried = false; clearTimeout(room.hurryTimer);
   broadcast(room, { t: 'level', n: room.level });
 }
 
@@ -162,7 +168,7 @@ function handle(client, m) {
     case 'col': { // something was collected / defeated: first one wins
       if (!room || (m.l | 0) !== room.level) return;
       const id = String(m.id).slice(0, 20);
-      if (room.collected.has(id)) return;
+      if (!/^[pid][\w]{0,15}$/.test(id) || room.collected.size > 3000 || room.collected.has(id)) return;
       room.collected.add(id);
       broadcast(room, { t: 'col', id, l: room.level }, client.id);
       break;
@@ -177,25 +183,27 @@ function handle(client, m) {
       if (!room || room.phase !== 'play' || room.hurried || !room.fin.has(client.id)) return;
       room.hurried = true;
       broadcast(room, { t: 'hurry', name: room.players.get(client.id).name });
+      { const lvlAt = room.level; clearTimeout(room.hurryTimer); room.hurryTimer = setTimeout(() => { if (room.phase === 'play' && room.level === lvlAt) { room.phase = 'shop'; broadcast(room, { t: 'allfin' }); } }, 20500); }
       break;
-    case 'timeup': // countdown ran out on a client: end the mission for everyone
-      if (!room || room.phase !== 'play' || !room.hurried) return;
-      room.phase = 'shop';
-      broadcast(room, { t: 'allfin' });
-      break;
+    case 'timeup': break; // the server runs the countdown itself now
     case 'ready':
       if (!room || room.phase !== 'shop') return;
       room.ready.add(client.id);
-      broadcast(room, { t: 'ready', n: room.ready.size, of: room.players.size });
+      broadcast(room, { t: 'ready', n: room.ready.size, of: room.players.size, who: client.id });
       checkProgress(room);
       break;
     // beat-em-up sync: the host runs the enemies, everyone else reports hits/thefts to it
-    case 'es': if (room && client.id === room.host) broadcast(room, m, client.id); break;
-    case 'eshot': case 'kill': if (room) broadcast(room, m, client.id); break;
-    case 'hit': case 'steal': {
+    case 'es': // enemy snapshot from the host only
+      if (room && client.id === room.host && Array.isArray(m.e) && m.e.length <= 400)
+        broadcast(room, { t: 'es', l: m.l | 0, zi: m.zi | 0, lk: m.lk | 0, zc: m.zc | 0, sk: Array.isArray(m.sk) ? m.sk.slice(0, 400).map(n => n | 0) : [], e: m.e.map(a => Array.isArray(a) ? a.slice(0, 9).map(n => +n || 0) : []) }, client.id);
+      break;
+    case 'eshot': if (room && client.id === room.host) broadcast(room, { t: 'eshot', x: +m.x || 0, z: +m.z || 0, vx: Math.max(-4, Math.min(4, +m.vx || 0)), l: m.l | 0 }, client.id); break;
+    case 'kill': if (room && client.id === room.host) broadcast(room, { t: 'kill', i: m.i | 0, by: String(m.by).slice(0, 12), st: m.st | 0, l: m.l | 0 }, client.id); break;
+    case 'hit': case 'steal': case 'rev': {
       if (!room) return;
-      const h = room.players.get(room.host);
-      if (h) h.client.send({ ...m, id: client.id });
+      const out = { t: m.t, id: client.id, i: m.i | 0, l: m.l | 0, d: Math.max(0, Math.min(12, m.d | 0)), dir: Math.sign(+m.dir || 0), s: m.s ? 1 : 0, k: Math.max(0, Math.min(20, m.k | 0)), who: String(m.who || '').slice(0, 12) };
+      if (m.t === 'rev') broadcast(room, out, client.id);
+      else { const h = room.players.get(room.host); if (h && room.host !== client.id) h.client.send(out); }
       break;
     }
     case 'pick': // the host picks a level on the world map

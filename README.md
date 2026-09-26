@@ -1,6 +1,6 @@
 # KUSH QUEST: Road to the Farm (v0.4)
 
-Cozy retro co-op platformer. Up to 4 friends online. Save up hash coins to buy your own pot farm.
+Cozy retro co-op platformer starring 4 stoner homies (Rasta, Snapback, Bucket Hat, Afro) swinging oversized weapons: Giant Joint, Giant Lighter, Mega Bong, Dab Tool, Giant Grinder. Up to 4 friends online. Save up hash coins to buy your own pot farm.
 
 **The mission:** each mission, get **COOKED** (50%+ on the meter, from nugs + smoke rings) and reach the **SMOKE SPOT** at the end.
 Every smoke spot gets you closer to the farm. Reach 6 smoke spots and save up 1500 hash coins to buy **THE POT FARM**.
@@ -11,7 +11,7 @@ Every smoke spot gets you closer to the farm. Reach 6 smoke spots and save up 15
 Shatter (speed), Diamonds (+50 coins, +cooked), Kief (coin magnet), Hash (+1 attack damage).
 Legendary stoners hang out at checkpoints and share wisdom (and a gift).
 
-**Head Shop** (between missions): weapons (Lighter, Bong Blaster, Paper Boomerang, Grinder Spin), armor (Hoodie, Tie-Dye Vest, Rasta Crown), Stash Pouch (anti-theft), Munchies, Pre-Rolls, Golden Leaves, and the Farm.
+**Head Shop** (between missions): weapons (Giant Lighter, Mega Bong, Dab Tool, Giant Grinder), armor (Hoodie, Tie-Dye Vest, Rasta Crown), Stash Pouch (anti-theft), Munchies, Pre-Rolls, Golden Leaves, and the Farm.
 Your progress saves in your browser.
 
 ## Controls

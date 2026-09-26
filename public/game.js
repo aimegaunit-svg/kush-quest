@@ -176,62 +176,39 @@ function flashOf(img) {
   return c;
 }
 
-// --- players: round "Budlings" with a leaf sprout (Kirby-ish styling, original characters) ---
-const BODY_COLORS = [
-  { b: '#8ef0b0', B: '#4fc47e', f: '#2f8e5a', name: 'MINT' },
-  { b: '#ffc49a', B: '#e88a5a', f: '#b0502e', name: 'PEACH' },
-  { b: '#d4b4ff', B: '#9a74e8', f: '#6040b0', name: 'GRAPE' },
-  { b: '#9ad4ff', B: '#5a9ae8', f: '#2e62b0', name: 'SKY' },
+// --- players: the homies (chibi stoner dudes, a different look per player slot) ---
+const C16 = s => { const pad = 16 - s.length, l = Math.floor(pad / 2); return '.'.repeat(l) + s + '.'.repeat(pad - l); };
+const LOOKS = [
+  { name: 'RASTA', pal: { s: '#b87a4a', S: '#8a5530', b: '#3fae5a', B: '#2a7a3a', d: '#3a3a5a', h: '#2a1838' },
+    hat: ['kkkkkk', 'kggyyrrk', 'kgggyyyrrk', 'kkkkkkkkkkkk'], side: 'h' },
+  { name: 'SNAPBACK', pal: { s: '#ffd9b8', S: '#e0a888', b: '#ffffff', B: '#c8c4d8', d: '#3a6ad8', h: '#6a4428' },
+    hat: ['kkkkkk', 'krrrrrrk', 'krrrrwrrrk', 'kkkkkkkkkkkkkk'], side: null },
+  { name: 'BUCKET', pal: { s: '#e8a878', S: '#c07a50', b: '#ff9ab8', B: '#c070ff', d: '#3a3a5a', h: '#9a6a42' },
+    hat: ['kkkkkk', 'kppppppk', 'kppGppppk', 'kkppppppppppkk'], side: null },
+  { name: 'AFRO', pal: { s: '#7a4a2a', S: '#5a3018', b: '#ff9a3a', B: '#c86a1a', d: '#2a1838', h: '#2a1838', E: '#8a8aa8' },
+    hat: ['hhhhhh', 'hhhhhhhhhh', 'hhhhhhhhhhhh', 'hhhhhhhhhhhh'], side: 'E' },
 ];
-const SHIRTS = BODY_COLORS.map(c => c.B);
-const BUD_TOP = [
-  '.......GG.......',
-  '......GLGG......',
-  '.......g........',
-  '.....kkkkkk.....',
-  '...kkbbbbbbkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbBBbbbbBBbk..',
-  '.kbbbkbbbbkbbbk.',
-  '.kbcckbbbbkccbk.',
-];
-const BUD_MOUTH = '.kbbbbbkkbbbbbk.';
-const BUD_MOUTH_OPEN = '.kbbbbkRRkbbbbk.';
-const BUD_LOW = [
-  '.kbbbbbbbbbbbbk.',
-  '..kbbbbbbbbbbk..',
-  '..kBbbbbbbbbBk..',
-  '...kkBBBBBBkk...',
-];
-const FEET_STAND = ['..kffk....kffk..', '..kkkk....kkkk..'];
-const FEET_WALK = ['.kffk......kffk.', '.kkkk......kkk..'];
-const FEET_WALK2 = ['...kffk..kffk...', '...kkkk..kkkk...'];
-const FEET_JUMP = ['....kffkkffk....', '.....kk..kk.....'];
-const PUFF_ROWS = [
-  '........GG........',
-  '.......GLGG.......',
-  '........g.........',
-  '.....kkkkkkkk.....',
-  '...kkbbbbbbbbkk...',
-  '..kbbbbbbbbbbbbk..',
-  '.kbbbbbbbbbbbbbbk.',
-  '.kbbBBbbbbbbBBbbk.',
-  'kbbbbkbbbbbbkbbbbk',
-  'kbcccbbbbbbbbcccbk',
-  'kbcccbbbbkbbbcccbk',
-  'kbbbbbbbkkkbbbbbbk',
-  '.kbbbbbbbkbbbbbbk.',
-  '.kBbbbbbbbbbbbbBk.',
-  '..kkBBBBBBBBBBkk..',
-  '...kffk....kffk...',
-  '...kkkk....kkkk...',
-];
-// frames: 0 stand, 1 walk, 2 walk2, 3 jump, 4 puffed, 5 attack
-const PLAYER = BODY_COLORS.map(col => {
-  const pal = { ...P, b: col.b, B: col.B, f: col.f };
-  const f = (mouth, feet) => sprite([...BUD_TOP, mouth, ...BUD_LOW, ...feet], pal);
-  return [f(BUD_MOUTH, FEET_STAND), f(BUD_MOUTH, FEET_WALK), f(BUD_MOUTH, FEET_WALK2), f(BUD_MOUTH, FEET_JUMP), sprite(PUFF_ROWS, pal), f(BUD_MOUTH_OPEN, FEET_STAND)];
+const SHIRTS = LOOKS.map(l => l.pal.b === '#ffffff' ? '#ff5a6a' : l.pal.b);
+function homieRows(look, pose) {
+  const side = look.side, wrap = (inner, sd = side) => C16(sd ? sd + 'k' + inner + 'k' + sd : 'k' + inner + 'k');
+  const face = [wrap('ssssssss'), wrap('sSssssSs'), wrap('skssssks'), wrap('ssskksss', null), C16('kssssssk')];
+  let body = [C16('kbbbbbbk'), C16('kbbbbbbbbk'), C16('ksbbbbbbbbsk'), C16('ksbBbbbbBbsk'), C16('kbbbbbbbbk')];
+  if (pose === 'jump') body = [C16('kbbbbbbk'), C16('skbbbbbbbbks'), C16('kbbbbbbbbk'), C16('kbBbbbbBbk'), C16('kbbbbbbbbk')];
+  if (pose === 'attack') body[2] = '..ksbbbbbbbbksss';
+  const legs = {
+    stand: [C16('kddddddk'), C16('kddkkddk'), C16('kdk..kdk'), C16('kkk..kkk')],
+    walk1: [C16('kddddddk'), C16('kddk..kddk'), C16('kdk....kdk'), C16('kkk....kkk')],
+    walk2: [C16('kddddddk'), C16('kddddk'), C16('kdkkdk'), C16('kkkkkk')],
+    jump: [C16('kddddddk'), C16('kdk..kdk'), C16('kk....kk'), C16('')],
+  }[pose === 'attack' || pose === 'float' ? 'stand' : pose];
+  return [...look.hat.map(C16), ...face, ...body, ...legs];
+}
+// frames: 0 stand, 1 walk, 2 walk2, 3 jump, 4 float (drawn on a smoke cloud), 5 attack
+const PLAYER = LOOKS.map(look => {
+  const pal = { ...P, ...look.pal };
+  return ['stand', 'walk1', 'walk2', 'jump', 'float', 'attack'].map(pose => sprite(homieRows(look, pose), pal));
 });
+const BODY_COLORS = LOOKS;
 
 // --- enemies ---
 const COP_ROWS = [
@@ -408,13 +385,73 @@ const ICONS = {
   farm: sprite(['....kk......', '...krrk.....', '..krrrrk....', '.krrrrrrk...', 'kkkkkkkkkk..', '.kwwkkwwk...', '.kwwkNkwk...', '.kkkkNkkk...', 'GLGLGLGLGL..', 'gGgGgGgGgG..']),
 };
 
+// --- oversized held weapons ---
+const HELD = {
+  puff: sprite([ // giant joint
+    '....................kk..',
+    '..................kkook.',
+    'kkkkkkkkkkkkkkkkkkoyyrk.',
+    'kWwwwwwwwwwwwwwwwwwoyrk.',
+    'kwwwwwwwwwwwwwwwwwwyyrk.',
+    'kkkkkkkkkkkkkkkkkkkoork.',
+    '..................kkkk..',
+  ]),
+  lighter: sprite([
+    '...kkk...',
+    '..kEEEk..',
+    '..kEkEk..',
+    'kkkkkkkkk',
+    'krrrrrrRk',
+    'krwrrrrRk',
+    'krwrrrrRk',
+    'krrrrrrRk',
+    'krrrrrrRk',
+    'krrrrrrRk',
+    'krrrrrrRk',
+    'kkkkkkkkk',
+  ]),
+  bong: sprite([
+    '..kkkk......',
+    '..kvvk......',
+    '..kvvk......',
+    '..kvvk......',
+    '..kvvk.kk...',
+    '..kvvk.kEk..',
+    '..kvvkkEk...',
+    '.kvvvvvkk...',
+    'kvvvvvvvk...',
+    'kvGGGGGvk...',
+    'kvGLGGGvk...',
+    'kvGGGGGvk...',
+    '.kkkkkkk....',
+  ], { ...P, v: '#bfe8ff' }),
+  dab: sprite([
+    '..........................kk',
+    'kkkkkkkkkkkkkkkkkkkkkkkkkkEk',
+    'kEEEEEEEEEEEEEEEEEEWWWWWWEk.',
+    'kkkkkkkkkkkkkkkkkkkkkkkkkk..',
+  ], { ...P, E: '#b8b8d0', W: '#ffffff' }),
+  grinder: sprite([
+    '...kkkkkk...',
+    '..kGGGGGGk..',
+    '.kGLGGGGGGk.',
+    'kGGkGGkGGkGk',
+    'kkkkkkkkkkkk',
+    'kmmmmmmmmmmk',
+    'kMkMkMkMkMkk',
+    'kmmmmmmmmmmk',
+    '.kkkkkkkkkk.',
+  ]),
+};
+ICONS.joint = sprite(['.........k', 'kkkkkkkkoy', 'kwwwwwwwyr', 'kkkkkkkkoo']);
+ICONS.dab = sprite(['........kk', 'kkkkkkkkEk', 'kEEEEEWWk.', 'kkkkkkkk..'], { ...P, E: '#b8b8d0', W: '#ffffff' });
 // --- weapons, armor, shop ---
 const WEAPONS = [
-  { id: 'puff', name: 'SMOKE PUFF', icon: 'puff', dmg: 1, cd: 22, price: 0, desc: 'FREE. SHORT PUFF OF SMOKE' },
-  { id: 'lighter', name: 'LIGHTER', icon: 'lighter', dmg: 2, cd: 12, price: 90, desc: 'CLOSE FLAME BURST' },
-  { id: 'bong', name: 'BONG BLASTER', icon: 'bong', dmg: 1, cd: 11, price: 160, desc: 'FAST LONG RANGE BUBBLES' },
-  { id: 'boomer', name: 'PAPER BOOMERANG', icon: 'boomer', dmg: 2, cd: 30, price: 200, desc: 'FLIES OUT AND COMES BACK' },
-  { id: 'grinder', name: 'GRINDER SPIN', icon: 'grinder', dmg: 3, cd: 40, price: 280, desc: 'SPIN ATTACK ALL AROUND' },
+  { id: 'puff', name: 'GIANT JOINT', icon: 'joint', dmg: 1, cd: 18, price: 0, desc: 'FREE. SWING A HUGE JOINT. LEAVES SMOKE' },
+  { id: 'lighter', name: 'GIANT LIGHTER', icon: 'lighter', dmg: 2, cd: 14, price: 90, desc: 'FLICK IT FOR A FLAME BURST' },
+  { id: 'bong', name: 'MEGA BONG', icon: 'bong', dmg: 2, cd: 22, price: 160, desc: 'BIG SMASH + BUBBLE SHOT' },
+  { id: 'dab', name: 'DAB TOOL', icon: 'dab', dmg: 2, cd: 10, price: 200, desc: 'LONG FAST STABS' },
+  { id: 'grinder', name: 'GIANT GRINDER', icon: 'grinder', dmg: 3, cd: 36, price: 280, desc: 'SPIN IT ALL AROUND YOU' },
 ];
 const ARMORS = [
   { id: 'hoodie', name: 'COMFY HOODIE', icon: 'hoodie', hp: 1, price: 70, desc: '+1 MAX HEART' },
@@ -617,7 +654,7 @@ function drawLayer(img, factor, camX, drift = 0) {
 //  MISSIONS (built from hand-made chunks, same seed = same level for everyone)
 // ============================================================
 let COLS = 0;
-const MISSION_LOOT = ['lighter', 'hoodie', 'boomer', 'vest', 'pouch', 'crown', 'bong', 'grinder'];
+const MISSION_LOOT = ['lighter', 'hoodie', 'dab', 'vest', 'pouch', 'crown', 'bong', 'grinder'];
 function missionName(n) {
   const th = THEMES[THEME_ORDER[n % 3]];
   return ['MISSION ' + (n + 1), th.name + (n >= 3 ? ' REMIX' : '')];
@@ -727,7 +764,7 @@ function buildLevel(n) {
 
   return {
     n, themeKey, theme, name: missionName(n), map: m, coins, nugs, rings, munchies, enemies, chests, deco, extras, legend, bumps: [], drops: [],
-    cp: { x: cpX * T, y: 10, active: false }, spot, spawn: { x: 2 * T, y: 9 * T - 13 }
+    cp: { x: cpX * T, y: 10, active: false }, spot, spawn: { x: 2 * T, y: 10 * T - 17 }
   };
 }
 // ============================================================
@@ -737,6 +774,7 @@ const SAVE_KEY = 'kq_save_v2';
 function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false }; }
 let save = defaultSave();
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && typeof s === 'object') save = { ...defaultSave(), ...s }; } catch (e) {}
+save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const maxHp = () => 4 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0);
 const weaponDef = () => WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];
@@ -751,7 +789,7 @@ const remotes = new Map();
 
 function makePlayer() {
   return {
-    x: lvl.spawn.x, y: lvl.spawn.y, w: 12, h: 13, vx: 0, vy: 0, onGround: false, face: 1,
+    x: lvl.spawn.x, y: lvl.spawn.y, w: 10, h: 17, vx: 0, vy: 0, onGround: false, face: 1,
     puffed: false, flaps: 0, coyote: 0, jumpBuf: 0, cut: false, inv: 60, walkT: 0, sq: 0, star: 0,
     hp: maxHp(), cooked: 0, buffs: { speed: 0, magnet: 0, power: 0 }, legendT: 0, combo: 0, comboT: 0, best: 0, atkCd: 0, atkT: 0,
     earned: 0, lost: 0, kills: 0, nugs: 0,
@@ -938,14 +976,17 @@ function selectWeapon(i) {
 //  ATTACKS
 // ============================================================
 function spawnShot(kind, x, y, f, mine) {
-  const base = { kind, f, mine, t: 0, hit: new Set() };
-  if (kind === 0) Object.assign(base, { x: x + f * 8, y: y + 2, w: 10, h: 10, vx: f * 3, vy: 0, life: 20, dmg: 1 });           // smoke puff
-  if (kind === 1) Object.assign(base, { x: x + (f > 0 ? 12 : -22), y: y - 2, w: 22, h: 16, vx: 0, vy: 0, life: 12, dmg: 2 });   // flame
-  if (kind === 2) Object.assign(base, { x: x + f * 8, y: y + 3, w: 7, h: 7, vx: f * 4.5, vy: 0, life: 40, dmg: 1 });           // bubble
-  if (kind === 3) Object.assign(base, { x: x + f * 8, y: y + 2, w: 10, h: 6, vx: f * 4, vy: 0, life: 70, dmg: 2, back: false }); // boomerang
-  if (kind === 4) Object.assign(base, { x: x - 10, y: y - 6, w: 34, h: 26, vx: 0, vy: 0, life: 22, dmg: 3 });                  // grinder spin
-  if (kind === 5) Object.assign(base, { x: x + f * 8, y: y, w: 12, h: 12, vx: f * 3.5, vy: 0, life: 22, dmg: 2 });             // exhale (from float)
+  const base = { kind, f, mine, t: 0, hit: new Set(), vx: 0, vy: 0 };
+  if (kind === 0) Object.assign(base, { w: 24, h: 20, life: 10, dmg: 1, ox: f > 0 ? 8 : -22, oy: -2 });           // giant joint swing
+  if (kind === 1) Object.assign(base, { w: 24, h: 16, life: 12, dmg: 2, ox: f > 0 ? 12 : -26, oy: 0 });           // lighter flame
+  if (kind === 2) Object.assign(base, { w: 22, h: 22, life: 10, dmg: 2, ox: f > 0 ? 8 : -20, oy: -4 });           // bong smash
+  if (kind === 3) Object.assign(base, { w: 30, h: 8, life: 8, dmg: 2, ox: f > 0 ? 10 : -30, oy: 6 });             // dab stab
+  if (kind === 4) Object.assign(base, { w: 38, h: 30, life: 22, dmg: 3, ox: -14, oy: -6 });                        // grinder spin
+  if (kind === 5) Object.assign(base, { x: x + f * 8, y: y + 2, w: 12, h: 12, vx: f * 3.5, life: 22, dmg: 2 });  // exhale from floating
+  if (kind === 6) Object.assign(base, { x: x + f * 10, y: y + 4, w: 7, h: 7, vx: f * 4.5, life: 40, dmg: 1 });   // bong bubble
+  if (base.ox !== undefined) { base.x = x + base.ox; base.y = y + base.oy; base.px = x; base.py = y; }
   shots.push(base);
+  if (kind === 2) spawnShot(6, x, y, f, mine);
 }
 function attack() {
   if (me.atkCd > 0 || state !== 'play') return;
@@ -960,21 +1001,17 @@ function attack() {
 function updateShots() {
   for (const s of shots) {
     s.t++; s.life--;
-    if (s.kind === 0 || s.kind === 5) { s.vx *= 0.93; }
-    if (s.kind === 1 && s.mine) { s.x = me.x + (s.f > 0 ? 12 : -22); s.y = me.y - 2; }
-    if (s.kind === 4 && s.mine) { s.x = me.x - 11; s.y = me.y - 7; }
-    if (s.kind === 3) {
-      if (!s.back && s.t > 22) s.back = true;
-      if (s.back && s.mine) { const dx = me.x - s.x, dy = me.y - s.y, d = Math.hypot(dx, dy) || 1; s.vx = dx / d * 4.2; s.vy = dy / d * 4.2; if (d < 10) s.life = 0; }
-    }
+    if (s.kind === 5) s.vx *= 0.93;
+    if (s.ox !== undefined && s.mine) { s.x = me.x + s.ox; s.y = me.y + s.oy; }
+    if (s.kind === 0 && s.t === 4) puff(s.x + s.w / 2 + s.f * 8, s.y + 4, 4, ['#ffffff', '#e8e4f4', '#d4c8f8'], .6, -0.02);
     s.x += s.vx; s.y += s.vy;
-    if ((s.kind === 0 || s.kind === 2 || s.kind === 5) && solid(Math.floor((s.x + s.w / 2) / T), Math.floor((s.y + s.h / 2) / T))) { s.life = 0; puff(s.x + s.w / 2, s.y + s.h / 2, 4, ['#ffffff', '#e8e4f4']); }
+    if ((s.kind === 6 || s.kind === 5) && solid(Math.floor((s.x + s.w / 2) / T), Math.floor((s.y + s.h / 2) / T))) { s.life = 0; puff(s.x + s.w / 2, s.y + s.h / 2, 4, ['#ffffff', '#e8e4f4']); }
     if (s.kind === 1 && frame % 2 === 0) puff(s.x + Math.random() * s.w, s.y + Math.random() * s.h, 1, ['#ff9a3a', '#ffd84a', '#ff5a6a'], .5, -0.02);
     if (!s.mine) continue;
     for (const e of lvl.enemies) {
       if (!e.alive || s.hit.has(e) || !overlap(s, e)) continue;
       s.hit.add(e); damageEnemy(e, s.dmg + (ultra() ? 1 : 0) + (me.buffs.power > 0 ? 1 : 0), me.x);
-      if (s.kind === 0 || s.kind === 2 || s.kind === 5) s.life = 0;
+      if (s.kind === 6 || s.kind === 5) s.life = 0;
     }
   }
   shots = shots.filter(s => s.life > 0);
@@ -1079,7 +1116,7 @@ function updatePlayer() {
   // stand on your friends' heads
   if (p.vy >= 0 && !p.onGround) for (const r of remotes.values()) {
     if (r.tx < -50 || r.l !== lvl.n) continue;
-    if (p.x + p.w > r.x + 1 && p.x < r.x + 11 && prevBottom <= r.y + 2 && p.y + p.h >= r.y) { p.y = r.y - p.h; p.vy = 0; p.onGround = true; p.puffed = false; p.flaps = 0; break; }
+    if (p.x + p.w > r.x + 1 && p.x < r.x + 9 && prevBottom <= r.y + 2 && p.y + p.h >= r.y) { p.y = r.y - p.h; p.vy = 0; p.onGround = true; p.puffed = false; p.flaps = 0; break; }
   }
   if (!wasGround && p.onGround) { p.sq = 6; puff(p.x + 6, p.y + 13, 3, ['#ffffff', '#f0e8ff'], .5); }
   if (p.onGround && Math.abs(p.vx) > 0.2) p.walkT += Math.abs(p.vx) / 1.4; else p.walkT = 0;
@@ -1172,7 +1209,7 @@ function openChest(c) {
 
 function sitDown() {
   state = 'sitting'; me.vx = 0; me.puffed = false;
-  me.x = lvl.spot.x + 18; me.y = lvl.spot.y - me.h - 6;
+  me.x = lvl.spot.x + 20; me.y = lvl.spot.y - me.h - 4;
   SFX.flag(); shake = 4;
   puff(lvl.spot.x + 24, lvl.spot.y - 10, 30, ['#ffffff', '#c8ffa0', '#e4b3ff', '#ffd84a'], 2);
   finInfo = { t: 150, n: 1, of: remotes.size + 1, hurried: false };
@@ -1260,20 +1297,25 @@ function bubble(str, cx, y) {
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, 9);
   drawStr(str, x + 3, y + 2, '#3fae5a', 1);
 }
-function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting) {
+function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting, wi = 0, atkT = 0) {
   if (inv > 0 && Math.floor(inv / 4) % 2) return;
   const img = PLAYER[color][anim];
-  const ox = anim === 4 ? -3 : -2, oy = anim === 4 ? -4 : -3;
+  if (anim === 4) { // riding a little smoke cloud while floating
+    const cx = Math.round(x - camX + 5), cy = Math.round(y + 18 + Math.sin(frame / 5));
+    ctx.fillStyle = P.k; circle(cx - 5, cy, 5); circle(cx + 5, cy, 5); circle(cx, cy - 2, 6);
+    ctx.fillStyle = '#ffffff'; circle(cx - 5, cy, 4); circle(cx + 5, cy, 4); circle(cx, cy - 2, 5);
+  }
   if (star) ctx.filter = 'hue-rotate(' + (frame * 24 % 360) + 'deg) saturate(2) brightness(1.15)';
   else if (ult) ctx.filter = 'drop-shadow(0 0 2px #c070ff)';
   if (sq > 0 && anim !== 4) {
-    const sx = Math.round(x - camX - 3), sy = Math.round(y);
-    ctx.save(); ctx.translate(sx + (face < 0 ? 18 : 0), sy); ctx.scale(face < 0 ? -1 : 1, 1); ctx.drawImage(img, 0, -1, 18, 14); ctx.restore();
-  } else draw_(img, x + ox, y + oy, face < 0);
+    const sx = Math.round(x - camX - 4), sy = Math.round(y + 1);
+    ctx.save(); ctx.translate(sx + (face < 0 ? 18 : 0), sy); ctx.scale(face < 0 ? -1 : 1, 1); ctx.drawImage(img, 0, 0, 18, 17); ctx.restore();
+  } else draw_(img, x - 3, y - 2, face < 0);
   ctx.filter = 'none';
+  if (!sitting) drawHeld(x, y, face, wi, atkT, anim);
   if (sitting && frame % 40 < 30) text('Z', x + 12 - camX, y - 8 - (frame % 40) / 8, '#e4b3ff');
-  if (emote) bubble(EMOTES[emote.e], x + 6, y - (name ? 26 : 16));
-  if (name) text(name, x + 6 - camX, y - 12, SHIRTS[color], 1, 'center');
+  if (emote) bubble(EMOTES[emote.e], x + 5, y - (name ? 24 : 14));
+  if (name) text(name, x + 5 - camX, y - 10, SHIRTS[color], 1, 'center');
 }
 function drawSpot() {
   const s = lvl.spot, x = Math.round(s.x - camX), y = s.y;
@@ -1302,24 +1344,38 @@ function drawEnemy(e) {
 }
 function drawShot(s) {
   const x = Math.round(s.x - camX), y = Math.round(s.y);
-  if (s.kind === 0 || s.kind === 5) {
-    const r = s.kind === 5 ? 7 : 5 + (s.t / 6);
+  if (s.kind === 5) {
     ctx.globalAlpha = Math.min(1, s.life / 8);
-    ctx.fillStyle = P.k; circle(x + s.w / 2, y + s.h / 2, r + 1);
-    ctx.fillStyle = '#ffffff'; circle(x + s.w / 2, y + s.h / 2, r);
-    ctx.fillStyle = '#e8e4f4'; circle(x + s.w / 2 + 2, y + s.h / 2 + 2, r / 2);
+    ctx.fillStyle = P.k; circle(x + 6, y + 6, 8); ctx.fillStyle = '#ffffff'; circle(x + 6, y + 6, 7); ctx.fillStyle = '#e8e4f4'; circle(x + 8, y + 8, 3);
     ctx.globalAlpha = 1;
   } else if (s.kind === 1) {
-    for (let i = 0; i < 6; i++) { ctx.fillStyle = ['#ff5a6a', '#ff9a3a', '#ffd84a'][i % 3]; ctx.fillRect(x + (i * 4 + s.t * 2) % s.w, y + 4 + ((i * 5 + s.t) % 9), 4, 4); }
-  } else if (s.kind === 2) {
+    for (let i = 0; i < 8; i++) { ctx.fillStyle = ['#ff5a6a', '#ff9a3a', '#ffd84a'][i % 3]; ctx.fillRect(x + (i * 4 + s.t * 2) % s.w, y + 3 + ((i * 5 + s.t) % 10), 4, 4); }
+  } else if (s.kind === 6) {
     ctx.fillStyle = P.k; circle(x + 3.5, y + 3.5, 4.5); ctx.fillStyle = '#7ac8ff'; circle(x + 3.5, y + 3.5, 3.5); ctx.fillStyle = '#ffffff'; ctx.fillRect(x + 2, y + 1, 2, 2);
-  } else if (s.kind === 3) {
-    ctx.save(); ctx.translate(x + 5, y + 3); ctx.rotate(s.t * 0.5); ctx.drawImage(ICONS.boomer, -5, -3); ctx.restore();
+  } else if (s.kind === 0 || s.kind === 2) { // swoosh arc
+    ctx.strokeStyle = 'rgba(255,255,255,' + (s.life / 10) + ')'; ctx.lineWidth = 2; ctx.beginPath();
+    const cx = x + (s.f > 0 ? 0 : s.w), cy = y + s.h;
+    ctx.arc(cx, cy, 18, s.f > 0 ? -1.5 : Math.PI + 0.2, s.f > 0 ? -0.2 : Math.PI + 1.5); ctx.stroke();
   } else if (s.kind === 4) {
-    ctx.strokeStyle = '#c8ffa0'; ctx.lineWidth = 2; ctx.beginPath();
-    ctx.arc(x + s.w / 2, y + s.h / 2, 14, s.t * 0.6, s.t * 0.6 + 4.2); ctx.stroke();
-    ctx.drawImage(ICONS.grinder, x + s.w / 2 - 5 + Math.cos(s.t * .6) * 14, y + s.h / 2 - 4 + Math.sin(s.t * .6) * 14);
+    ctx.strokeStyle = '#c8ffa0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x + s.w / 2, y + s.h / 2, 16, s.t * 0.6, s.t * 0.6 + 4.2); ctx.stroke();
   }
+}
+// the homie's oversized weapon, held in hand and swung when attacking
+function drawHeld(x, y, face, wi, atkT, anim) {
+  const w = WEAPONS[wi] || WEAPONS[0], img = HELD[w.id]; if (!img || anim === 4) return;
+  const hx = Math.round(x - camX + 5 + face * 5), hy = Math.round(y + 11);
+  const p = atkT > 0 ? 1 - atkT / 12 : 0; // swing progress
+  ctx.save(); ctx.translate(hx, hy); ctx.scale(face, 1);
+  if (w.id === 'puff' || w.id === 'bong') ctx.rotate(atkT > 0 ? -1.6 + p * 2.4 : -0.5);
+  else if (w.id === 'dab') ctx.translate(atkT > 0 ? Math.sin(p * Math.PI) * 10 : 0, 0), ctx.rotate(atkT > 0 ? 0 : -0.25);
+  else if (w.id === 'grinder') ctx.rotate(atkT > 0 ? p * 12 : 0);
+  else if (w.id === 'lighter') ctx.rotate(atkT > 0 ? 0.2 : -0.1);
+  if (w.id === 'puff') ctx.drawImage(img, -2, -4);
+  else if (w.id === 'dab') ctx.drawImage(img, -2, -2);
+  else if (w.id === 'grinder') ctx.drawImage(img, -6, -5);
+  else ctx.drawImage(img, -3, -img.height + 3);
+  ctx.restore();
+  if (w.id === 'puff' && frame % 14 === 0) puff(x + 5 + face * 26, y + 6, 1, ['#ffffff', '#e8e4f4'], .2, -0.03);
 }
 function circle(cx, cy, r) { for (let y = -r; y <= r; y++) { const w = Math.sqrt(r * r - y * y); ctx.fillRect(Math.round(cx - w), Math.round(cy + y), Math.round(w * 2), 1); } }
 
@@ -1389,9 +1445,9 @@ function draw() {
 
   for (const r of remotes.values()) {
     if (r.tx < -50 || r.l !== lvl.n) continue;
-    drawPlayer(r.x, r.y, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4);
+    drawPlayer(r.x, r.y, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.a === 5 ? 6 : 0);
   }
-  drawPlayer(me.x, me.y, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting');
+  drawPlayer(me.x, me.y, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT);
 
   for (const p of particles) {
     if (p.img) { draw_(p.img, p.x, p.y); continue; }
@@ -1473,7 +1529,7 @@ function drawInventory() {
     R(ctx, sel ? '#c8ffa0' : P.k, x - 2, 51, 16, 16); R(ctx, '#4a3a60', x - 1, 52, 14, 14);
     ctx.globalAlpha = has ? 1 : .25; ctx.drawImage(ICONS[w.icon], x + 1, 54); ctx.globalAlpha = 1;
     text((i + 1) + '', x + 16, 52, '#b0a8c0');
-    text(has ? w.name.split(' ')[w.name.split(' ').length - 1] : '???', x + 6, 70, has ? '#fff' : '#6a6080', 1, 'center');
+    text(has ? w.name.split(' ').pop() : '???', x + 6, 70, has ? '#fff' : '#6a6080', 1, 'center');
   });
   text('ARMOR', 26, 84, '#ffd84a');
   [...ARMORS, { id: 'pouch', name: 'STASH POUCH', icon: 'pouch' }].forEach((a, i) => {
@@ -1501,7 +1557,7 @@ function drawMap(y) {
   }
   ctx.drawImage(ICONS.farm, x0 + n * dx - 4, y - 1);
   const pos = Math.min(save.spots, n);
-  ctx.drawImage(PLAYER[me.color][0], x0 + Math.max(0, pos - 1) * dx - 7 + (pos ? 0 : -12), y - 18);
+  ctx.drawImage(PLAYER[me.color][0], x0 + Math.max(0, pos - 1) * dx - 7 + (pos ? 0 : -12), y - 20);
 }
 // ============================================================
 //  RESULTS + SHOP (between missions)

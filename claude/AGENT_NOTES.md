@@ -973,3 +973,53 @@ console/page errors either side. `node --check` clean on `game.js` and `server.j
 
 Pushed to `main`. Next: Step 9 (Items, gear and the garage - garage excluded, that's the drive agent's),
 then Step 10 (Co-op and personality), Step 11 (Replay and sharing), Step 12 (Final full-game test).
+
+## STEP 9 (FIX_STEPS.md): Items, gear and the garage - items 1-2 this pass (Brief A4)
+
+`public/game.js` + `server.js`. Garage (item 4) excluded per the standing rule - that's the drive agent's.
+Item 3 (gravity bong ultimate charging, farm upgrades, cosmetics, Smoke Cloak armor) NOT done this pass -
+scoped out to keep this a reviewable, fully-tested slice rather than one giant untested drop; see "Next"
+below.
+
+**Item 1 - Consumables:** Pre-roll and Golden Leaf are real `ITEMS` again (their `useItem()` cases were
+dead code left in place since the original A4 cut specifically for this). Added a new Vape Pen (fast,
+quiet +15% Cooked, no smoke cloud - the brief's "restore ... Vape Pen"). `loadSlot()`'s old save.quick
+migration (previously reset anyone pointed at preroll/gold) now only resets a save.quick that isn't a real
+item id at all. Added the **GIVE key** (default `G`, rebindable like every other action - it's just added
+to `DEFAULT_KEYS`/`ACTION_NAMES`, so the existing generic rebind-menu logic picks it up for free): hands
+your current quick-item to the nearest connected homie with a "HERE BRO" popup. Added the **brownie shared
+buff** ("pass the plate", the brief's own name for it): using a Rage Brownie broadcasts an AoE that grants
+the same buff to any homie standing near you when you eat it.
+
+Both GIVE and pass-the-plate needed a NEW client<->server message type each (`give`, `brownieshare`) -
+**this caught a real bug during testing**: `server.js` relays messages through an explicit per-type
+whitelist (`switch (m.t) { case 'hit': ... }`), not a generic passthrough, so the first version of this
+(client-only) silently dropped both messages - GIVE decremented the sender's item but the recipient never
+got it, and nobody but the sender got the pass-the-plate buff. Fixed by adding matching `case 'give':` /
+`case 'brownieshare':` relays to `server.js` (same sanitize-and-broadcast shape as the existing
+`trap`/`cloud` cases) - confirmed against a live restarted server, not just code reading.
+
+**Item 2 - Wild weapon sources** (was just one `envweapon` pickup per mission at zi===0 - still is, that
+stays as the guaranteed "weapon rack" source):
+- **Rare enemy drops:** every kill has a small (2%) chance to drop a bonus Wild-weapon pickup at the kill
+  spot; a world's mini-boss or boss ALWAYS drops one (they're already a rare, celebrated kill).
+- **Special chests:** ~35% of levels (seeded, so it's consistent on replays of the same level like every
+  other zone-content pick in `buildLevel`) get one extra chest seeded to drop a Wild weapon on top of its
+  normal loot roll (same `openChest()` MISSION_LOOT path every chest already runs - this chest is
+  deliberately a double reward, not a replacement for it).
+- `spawnDrops()` (which turns any prop's `drops` array into real pickups) needed a `sub` (which specific
+  weapon) rolled for an `envweapon` drop token, same theme-pool roll `buildLevel`'s own guaranteed spawn
+  already does.
+
+**Testing:** `kq_step9_test.js` (same-page) - ITEMS/useItem effects for preroll/gold/vape and that they're
+actually consumed; GIVE is a safe no-op solo; a mini/mega boss kill always drops a bonus Wild weapon;
+scanning levels for a seeded special chest and confirming it drops a real, validly-rolled weapon on break.
+`kq_step9_online.js` (2 real tabs, server restarted to pick up the `server.js` change) - GIVE hands a real
+item from A to B over the network; pass-the-plate reaches a nearby B when A eats a brownie. Both online
+checks FAILED on the first run (the server-whitelist bug above) and PASSED after the fix - not just
+code-read, genuinely re-verified end to end. Re-ran every prior step's regression script (1/2/6/7/8) - all
+still pass. `node --check` clean on both `game.js` and `server.js`.
+
+Pushed to `main`. Next: Step 9 item 3 (gravity bong ultimate charging, hookah/blacklight/rolling-tray farm
+upgrades, tapestry/lava-lamp cosmetics, Smoke Cloak armor) - deferred, not started - then Step 10 (Co-op
+and personality), Step 11 (Replay and sharing), Step 12 (Final full-game test).

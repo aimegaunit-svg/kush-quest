@@ -240,6 +240,12 @@ function handle(client, m) {
     // v1.1 A6: WOODS essential-oil diffuser cloud + SUBURBIA mousetraps - both host-authoritative, not tied to a player id
     case 'cloud': if (room && client.id === room.host) broadcast(room, { t: 'cloud', x: +m.x || 0, z: +m.z || 0, l: m.l | 0 }, client.id); break;
     case 'trap': if (room && client.id === room.host) broadcast(room, { t: 'trap', i: m.i | 0, l: m.l | 0, who: String(m.who || '').slice(0, 12) }, client.id); break;
+    // v1.2 (Step 9.1): GIVE (a targeted item hand-off - see game.js giveItem()) and "pass the plate" (the
+    // shared brownie buff broadcast - see useItem()'s brownie case). Both are simple sanitize-and-relay
+    // cases, same shape as 'trap'/'cloud' above - no host gate needed since, like 'rev'/'pass', nothing
+    // here is contestable (the giver already spent their own local item before sending).
+    case 'give': if (room) broadcast(room, { t: 'give', to: String(m.to || '').slice(0, 12), id: String(m.id || '').slice(0, 16) }, client.id); break;
+    case 'brownieshare': if (room) broadcast(room, { t: 'brownieshare', x: Math.round(+m.x || 0), z: Math.round(+m.z || 0) }, client.id); break;
     case 'hit': case 'steal': case 'rev': case 'pass': {
       if (!room) return;
       const out = { t: m.t, id: client.id, i: m.i | 0, l: m.l | 0, d: Math.max(0, Math.min(12, m.d | 0)), dir: Math.sign(+m.dir || 0), s: m.s ? 1 : 0, k: Math.max(0, Math.min(20, m.k | 0)), who: String(m.who || '').slice(0, 12),

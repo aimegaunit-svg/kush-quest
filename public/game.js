@@ -239,8 +239,8 @@ function startMusic() {
 // ============================================================
 const K = { left: false, right: false, up: false, down: false, jump: false, run: false, attack: false, enter: false };
 // ---- settings (saved in this browser): volumes, toggles, custom key bindings ----
-const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT', block: 'ControlLeft' };
-const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT', block: 'BLOCK (TAP=PARRY, HOLD+DIR=ROLL)' };
+const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT', block: 'ControlLeft', give: 'KeyG' };
+const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT', block: 'BLOCK (TAP=PARRY, HOLD+DIR=ROLL)', give: 'GIVE (HERE BRO) - HANDS A HOMIE YOUR QUICK ITEM' };
 let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, bigText: false, reduceFlash: false, colorblind: false, muteHidden: false, holdAttack: false, keys: { ...DEFAULT_KEYS } };
 try { const st = JSON.parse(localStorage.getItem('kq_settings')); if (st) settings = { ...settings, ...st, keys: { ...DEFAULT_KEYS, ...(st.keys || {}) } }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('kq_settings', JSON.stringify(settings)); } catch (e) {} if (master) master.gain.value = settings.sfx; }
@@ -294,6 +294,7 @@ addEventListener('keydown', e => {
     if (a === 'weapon') { cycleWeapon(1); return; }
     if (a === 'munchie') { K.use = true; if (![...remotes.values()].some(r => r.b & 8 && Math.abs(r.x - me.x) < 18)) useMunchies(); return; }
     if (a === 'quick') { useItem(save.quick || 'brownie'); return; }
+    if (a === 'give') { giveItem(); return; }
     if (a === 'throw') { K.throwPressed = true; return; }
     if (a === 'toke') { K.toke = true; return; }
     if (a === 'block') { if (!K.block) me.parryT = 8; K.block = true; return; }
@@ -1392,8 +1393,12 @@ function buildLevel(n, remix) {
   let nugCount = 0;
   // randomize which non-boss zones get the chest / gold crate / hidden secret / ambush, per level (seeded, so it's consistent on replays of the same level)
   const nonBossCount = zoneCount - 1;
-  const zonePicks = []; while (zonePicks.length < Math.min(4, nonBossCount)) { const z = Math.floor(rand() * nonBossCount); if (!zonePicks.includes(z)) zonePicks.push(z); }
-  const [chestZone, goldZone, secretZone, ambushZone] = [zonePicks[0], zonePicks[1] ?? zonePicks[0], zonePicks[2] ?? zonePicks[0], zonePicks[3] ?? zonePicks[0]];
+  const zonePicks = []; while (zonePicks.length < Math.min(5, nonBossCount)) { const z = Math.floor(rand() * nonBossCount); if (!zonePicks.includes(z)) zonePicks.push(z); }
+  const [chestZone, goldZone, secretZone, ambushZone, wildChestZone] = [zonePicks[0], zonePicks[1] ?? zonePicks[0], zonePicks[2] ?? zonePicks[0], zonePicks[3] ?? zonePicks[0], zonePicks[4] ?? zonePicks[0]];
+  // v1.2 (Step 9.2): "special chests" - a rarer, distinct source of Wild weapons beyond the guaranteed
+  // zi===0 pickup and the rare enemy-drop chance added in onKill - about 1 in 3 levels gets one, seeded so
+  // it's consistent on replays of the same level like every other zone-content pick here.
+  const hasWildChest = rand() < 0.35;
   for (let zi = 0; zi < zoneCount; zi++) {
     const x0 = 300 + zi * 430;
     // v1.2 (Step 6.7): 1-1's very first fight (n===0, zi===0) used to get the SAME n<2 bonus crew as every
@@ -1425,6 +1430,7 @@ function buildLevel(n, remix) {
     if (zi === chestZone) prop('chest', x0 + 150, 20, ['loot']);
     if (zi === goldZone) prop('crate', x0 + 220, 40, ['gold']);
     if (zi === secretZone) prop('secret', x0 + 40, ZMAX - 8, ['gold', 'nug']);
+    if (hasWildChest && zi === wildChestZone) prop('chest', x0 + 280, rz(), ['envweapon']); // v1.2 (Step 9.2): special chest
     if (zi === 0) item('envweapon', x0 + 90, rz(), 0, pick(WILD_POOL_BY_THEME[themeKey] || WILD_POOL_BY_THEME.park)); // one Wild-weapon pickup per mission, randomly rolled from this world's pool
     // the walk to the next fight: coins, nugs, rings, bonuses
     const gx = x0 + ZW + 10;
@@ -1490,7 +1496,7 @@ function loadSlot(i) {
   // real pre-v1.1 progress" directly from the legacy fields instead of the migratedV11 flag.
   const hadOldProgress = (save.weapons || []).length > 1 || Object.keys(save.wlv || {}).length > 0 || (save.spots || 0) > 0;
   const hadMigratedV11Already = !!save.migratedV11 || (!save.migratedV11 && hadOldProgress);
-  save.throws = { papers: 0, bombs: 0, smoke: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
+  save.throws = { papers: 0, bombs: 0, smoke: 0, ...(save.throws || {}) }; save.wlv = save.wlv || {}; save.met = save.met || []; ['brownie', 'soda', 'munchie', 'preroll', 'gold', 'vape'].forEach(k => save[k] = save[k] || 0); save.stats = { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0, ...(save.stats || {}) }; save.achv = save.achv || [];
   save.farmPlots = save.farmPlots && save.farmPlots.length === 4 ? save.farmPlots : [null, null, null, null]; save.pet = save.pet || null; save.dailyDate = save.dailyDate || '';
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
   if (!Array.isArray(save.skills)) save.skills = Array.from({ length: Math.min(save.spots || 0, TOTAL_LEVELS) }, (_, i) => SKILL_ORDER[i % SKILL_ORDER.length]);
@@ -1509,11 +1515,12 @@ function loadSlot(i) {
   // 3 under the old free/uncapped economy) starts generously at 10 so it's never locked out of levels it
   // already reached; only a genuinely brand-new save starts at the tutorial cap of 3.
   if (save.coreCap == null) save.coreCap = hadMigratedV11Already ? 10 : 3;
-  // v1.1 A4: preroll/gold were dropped from ITEMS (trimmed to munchie+brownie+soda) - if an old save had
-  // its quick-use slot pointed at either, retarget it so useItem()'s HUD icon lookup never indexes a
-  // removed entry. (Checked by literal id here, not ITEMS[...], since ITEMS is declared later in this file
-  // and loadSlot(1) runs before that declaration executes - referencing it here would be a TDZ crash.)
-  if (save.quick !== 'munchie' && save.quick !== 'brownie' && save.quick !== 'soda') save.quick = 'brownie';
+  // v1.1 A4 / v1.2 Step 9.1: preroll/gold/vape are all valid ITEMS again as of Step 9 (see ITEMS below) -
+  // only reset save.quick if it's pointed at something that ISN'T a real item id at all (e.g. a save from
+  // the brief window when preroll/gold were dropped and something else took the slot). Checked by a fixed
+  // literal list here, not ITEMS[...], since ITEMS is declared later in this file and loadSlot(1) runs
+  // before that declaration executes - referencing it here would be a TDZ crash.
+  if (!['munchie', 'brownie', 'soda', 'preroll', 'gold', 'vape'].includes(save.quick)) save.quick = 'brownie';
   save.munchie = Math.min(save.munchie || 0, 3);
   // v1.1 one-time migration: never break old saves. Any pre-v1.1 save had `weapons`/`wlv`/`throws` counts
   // that no longer mean anything under the two-slot Core/Wild system, so bank their value as Resin/coins
@@ -1676,7 +1683,12 @@ function spawnDrops(p) {
   p.drops.forEach((d, k) => {
     const id = 'd' + p.id + '_' + k;
     if (d === 'loot') return;
-    lvl.items.push({ id, kind: d, x: p.x - 10 + k * 12, z: Math.min(ZMAX, p.z + (k % 2) * 6), h: 16, vh: 1.5, taken: false });
+    // v1.2 (Step 9.2): a "special chest" that drops a Wild weapon, same envweapon pickup as everywhere
+    // else - just needs a `sub` (which weapon) rolled from the level's theme pool, like buildLevel's own
+    // guaranteed spawn already does.
+    const pool = d === 'envweapon' ? (WILD_POOL_BY_THEME[lvl.theme.base || lvl.themeKey] || WILD_POOL_BY_THEME.park) : null;
+    const sub = pool ? pool[Math.floor(Math.random() * pool.length)] : undefined;
+    lvl.items.push({ id, kind: d, x: p.x - 10 + k * 12, z: Math.min(ZMAX, p.z + (k % 2) * 6), h: 16, vh: 1.5, taken: false, sub });
   });
 }
 function breakProp(p, remote) {
@@ -1808,16 +1820,21 @@ function restartLevelOutOfLives() {
   SFX.bump();
 }
 function emote(i) { me.emote = { e: i, t: 120 }; Net.send({ t: 'emote', e: i }); tone(660, 0.08, 'square', 0.04); tone(880, 0.1, 'square', 0.04, 0.08); }
-// v1.1 A4 (scoped): trimmed from 5 consumables to Munchies (cap 3, was 5) + 2 others. Kept brownie (rage
-// buff - the brief calls out its "pass the plate" shared version by name) and soda (speed/swing buff) as
-// the 2 others; dropped preroll and gold. NOT yet done: the shared "pass the plate" co-op buff broadcast
-// and a GIVE key for handing an item to a crewmate - both need real net-sync work, flagged as follow-up
-// rather than rushed. Old saves with leftover preroll/gold counts or save.quick pointed at either just sit
-// unused now (loadSlot() below resets save.quick off them so nothing tries to render a removed item's icon).
+// v1.1 A4 (scoped): trimmed from 5 consumables to Munchies (cap 3, was 5) + 2 others (brownie/soda),
+// dropping preroll and gold as a disclosed cut, and flagging the "pass the plate" shared brownie buff +
+// a GIVE key as follow-up work rather than rushed.
+// v1.2 (Step 9.1): that follow-up. Pre-roll and Golden Leaf are back (their `useItem` cases were dead code
+// left in place since A4 for exactly this) plus a new Vape Pen (a fast, quiet +cooked% hit - no smoke
+// cloud, in keeping with the brief's "restore ... Vape Pen"). Munchies stays capped at 3 ("carry Munchies
+// (max 3) plus 2 others" - the brief's "2 others" is read as the 2 QUICK-KEY slots, not a hard item-type
+// cap, since the shop always offered more than 3 distinct consumables even before this step).
 const ITEMS = {
   munchie: { name: 'MUNCHIES', icon: 'munchie', price: 25, desc: 'HEALS 2 HEARTS. QUICK KEY: E', cap: 3 },
-  brownie: { name: 'RAGE BROWNIE', icon: 'brownie', price: 45, desc: '+2 DAMAGE ON EVERY HIT FOR 20 SECONDS' },
+  brownie: { name: 'RAGE BROWNIE', icon: 'brownie', price: 45, desc: '+2 DAMAGE ON EVERY HIT FOR 20 SECONDS. SHARED WITH ANY HOMIE NEARBY' },
   soda: { name: 'ENERGY SODA', icon: 'soda', price: 35, desc: 'RUN + SWING FASTER FOR 20 SECONDS' },
+  preroll: { name: 'PRE-ROLL', icon: 'brownie', price: 30, desc: 'INSTANT +30% COOKED' },
+  gold: { name: 'GOLDEN LEAF', icon: 'brownie', price: 60, desc: 'A GOLDEN AURA - EXTRA HASH COINS FOR 10 SECONDS' },
+  vape: { name: 'VAPE PEN', icon: 'brownie', price: 20, desc: 'A QUICK, QUIET +15% COOKED - NO SMOKE CLOUD' },
 };
 const MAX_ITEM = 5;
 const itemCap = id => (ITEMS[id] && ITEMS[id].cap) || MAX_ITEM;
@@ -1827,10 +1844,36 @@ function useItem(id) {
   save[id]--; persist(); SFX.munch();
   const say = t => popup(me.x - 18, sy(me.z) - 36, t, '#fff6b0');
   if (id === 'munchie') { me.hp = Math.min(maxHp(), me.hp + 2); say('MUNCHIES! +2'); }
-  if (id === 'brownie') { me.buffs.rage = 1200; say('RAGE BROWNIE!'); shake = 4; }
+  if (id === 'brownie') {
+    me.buffs.rage = 1200; say('RAGE BROWNIE!'); shake = 4;
+    // v1.2 (Step 9.1): "pass the plate" - the brief's own name for a shared brownie buff. Broadcasts a
+    // small AoE the same way the puffpass/hotbox smoke clouds already share buffs with nearby crew (see
+    // applyHazards' cloud-buff loop) - every online client (including whoever used it) checks their own
+    // distance to the broadcast point and grants themselves the buff if they're close, so this needs no
+    // host-authoritative bookkeeping, just the one new broadcast + a matching onNet case.
+    if (Net.online) Net.send({ t: 'brownieshare', x: Math.round(me.x), z: Math.round(me.z) });
+  }
   if (id === 'soda') { me.buffs.soda = 1200; me.buffs.speed = Math.max(me.buffs.speed, 1200); say('ENERGY SODA!'); }
   if (id === 'preroll') { addCooked(30); say('PRE-ROLL +30%'); }
   if (id === 'gold') { me.star = 600; SFX.star(); say('GOLDEN LEAF!'); }
+  if (id === 'vape') { addCooked(15); say('VAPE HIT! +15%'); }
+}
+// v1.2 (Step 9.1): GIVE key - hand your current QUICK item to the nearest connected homie ("HERE BRO", per
+// the brief). Each client's own inventory is purely local (never networked - the same reason coins/items
+// were never synced anywhere else in the file), so this sends a targeted `give` message the same way
+// `rev`/`pass` already target one specific player by id, and the recipient's own client is what actually
+// grants the item - no host-authoritative step needed since nothing here can be contested (only the giver
+// spends their own copy, checked against their own local save before sending).
+function giveItem() {
+  if (!Net.online || state !== 'play') { SFX.bump(); return; }
+  const id = save.quick || 'brownie';
+  if (!(save[id] > 0)) { SFX.bump(); return; }
+  let bestId = null, bestD = 32;
+  for (const [rid, r] of remotes) { const d = Math.abs(r.x - me.x) + Math.abs(r.z - me.z); if (d < bestD) { bestD = d; bestId = rid; } }
+  if (!bestId) { popup(me.x - 18, sy(me.z) - 36, 'NO ONE NEARBY', '#b0a8c0'); SFX.bump(); return; }
+  save[id]--; persist();
+  popup(me.x - 14, sy(me.z) - 36, 'HERE BRO', '#fff6b0'); SFX.buy();
+  Net.send({ t: 'give', to: bestId, id });
 }
 function useMunchies() {
   useItem('munchie');
@@ -2055,6 +2098,13 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   const reward = (e.boss ? (e.mega ? 150 : 60) : { cop: 8, karen: 6, mouse: 2, squirrel: 3 }[e.ai]) + e.stolen;
   addCoins(reward); addCooked(3); me.kills++; addCombo(e.x, sy(e.z) - 30); SFX.stomp();
   gainResin(e.mega ? 5 : e.mini ? 3 : 1); // v1.1 A3: Resin drops from every knock-out - see gainResin()'s comment on the simplification here
+  // v1.2 (Step 9.2): "rare enemy drops" - a Wild weapon pickup, beyond the one guaranteed spawn per mission
+  // (zi===0's `envweapon` item, built in buildLevel). Small enough (2%, mega/mini bosses always drop -
+  // they're already a rare, celebrated kill) that the guaranteed spawn stays the normal way to get one.
+  if (!e.reserve && (e.mega || e.mini || Math.random() < 0.02)) {
+    const pool = WILD_POOL_BY_THEME[lvl.theme.base || lvl.themeKey] || WILD_POOL_BY_THEME.park;
+    lvl.items.push({ id: 'w' + e.id + '_' + frame, kind: 'envweapon', x: e.x, z: e.z, h: 14, vh: 1.6, taken: false, sub: pool[Math.floor(Math.random() * pool.length)] });
+  }
   const KO_LINE = { crab: 'CRACKED!', lawnmower: 'MOWED DOWN!', segway: 'WIPED OUT!', owl: 'GROUNDED!', securitybot: 'SHUT DOWN!' };
   popup(e.x - 14, sy(e.z) - 34, (KO_LINE[e.kind] || { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' }[e.ai]) + ' +' + reward, '#ffffff');
   e.stolen = 0;
@@ -4749,6 +4799,10 @@ function onNet(m) {
     case 'lives': if (!isHost() && m.l === lvl.n) crewLives = m.n; break;
     case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); crewLives = typeof m.n === 'number' ? m.n : (Net.online && remotes.size > 0 ? 5 : 3); checkpoint = null; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
     case 'pass': if (m.who === Net.id) { addCooked(20); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); } break;
+    // v1.2 (Step 9.1): "pass the plate" (brownie) - an AoE broadcast every client checks themselves against
+    // (see useItem's comment), and GIVE - a targeted item hand-off (see giveItem's comment).
+    case 'brownieshare': if (Math.abs(me.x - m.x) < 40 && Math.abs(me.z - m.z) < 16) { me.buffs.rage = Math.max(me.buffs.rage || 0, 600); popup(me.x - 24, sy(me.z) - 36, 'PASSED THE PLATE!', '#fff6b0'); SFX.power(); } break;
+    case 'give': if (m.to === Net.id) { save[m.id] = Math.min(itemCap(m.id), (save[m.id] || 0) + 1); persist(); popup(me.x - 20, sy(me.z) - 36, 'GOT ' + (ITEMS[m.id] ? ITEMS[m.id].name : m.id), '#c8ffa0'); SFX.buy(); } break;
     case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'boss': if (m.l === lvl.n) bossIntro(lvl.enemies[m.i]); break;
     case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break;
@@ -4917,5 +4971,6 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   breakProp, get particles() { return particles; },
   // v1.2 (Step 7) debug hooks: grades, Killjoy-beaten, Astral-unlock, for the automated seeded-save check.
   computeGrade, saveBestGrade, astralUnlocked, get crewLivesStart() { return lvl && lvl.livesStart; },
-  ASTRAL_LEVEL, isAstralLevel, farmHubEntries, get slowmo() { return slowmo; }, set slowmo(v) { slowmo = v; } };
+  ASTRAL_LEVEL, isAstralLevel, farmHubEntries, get slowmo() { return slowmo; }, set slowmo(v) { slowmo = v; },
+  ITEMS, useItem, giveItem, itemCap };
 })();

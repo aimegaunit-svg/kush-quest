@@ -1,41 +1,88 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Hotbox Highway test</title>
-<style>body{background:#111;color:#eee;font-family:monospace;text-align:center}
-#log{white-space:pre-wrap;text-align:left;max-width:640px;margin:8px auto;font-size:11px;color:#9f9}
-button{margin:4px}</style></head>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hotbox Highway Test</title>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; min-height:100%; background:#1a1026; color:#eee; font-family:monospace; }
+  #panel { max-width:720px; margin:0 auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  button, select, input { font:inherit; font-size:14px; padding:6px 10px; }
+  fieldset { border:1px solid #7a2fc0; }
+  #log { white-space:pre-wrap; font-size:11px; color:#9f9; max-height:30vh; overflow:auto; background:#000; padding:6px; }
+  #mount { display:none; position:fixed; inset:0; z-index:15; background:#000; align-items:center; justify-content:center; }
+</style>
+</head>
 <body>
-<h3>HOTBOX HIGHWAY — standalone test</h3>
-<div id="mount"></div>
-<div>
-  <button onclick="startSolo()">Start solo (1p)</button>
-  <button onclick="startCrew(2)">Simulate 2p seats</button>
-  <button onclick="startCrew(4)">Simulate 4p seats</button>
-  <button onclick="log('needsDrive 0-1: ' + Drive.needsDrive(save, 0, 1, false))">Check needsDrive</button>
+<div id="panel">
+  <h3>HOTBOX HIGHWAY: standalone test</h3>
+  <label>World <select id="world"><option>park</option><option>beach</option><option>suburb</option><option>city</option><option>woods</option><option>hq</option></select></label>
+  <label>Start Cooked % <input id="cooked" type="number" value="30" min="0" max="100"></label>
+  <div>
+    <button id="solo">START SOLO</button>
+    <button id="reset">RESET SAVE (test drive shows again)</button>
+    <button id="needs">CHECK needsDrive 0-1</button>
+  </div>
+  <fieldset>
+    <legend>Online (open 2-4 tabs of this page; needs the server: npm start)</legend>
+    <input id="name" placeholder="NAME" maxlength="10">
+    <button id="create">CREATE ROOM</button>
+    <input id="code" placeholder="CODE" maxlength="5" size="6"><button id="join">JOIN</button>
+    <div id="crew">Not online.</div>
+    <button id="ogo" disabled>START CREW DRIVE (host)</button>
+    <label><input type="checkbox" id="spec"> join as mid-drive spectator (if a drive is already running)</label>
+  </fieldset>
+  <div id="log"></div>
 </div>
-<div id="log"></div>
+<div id="mount"></div>
 <script src="transit.js"></script>
 <script src="drive.js"></script>
 <script>
-const log = m => { document.getElementById('log').textContent += m + '\n'; console.log(m); };
-window.onerror = (m,s,l,c,e) => log('ERROR: ' + m + ' @' + l + ':' + c);
-let save = { __persist: () => log('persist() called') };
-function clearMount(){ document.getElementById('mount').innerHTML=''; }
-function startSolo() {
-  clearMount();
-  Drive.start({
-    from: 0, to: 1, world: 'park', cooked: 45, crew: 1, save, net: null, mount: document.getElementById('mount'), scale: 3,
-    onDone: (r) => log('onDone: ' + JSON.stringify(r))
-  });
-  log('started solo');
-}
-function startCrew(n) {
-  clearMount();
-  const crew = []; for (let i=0;i<n;i++) crew.push({id:'p'+i,name:'P'+i,color:i});
-  Drive.start({
-    from: 0, to: 1, world: 'beach', cooked: 92, crew, save, net: null, mount: document.getElementById('mount'), scale: 3,
-    onDone: (r) => log('onDone: ' + JSON.stringify(r))
-  });
-  log('started crew of ' + n);
-}
+  const $ = id => document.getElementById(id);
+  const log = m => { $('log').textContent += m + '\n'; console.log(m); };
+  window.onerror = (m, s, l, c) => log('ERROR: ' + m + ' @' + l + ':' + c);
+  let save = {}; try { save = JSON.parse(localStorage.getItem('driveTestSave') || '{}'); } catch (e) {}
+  save.__persist = () => { try { const c = Object.assign({}, save); delete c.__persist; localStorage.setItem('driveTestSave', JSON.stringify(c)); } catch (e) {} };
+  const mount = $('mount');
+  const opts = extra => Object.assign({
+    from: 0, to: 1, world: $('world').value, cooked: +$('cooked').value, save, mount, scale: 3,
+    onDone: r => { mount.style.display = 'none'; mount.innerHTML = ''; save.__persist(); log('onDone: ' + JSON.stringify(r)); },
+  }, extra);
+  function go(extra) { mount.innerHTML = ''; mount.style.display = 'flex'; Drive.start(opts(extra)); }
+  $('solo').onclick = () => go({ crew: 1, net: null });
+  $('reset').onclick = () => { for (const k in save) if (k !== '__persist') delete save[k]; save.__persist(); log('save reset'); };
+  $('needs').onclick = () => log('needsDrive 0-1: ' + Drive.needsDrive(save, 0, 1, false));
+
+  // --- tiny online harness: joins a room on the real server and routes relay messages to Drive ---
+  let ws = null, crew = [];
+  const net = { id: null, hostId: null, name: '', send: o => ws && ws.readyState === 1 && ws.send(JSON.stringify(o)) };
+  const showCrew = () => {
+    $('crew').textContent = 'Room ' + (net.code || '') + ': ' + crew.map(c => c.name + (c.id === net.hostId ? ' (host)' : '') + (c.id === net.id ? ' (you)' : '')).join(', ');
+    $('ogo').disabled = net.id !== net.hostId || crew.length < 2;
+  };
+  function connect(first) {
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    ws.onopen = () => ws.send(JSON.stringify(first));
+    ws.onmessage = ev => {
+      const m = JSON.parse(ev.data);
+      if (m.t === 'err') { $('crew').textContent = m.msg; return; }
+      if (m.t === 'joined') {
+        net.id = m.id; net.hostId = m.host; net.code = m.code;
+        crew = [...m.players.map(p => ({ id: p.id, name: p.name })), { id: m.id, name: ($('name').value || 'P').toUpperCase() }];
+        if ($('spec').checked) go({ crew: crew.slice(), net, spectate: true });
+      }
+      else if (m.t === 'pj') crew.push({ id: m.id, name: m.name });
+      else if (m.t === 'pl') { crew = crew.filter(c => c.id !== m.id); Drive.onNet(m); }
+      else if (m.t === 'host') net.hostId = m.id;
+      else if (m.t === 'd' && m.k === 'go') go(Object.assign({ crew: crew.slice(), net }, m.p));
+      else if (m.t === 'd' && m.k === 'dr') Drive._deliver(m.id, m.p);
+      showCrew();
+    };
+  }
+  $('create').onclick = () => connect({ t: 'create', name: $('name').value || 'HOST' });
+  $('join').onclick = () => connect({ t: 'join', code: $('code').value, name: $('name').value || 'PAL' });
+  $('ogo').onclick = () => { const p = { world: $('world').value, cooked: +$('cooked').value }; net.send({ t: 'd', k: 'go', p }); go(Object.assign({ crew: crew.slice(), net }, p)); };
 </script>
-</body></html>
+</body>
+</html>

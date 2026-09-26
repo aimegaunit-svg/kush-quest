@@ -1,5 +1,55 @@
 # AGENT_NOTES
 
+## Hotbox Highway / FIX_STEPS Step 3 (drive agent, owns ONLY public/drive.js + public/drive-test.html)
+**Status: solo verified in the browser; online built and waiting on Step 2 before a real multi-tab test.**
+
+`drive.js` has been rewritten. The old version only drew the road and the HUD. The new one is a full
+game that keeps the same contract: `Drive.start({from,to,world,cooked,crew,save,net,onDone,mount,scale})`
+returns `{cleanup}`, and `Drive.needsDrive()` is unchanged. It draws its own canvas inside `mount`, which
+`game.js`'s `#transitMount` works with as is. It no longer depends on `transit.js`.
+
+**What works, verified solo in `drive-test.html` with a Playwright autopilot (0 page errors):**
+- Step 3.1: the van and Taylor's Shitbox from behind, cruiser/motorcycle/Buzzkill SUV cops, roadblocks with
+  a gap, civilian traffic, and coins/snack crates/incense/air freshener/nugs, all scaled by depth.
+  Roadside props and spoof signs are themed for all 6 worlds (park, beach, suburb, city, woods, hq).
+- Step 3.2: the rear-view mirror inset showing tailing cops, the siren light wash, and side warning arrows.
+- Step 3.3: snack ammo and counter. Each seat throws into its own zone: the right window covers the right,
+  the left window covers the left, and the rear window aims through the mirror. With a crew of 2 the lone
+  window covers everything, and with 3 the windows can click the mirror. A hit blinds the cop.
+- Step 3.4: Heat rises from speeding, crashes, rams and take-a-hit smoke. At full Heat you're LOCKED ON
+  for 5 seconds. If caught: -10 coins, a SIRENS slowdown, and Heat resets to 50.
+- Step 3.5: the pick screen and vote (5 seconds, no votes or a tie = the van, and the host starts
+  everyone together). The Shitbox has its popup, its one-song loop, and a backfire that scares cops.
+- Step 3.7: all 28 swap events, including world-only and Shitbox-only ones. There are no repeats until
+  the deck is used up, and the deck is saved in `save.driveDeck`. Each event has its own sound. Solo
+  scrambles the controls for 3 seconds. Online shows "YOU'RE DRIVING NOW".
+- Step 3.8: baked tiers (40/90/100%) add steering lag, drift and sway, colour shift, and Ultra's rainbow
+  road in slow motion. Smoke from a hit blurs the road.
+- Step 3.9: the fork at 25% with signs (the scenic route has more coins and a +25 secret stash), van
+  damage that builds up, and a 6-step test drive (first time only, TAB skips, sets `save.testDrive`).
+- Step 3.10: results with awards named per player, first half vs second half, munchies = floor(snacks/5)
+  up to 2, and a high-score buff (`'cooked10'` or `'soda10'`).
+- Step 3.11: engine, siren, crash, splat, cough, horn, backfire and music (the van loop, the Shitbox
+  song, and a trippy version at Ultra).
+- Step 3.12: `needsDrive` and `save.drives` use the key `min-max`.
+
+**Online (Step 3.6). Code is written, and a real 2-4 tab test is waiting on Step 2:**
+- The driver's game runs the drive. It seeds the road, sends 10 snapshots a second, and havoc seats send
+  inputs. The swap hands the full state to the new driver. If the driver goes quiet for 2.5 seconds, or
+  a `'pl'` message arrives, the room host's game takes over. Driver order: the host drives the first
+  drive, then whoever has driven least this session.
+- Drop-in: `Drive.start({..., spectate:true})`. The joiner waits, then follows the driver's view from the
+  next snapshot header (sent about once a second).
+- **Routing for Step 2:** every message is `{t:'d', k:'dr', p:{k:<kind>,...}}`. In `game.js`'s `case 'd'`,
+  call `Drive._deliver(m.id, m.p)` when `m.k === 'dr'`, or pass the whole message to `Drive.onNet(m)`.
+  Also pass `'pl'` messages to `Drive.onNet(m)` (optional, since the silence check covers it).
+  Pass the live `Net` object as `net`. The drive reads `net.hostId` each time, so host migration works.
+- `onDone` returns `{coins, cooked, snacksLeft, munchies, buff, score, awards, heatCaught, route}`.
+  `cooked` is this player's own Cooked. Each player gets the full `coins` (being busted already took
+  10 from everyone).
+
+**Not done yet:** the real multi-tab online test (waiting on Step 2) and the GARAGE (Step 9, after Step 3).
+
 ## Session wrap-up: A2-A6 + B1-B3 all landed and merged (main session, latest)
 This session ran 4 subagents in parallel git worktrees (A6 enemy tricks, B1 world/level rebuild, A2/A3
 economy fidelity, mobile/touch polish), each briefed against the real `BRIEF_v1.1.md` text and told which

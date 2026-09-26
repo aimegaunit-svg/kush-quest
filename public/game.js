@@ -1190,7 +1190,8 @@ const sy = (z, h = 0) => FLOOR_Y + z - h;        // world (z,h) -> screen y (fee
 const MISSION_LOOT = ['resin', 'hoodie', 'resin', 'vest', 'resin', 'crown', 'pouch'];
 function missionName(n, remix) {
   const th = THEMES[themeKeyFor(n)];
-  return ['WORLD ' + (worldOf(n) + 1) + '-' + (levelInWorld(n) + 1), th.name + (n >= TOTAL_LEVELS || remix ? ' REMIX' : '')];
+  const label = isSecretLevel(n) ? 'WORLD ' + (worldOf(n) + 1) + ' SECRET' : 'WORLD ' + (worldOf(n) + 1) + '-' + (levelInWorld(n) + 1);
+  return [label, th.name + (remix ? ' REMIX' : '')];
 }
 let LEN = 0;
 function buildLevel(n, remix) {
@@ -4011,5 +4012,7 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt };
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt,
+  // v1.1 B1 debug hooks (used by the automated smoke tests; also handy for future debugging)
+  buildLevel, mapNodes, bossDataFor, levelType, worldOf, levelInWorld, missionName, WORLDS, WORLD_START, TOTAL_LEVELS, isSecretLevel, setWorld, get curWorld() { return curWorld; } };
 })();

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Kush Quest</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#1a1026; --leaf:#6fd13f; --leaf2:#2f9e44; --gold:#ffd23f; --haze:#b45cff; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:#120b1c; overflow:hidden; touch-action:none; }
+  body { display:flex; align-items:center; justify-content:center; font-family:'Press Start 2P', monospace; color:#fff; }
+  #game { image-rendering: pixelated; image-rendering: crisp-edges; display:block; box-shadow:0 0 0 4px var(--ink), 0 0 60px rgba(111,209,63,.25); }
+  #menu { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(circle at 50% 30%, #3a2360 0%, #120b1c 70%); z-index:5; padding:16px; }
+  .panel { width:min(460px,100%); text-align:center; }
+  h1 { font-size:clamp(26px,7vw,44px); margin:0 0 6px; color:var(--leaf); letter-spacing:2px;
+    text-shadow: 4px 4px 0 var(--leaf2), 8px 8px 0 var(--ink); }
+  .sub { font-size:10px; color:var(--gold); margin-bottom:28px; line-height:1.8; }
+  label { display:block; font-size:10px; text-align:left; margin:14px 0 6px; color:#d8c8ff; }
+  input { width:100%; font:inherit; font-size:14px; padding:12px; background:var(--ink); color:#fff;
+    border:3px solid var(--haze); outline:none; text-transform:uppercase; }
+  input:focus { border-color:var(--leaf); }
+  button { font:inherit; font-size:12px; padding:14px 10px; width:100%; margin-top:12px; cursor:pointer;
+    background:var(--leaf2); color:#fff; border:none; box-shadow:0 5px 0 #1d6b2c; text-shadow:2px 2px 0 var(--ink); }
+  button:active { transform:translateY(4px); box-shadow:0 1px 0 #1d6b2c; }
+  button.alt { background:#7a2fc0; box-shadow:0 5px 0 #4a1a7a; }
+  button.gold { background:#d99a12; box-shadow:0 5px 0 #8a5f06; }
+  .row { display:flex; gap:10px; } .row > * { flex:1; }
+  #err { color:#ff6b6b; font-size:10px; min-height:14px; margin-top:14px; line-height:1.6; }
+  .help { font-size:8px; color:#9f8fc0; margin-top:22px; line-height:2; }
+  #touch { position:fixed; inset:auto 0 0 0; display:none; justify-content:space-between; padding:14px; z-index:4; pointer-events:none; }
+  #touch .grp { display:flex; gap:12px; pointer-events:auto; }
+  #touch button { width:64px; height:64px; margin:0; padding:0; font-size:18px; border-radius:50%; opacity:.75; box-shadow:0 4px 0 #1d6b2c; }
+  @media (pointer:coarse) { body.playing #touch { display:flex; } }
+</style>
+</head>
+<body>
+<canvas id="game" width="320" height="192"></canvas>
+
+<div id="menu">
+  <div class="panel">
+    <h1>KUSH QUEST</h1>
+    <div class="sub">WORLD 1 · KUSH VALLEY</div>
+    <label for="name">YOUR NAME</label>
+    <input id="name" maxlength="10" placeholder="STONER" autocomplete="off">
+    <button id="solo" class="gold">PLAY SOLO</button>
+    <button id="create">CREATE ROOM (ONLINE)</button>
+    <div class="row">
+      <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" style="margin-top:12px">
+      <button id="join" class="alt">JOIN</button>
+    </div>
+    <div id="err"></div>
+    <div class="help">
+      MOVE: ARROWS / A D &nbsp; JUMP: SPACE / W / Z<br>
+      RUN: SHIFT / X &nbsp; MUSIC: M
+    </div>
+  </div>
+</div>
+
+<div id="touch">
+  <div class="grp"><button data-k="left">◀</button><button data-k="right">▶</button></div>
+  <div class="grp"><button data-k="run" class="alt">B</button><button data-k="jump" class="gold">A</button></div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "kush-quest",
+  "version": "0.3.0",
+  "description": "Retro co-op browser platformer",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

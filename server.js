@@ -1,0 +1,181 @@
+// Kush Quest - multiplayer game server
+// Zero dependencies: just run `node server.js` (Node 18+).
+// Serves the game from /public and relays player updates over WebSockets.
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const PORT = process.env.PORT || 3000;
+const PUBLIC = path.join(__dirname, 'public');
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json',
+  '.ico': 'image/x-icon', '.svg': 'image/svg+xml', '.wav': 'audio/wav', '.mp3': 'audio/mpeg'
+};
+
+// ---------- static files ----------
+const server = http.createServer((req, res) => {
+  let url = decodeURIComponent((req.url || '/').split('?')[0]);
+  if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
+  if (url === '/') url = '/index.html';
+  const file = path.normalize(path.join(PUBLIC, url));
+  if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  fs.readFile(file, (err, data) => {
+    if (err) { res.writeHead(404); return res.end('Not found'); }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.end(data);
+  });
+});
+
+// ---------- minimal WebSocket implementation ----------
+function frame(data, op = 1) {
+  const payload = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  const len = payload.length;
+  let head;
+  if (len < 126) { head = Buffer.alloc(2); head[1] = len; }
+  else if (len < 65536) { head = Buffer.alloc(4); head[1] = 126; head.writeUInt16BE(len, 2); }
+  else { head = Buffer.alloc(10); head[1] = 127; head.writeBigUInt64BE(BigInt(len), 2); }
+  head[0] = 0x80 | op;
+  return Buffer.concat([head, payload]);
+}
+
+let nextId = 1;
+const clients = new Set();
+server.on('upgrade', (req, socket) => {
+  const key = req.headers['sec-websocket-key'];
+  if (!key || !(req.url || '').startsWith('/ws')) { socket.destroy(); return; }
+  const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+    'Sec-WebSocket-Accept: ' + accept + '\r\n\r\n');
+  socket.setNoDelay(true);
+
+  const client = {
+    id: 'p' + (nextId++), room: null, socket, seen: Date.now(),
+    send(obj) { if (!socket.destroyed) socket.write(frame(JSON.stringify(obj))); }
+  };
+
+  let buf = Buffer.alloc(0);
+  clients.add(client);
+  socket.on('data', chunk => {
+    client.seen = Date.now();
+    buf = Buffer.concat([buf, chunk]);
+    while (buf.length >= 2) {
+      const op = buf[0] & 0x0f, masked = buf[1] & 0x80;
+      let len = buf[1] & 0x7f, off = 2;
+      if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
+      else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+      if (len > 65536) { socket.destroy(); return; }
+      const maskOff = off; if (masked) off += 4;
+      if (buf.length < off + len) return;
+      let payload = Buffer.from(buf.subarray(off, off + len));
+      if (masked) for (let i = 0; i < payload.length; i++) payload[i] ^= buf[maskOff + (i & 3)];
+      buf = buf.subarray(off + len);
+      if (op === 8) { socket.end(frame(Buffer.alloc(0), 8)); return; }
+      if (op === 9) { socket.write(frame(payload, 10)); continue; }
+      if (op === 1) { let msg; try { msg = JSON.parse(payload.toString()); } catch { continue; } handle(client, msg); }
+    }
+  });
+  socket.on('close', () => { clients.delete(client); leave(client); });
+  socket.on('error', () => { clients.delete(client); leave(client); });
+});
+
+// ---------- rooms ----------
+const rooms = new Map(); // code -> { players: Map(id -> {name,color,client}), collected: Set, level, emptySince }
+const MAX_PLAYERS = 4, MAX_ROOMS = 500, LEVEL_COUNT = 2;
+
+function makeCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s; do { s = ''; for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)]; } while (rooms.has(s));
+  return s;
+}
+const cleanName = n => (String(n || '').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').trim().slice(0, 10)) || 'STONER';
+
+function broadcast(room, obj, except) {
+  for (const [id, p] of room.players) if (id !== except) p.client.send(obj);
+}
+
+function enter(client, code, name) {
+  const room = rooms.get(code);
+  if (room.players.size >= MAX_PLAYERS) return client.send({ t: 'err', msg: 'Room is full (4 max)' });
+  const used = new Set([...room.players.values()].map(p => p.color));
+  let color = 0; while (used.has(color)) color++;
+  room.players.set(client.id, { name, color, client });
+  room.emptySince = 0;
+  client.room = code;
+  client.send({
+    t: 'joined', code, id: client.id, color, level: room.level,
+    players: [...room.players].filter(([id]) => id !== client.id).map(([id, p]) => ({ id, name: p.name, color: p.color })),
+    collected: [...room.collected]
+  });
+  broadcast(room, { t: 'pj', id: client.id, name, color }, client.id);
+}
+
+function handle(client, m) {
+  if (!m || typeof m !== 'object') return;
+  const room = client.room && rooms.get(client.room);
+  switch (m.t) {
+    case 'create': {
+      if (client.room) return;
+      if (rooms.size >= MAX_ROOMS) return client.send({ t: 'err', msg: 'Server is full, try again later' });
+      const code = makeCode();
+      rooms.set(code, { players: new Map(), collected: new Set(), level: 0, emptySince: 0 });
+      enter(client, code, cleanName(m.name));
+      break;
+    }
+    case 'join': {
+      if (client.room) return;
+      const code = String(m.code || '').toUpperCase().trim();
+      if (!rooms.has(code)) return client.send({ t: 'err', msg: 'No room with code ' + code });
+      enter(client, code, cleanName(m.name));
+      break;
+    }
+    case 's': // player state, relayed to the rest of the room
+      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0 }, client.id);
+      break;
+    case 'col': { // something was collected / defeated: first one wins
+      if (!room || (m.l | 0) !== room.level) return;
+      const id = String(m.id).slice(0, 20);
+      if (room.collected.has(id)) return;
+      room.collected.add(id);
+      broadcast(room, { t: 'col', id, l: room.level }, client.id);
+      break;
+    }
+    case 'next': { // move the whole room to a level
+      if (!room) return;
+      const n = Math.max(0, Math.min(LEVEL_COUNT - 1, m.n | 0));
+      room.level = n; room.collected.clear();
+      broadcast(room, { t: 'level', n });
+      break;
+    }
+    case 'emote':
+      if (room) broadcast(room, { t: 'emote', id: client.id, e: m.e | 0 }, client.id);
+      break;
+  }
+}
+
+function leave(client) {
+  if (!client.room) return;
+  const room = rooms.get(client.room);
+  client.room = null;
+  if (!room) return;
+  room.players.delete(client.id);
+  broadcast(room, { t: 'pl', id: client.id });
+  if (room.players.size === 0) room.emptySince = Date.now(); // kept 2 min so people can reconnect
+}
+
+// keep connections alive through hosting proxies + clean up
+setInterval(() => {
+  const now = Date.now();
+  for (const c of clients) {
+    if (now - c.seen > 75000) { c.socket.destroy(); continue; }
+    if (!c.socket.destroyed) c.socket.write(frame(Buffer.alloc(0), 9)); // ping; browsers answer with pong
+  }
+  for (const [code, r] of rooms) if (r.players.size === 0 && r.emptySince && now - r.emptySince > 120000) rooms.delete(code);
+}, 25000);
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('\n  KUSH QUEST server running!');
+  console.log('  Open  http://localhost:' + PORT + '  in your browser.\n');
+});

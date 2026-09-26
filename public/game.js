@@ -253,8 +253,8 @@ addEventListener('keydown', e => {
   if (menuish && (nav || a === 'jump' || a === 'attack' || c === 'Enter')) { e.preventDefault(); if (a === 'jump') press('jump', true); if (c === 'Enter') press('enter', true); if (a === 'attack') K.attackPressed = true; return; }
   if (a === 'chat' && Net.online) { e.preventDefault(); openChat(); return; }
   if (c === 'KeyH' && state === 'map') { K.shopPressed = true; return; }
-  if (state === 'map' && (c === 'KeyQ' || c === 'BracketLeft')) { K.worldPrev = true; return; }
-  if (state === 'map' && (c === 'KeyE' || c === 'BracketRight')) { K.worldNext = true; return; }
+  if ((state === 'map' || state === 'results') && (c === 'KeyQ' || c === 'BracketLeft')) { K.worldPrev = true; return; }
+  if ((state === 'map' || state === 'results') && (c === 'KeyE' || c === 'BracketRight')) { K.worldNext = true; return; }
   if (a === 'up') K.upPressed = true;
   if (a === 'down') K.downPressed = true;
   if (state === 'results' && (nav || a === 'jump')) { e.preventDefault(); if (a === 'jump') press('jump', true); return; }
@@ -665,6 +665,11 @@ const SHOP = [
   { kind: 'item', id: 'pouch', name: 'STASH POUCH', icon: 'pouch', price: 130, desc: 'MICE + SQUIRRELS CANT STEAL' },
   { kind: 'ammo', id: 'papers', name: 'ROLLING PAPERS x10', icon: 'papers', price: 30, desc: 'THROWING STARS. THROW KEY OR RIGHT-CLICK' },
   { kind: 'ammo', id: 'bombs', name: 'NUG BOMBS x5', icon: 'bombs', price: 60, desc: 'LOB A SMOKY BOMB INTO A CROWD' },
+];
+const SHOPKEEP_LINES = [
+  'WELCOME BACK, LEGEND.', "DON'T SPEND IT ALL ON PAPERS.", 'THE GRINDER SPIN SLAPS, TRUST ME.',
+  'YOU SMELL LIKE A GOOD MISSION.', 'SAVE UP FOR THE FARM, HOMIE.', 'BONG HAMMER ON SALE IN MY HEART.',
+  "I DON'T MAKE THE PRICES, I JUST VIBE.", 'COME BACK WHEN YOU GOT MORE COINS.',
 ];
 // rare bonus pickups: coins + a special effect
 const EXTRAS = {
@@ -1550,7 +1555,7 @@ function update() {
   if (lvl.locked && z) camX = Math.max(z.x0 + (ZW - W) / 2 - 40, Math.min(camX, z.x0 + 40));
 
   if (Net.online && frame % 3 === 0 && (state === 'play' || state === 'sitting')) {
-    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked) });
+    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked), hp: me.hp, mh: maxHp() });
   }
 }
 function animFrame(p) {
@@ -2212,6 +2217,7 @@ function menuOptions() {
   if (Net.online) o.push({ label: 'CHAT (' + keyLabel(settings.keys.chat) + ')', act: () => { closeMenu(); openChat(); } });
   o.push({ label: 'SETTINGS', act: () => { menu.page = 'settings'; menu.sel = 0; } });
   o.push({ label: 'CONTROLS', act: () => { menu.page = 'controls'; menu.sel = 0; } });
+  if (!Net.online && (state === 'play' || state === 'brief' || state === 'sitting')) o.push({ label: 'RESTART MISSION', act: () => { closeMenu(); go(() => startLevel(lvl.n)); } });
   if (!Net.online && (state === 'play' || state === 'brief' || state === 'sitting')) o.push({ label: 'QUIT TO MAP', act: () => { closeMenu(); go(openMap); } });
   o.push({ label: 'SAVE + MAIN MENU', act: () => { persist(); location.href = location.pathname; } });
   return o;
@@ -2220,7 +2226,7 @@ function copyInvite() {
   const link = location.origin + '/?room=' + Net.code;
   (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => { menu.msg = 'COPIED! PASTE IT TO YOUR FRIENDS'; }, () => { menu.msg = link; });
 }
-function openMenu() { menu = { page: 'main', sel: 0, msg: '' }; if (!Net.online) paused = true; }
+function openMenu() { menu = { page: 'main', sel: 0, msg: '' }; if (!Net.online) paused = true; else if (me && state === 'play') me.inv = Math.max(me.inv, 120); }
 function closeMenu() { menu = null; paused = false; rebinding = null; }
 function menuPick(i) { const o = menuOptions()[i]; if (!o) return; SFX.tick(); if (o.act) o.act(); else if (o.adj) o.adj(1); }
 function updateMenu() {
@@ -2247,6 +2253,16 @@ function drawMenu() {
     if (t.adj) { hot(x0 + bw - 40, y - 2, 14, rowH - 1, () => t.adj(-1)); hot(x0 + bw - 22, y - 2, 14, rowH - 1, () => t.adj(1)); text('-  +', x0 + bw - 36, y, '#c8ffa0'); }
   });
   if (Net.online && menu.page === 'main') text('ROOM CODE: ' + Net.code, W / 2, y0 + h - 12, '#e4b3ff', 1, 'center');
+  if (Net.online && menu.page === 'main' && remotes.size) {
+    const cy = y0 + h + 20; text('CREW', W / 2, cy - 8, '#b0a8c0', 1, 'center');
+    let yy = cy;
+    for (const [id, rp] of remotes) {
+      const down = rp.b & 8;
+      text(rp.name, x0 + 10, yy, SHIRTS[rp.color] || '#fff');
+      text(down ? 'DOWN - NEEDS HELP' : (rp.hp || 0) + '/' + (rp.mh || 5) + ' HP', x0 + bw - 10, yy, down ? '#ff8a8a' : '#c8ffa0', 1, 'right');
+      yy += 9;
+    }
+  }
   if (menu.page === 'settings') text('LEFT/RIGHT OR -/+ CHANGES VOLUME', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
   if (menu.page === 'controls') text(rebinding ? 'PRESS ANY KEY (ESC CANCELS)' : rebindWarn && rebindWarn.t-- > 0 ? rebindWarn.m : 'CLICK A ROW, THEN PRESS THE NEW KEY. ARROWS + MOUSE ALWAYS WORK', W / 2, y0 + h + 6, '#b0a8c0', 1, 'center');
   if (menu.msg) text(menu.msg, W / 2, y0 + h + 16, '#c8ffa0', 1, 'center');
@@ -2379,7 +2395,18 @@ function drawHUD() {
   { const q = save.quick || 'brownie'; if (save[q] > 0) { ctx.drawImage(ICONS[ITEMS[q].icon], 250, 4); text('x' + save[q], 260, 3, '#fff6b0'); text('C', 262, 10, '#b0a8c0'); } }
   if (me.buffs.rage > 0) text('RAGE', 246, 20, frame % 20 < 12 ? '#ff5a6a' : '#ffd84a');
   let bx = 226;
-  for (const [k, ex] of [['speed', 'shatter'], ['magnet', 'kief'], ['power', 'hash']]) if (me.buffs[k] > 0 && (me.buffs[k] > 120 || frame % 10 < 6)) { ctx.drawImage(EXTRAS[ex].img, bx, 4); bx += 11; }
+  for (const [k, ex, maxT] of [['speed', 'shatter', 600], ['magnet', 'kief', 720], ['power', 'hash', 720]]) if (me.buffs[k] > 0 && (me.buffs[k] > 120 || frame % 10 < 6)) { ctx.drawImage(EXTRAS[ex].img, bx, 4); R(ctx, '#1a1026', bx, 13, 9, 2); R(ctx, '#c8ffa0', bx, 13, Math.max(1, Math.round(9 * me.buffs[k] / maxT)), 2); bx += 11; }
+  // off-screen arrows toward crew who are behind, ahead, or downed
+  if (Net.online) for (const [id, rp] of remotes) {
+    const sx = rp.x - camX, off = sx < 6 || sx > W - 6, down = rp.b & 8;
+    if (!off && !down) continue;
+    const ay = down ? 30 : 96, ax = Math.max(8, Math.min(W - 8, sx));
+    const dir = sx < W / 2 ? -1 : 1, arrowX = off ? (sx < 0 ? 8 : W - 8) : ax;
+    ctx.save(); ctx.translate(arrowX, ay); if (off) ctx.scale(dir, 1);
+    ctx.fillStyle = down ? '#ff8a8a' : SHIRTS[rp.color] || '#fff'; ctx.beginPath(); ctx.moveTo(4, -4); ctx.lineTo(4, 4); ctx.lineTo(-4, 0); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if (down && !off) text(rp.name + ' DOWN', arrowX, ay + 8, '#ff8a8a', 1, 'center');
+  }
   const tw = THROWS.find(t => t.id === save.throwSel) || THROWS[0];
   if ((save.throws.papers || 0) + (save.throws.bombs || 0) > 0) { ctx.drawImage(ICONS[tw.id], 186, 4); text(save.throws[tw.id] || 0, 196, 3, '#fff6b0'); text('K', 197, 10, '#b0a8c0'); }
   if (me.star > 0) { ctx.drawImage(GOLD_LEAF, 212, 4); R(ctx, '#ffd84a', 198, 8, Math.ceil(me.star / 540 * 20), 3); }
@@ -2453,10 +2480,16 @@ function drawMap(y) {
 // ============================================================
 //  RESULTS + SHOP (between missions)
 // ============================================================
-function shopEntries() {
+let shopTab = 0;
+const SHOP_TABS = ['ALL', 'WEAPONS', 'ARMOR', 'ITEMS', 'AMMO', 'UPGRADES'];
+const SHOP_TAB_OF = { weapon: 'WEAPONS', armor: 'ARMOR', item: 'ITEMS', use: 'ITEMS', ammo: 'AMMO', upgrade: 'UPGRADES' };
+function shopEntries(all) {
   const ups = WEAPONS.filter(w => save.weapons.includes(w.id)).map(w => ({ kind: 'upgrade', id: w.id, icon: w.icon, name: 'UPGRADE ' + w.name + (wlv(w.id) < 3 ? ' LV' + (wlv(w.id) + 1) : ''), price: 60 * wlv(w.id) + w.dmg * 20, desc: '+1 DAMAGE AND STRONGER EFFECTS. MAX LV3' }));
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
-  return [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }, ...ups, ...uses, ...SHOP];
+  const nav = [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }];
+  const goods = [...ups, ...uses, ...SHOP];
+  const tab = SHOP_TABS[shopTab];
+  return [...nav, ...(all || tab === 'ALL' ? goods : goods.filter(g => SHOP_TAB_OF[g.kind] === tab))];
 }
 function itemStatus(it) {
   if (it.kind === 'weapon' && save.weapons.includes(it.id)) return 'OWNED';
@@ -2471,6 +2504,8 @@ function itemStatus(it) {
 }
 function updateShop() {
   if (results.farmScene) { if (K.enterPressed || K.jumpPressed) { results.farmScene = false; if (results.shopOnly) openMap(); } return; }
+  if (K.worldPrev || K.worldNext || K.nav === 'left' || K.nav === 'right') { shopTab = (shopTab + (K.worldNext || K.nav === 'right' ? 1 : -1) + SHOP_TABS.length) % SHOP_TABS.length; shopSel = 0; SFX.tick(); }
+  K.worldPrev = K.worldNext = false;
   const list = shopEntries();
   if (K.upPressed) { shopSel = (shopSel - 1 + list.length) % list.length; SFX.tick(); }
   if (K.downPressed) { shopSel = (shopSel + 1) % list.length; SFX.tick(); }
@@ -2520,11 +2555,21 @@ function drawShop() {
   text(r.made ? 'SMOKE SPOT ' + (lvl.n + 1) + ' REACHED!' : 'MISSION OVER', W / 2, 4, r.made ? '#c8ffa0' : '#ff8a8a', 2, 'center');
   text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA x2!' : ''), W / 2, 18, '#ffffff', 1, 'center');
   }
-  drawMap(44);
+  drawMap(38);
+  // tabs
+  let tx = 6;
+  SHOP_TABS.forEach((t, i) => {
+    const tw = t.length * 4 + 6;
+    hot(tx, 58, tw, 8, () => { shopTab = i; shopSel = 0; SFX.tick(); });
+    if (i === shopTab) R(ctx, '#4a3a60', tx, 58, tw, 8);
+    text(t, tx + 3, 60, i === shopTab ? '#ffd84a' : '#8a809a');
+    tx += tw + 2;
+  });
+  text('Q/E OR CLICK TO SWITCH TABS', W - 6, 60, '#8a809a', 1, 'right');
   // shop list
-  text('HEAD SHOP', 8, 66, '#ffd84a', 1);
-  text('YOUR STASH: ' + save.coins, W - 8, 66, '#ffd84a', 1, 'right');
-  const list = shopEntries(), rows = 10, start = Math.max(0, Math.min(shopSel - 4, list.length - rows));
+  text('HEAD SHOP', 8, 68, '#ffd84a', 1);
+  text('YOUR STASH: ' + save.coins, W - 8, 68, '#ffd84a', 1, 'right');
+  const list = shopEntries(), rows = 9, start = Math.max(0, Math.min(shopSel - 4, list.length - rows));
   for (let i = start; i < Math.min(list.length, start + rows); i++) {
     const it = list[i], y = 76 + (i - start) * 10, sel = i === shopSel, st = itemStatus(it);
     hot(4, y - 1, 190, 10, () => { if (shopSel === i) shopConfirm(); else { shopSel = i; SFX.tick(); } }, () => { shopSel = i; });
@@ -2541,7 +2586,16 @@ function drawShop() {
   R(ctx, '#4a3a60', 202, 76, 112, 96);
   if (it.kind !== 'ready' && it.kind !== 'quit') ctx.drawImage(ICONS[it.icon], 246, 80, 20, 20);
   wrap(it.desc, 206, 106, 26, '#ffffff');
+  if (it.kind === 'weapon') {
+    const cur = weaponDef(), dd = it.dmg - cur.dmg, rd = it.reach - cur.reach;
+    text('DMG ' + (dd >= 0 ? '+' : '') + dd + '  REACH ' + (rd >= 0 ? '+' : '') + rd, 206, 128, dd + rd >= 0 ? '#7fe07a' : '#ff8a8a');
+  } else if (it.kind === 'armor') {
+    const curHp = ARMORS.filter(a => save.armor.includes(a.id)).reduce((m, a) => Math.max(m, a.hp), 0), hd = it.hp - curHp;
+    text('HEARTS ' + (hd >= 0 ? '+' : '') + hd, 206, 128, hd >= 0 ? '#7fe07a' : '#ff8a8a');
+  }
   if (r.msg) wrap(r.msg, 206, 142, 26, '#ffd84a');
+  const clerk = SHOPKEEP_LINES[Math.floor(frame / 300) % SHOPKEEP_LINES.length];
+  text('SMOKEY:', 206, 160, '#e4b3ff'); wrap('"' + clerk + '"', 206, 168, 26, '#ffffff');
   text('MOUSE: CLICK TWICE TO BUY   KEYS: UP/DOWN + ENTER   ESC: MAP', W / 2, 183, '#8a809a', 1, 'center');
 }
 function wrap(str, x, y, width, col) {
@@ -3166,10 +3220,10 @@ const Net = {
     setTimeout(attempt, 1000);
   }
 };
-function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null }); }
+function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null, hp: 5, mh: 5 }); }
 function onNet(m) {
   switch (m.t) {
-    case 's': { const r = remotes.get(m.id); if (!r) return; if (r.tx < -500 || r.l !== m.l) { r.x = m.x; r.z = m.y; r.h = m.h; } Object.assign(r, { tx: m.x, tz: m.y, th: m.h, f: m.f, a: m.a, b: m.b, l: m.l, w: m.w, c: m.c }); break; }
+    case 's': { const r = remotes.get(m.id); if (!r) return; if (r.tx < -500 || r.l !== m.l) { r.x = m.x; r.z = m.y; r.h = m.h; } Object.assign(r, { tx: m.x, tz: m.y, th: m.h, f: m.f, a: m.a, b: m.b, l: m.l, w: m.w, c: m.c, hp: m.hp, mh: m.mh }); break; }
     case 'fx': {
       const r = remotes.get(m.id); if (!r || r.l !== lvl.n) break;
       r.atkT = 12;

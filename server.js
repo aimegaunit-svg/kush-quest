@@ -160,7 +160,7 @@ function handle(client, m) {
       break;
     }
     case 's': // player state, relayed to the rest of the room
-      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0 }, client.id);
+      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0, hp: Math.max(0, Math.min(20, m.hp | 0)), mh: Math.max(1, Math.min(20, m.mh | 0)) }, client.id);
       break;
     case 'fx': // visual-only effects (attacks)
       if (room) broadcast(room, { t: 'fx', id: client.id, k: m.k | 0, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, f: m.f | 0 }, client.id);

@@ -1211,7 +1211,12 @@ function buildLevel(n, remix) {
 let SAVE_KEY = 'kq_save_v2_s1';
 const SLOT_COUNT = 3;
 try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.getItem('kq_save_v2_s1')) localStorage.setItem('kq_save_v2_s1', old); } catch (e) {}
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '' }; }
+// v1.1 Section A: 4 homies (idx by Net.color/save.character, matching LOOKS order) each have one permanent
+// CORE weapon (10-level evolution) instead of the old shop-bought weapon roster. CORE_HOMIE[i] is the homie
+// key used as the save.cores{} key; CORE_WEAPON_ID maps that key to the existing WEAPONS[] id it reuses/skins.
+const CORE_HOMIE = ['rasta', 'snapback', 'bucket', 'afro'];
+const CORE_WEAPON_ID = { rasta: 'puff', snapback: 'bong', bucket: 'grinder', afro: 'lighter' };
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
@@ -1221,8 +1226,28 @@ function loadSlot(i) {
   save.farmPlots = save.farmPlots && save.farmPlots.length === 4 ? save.farmPlots : [null, null, null, null]; save.pet = save.pet || null; save.dailyDate = save.dailyDate || '';
   save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
   if (!Array.isArray(save.skills)) save.skills = BOSSES.slice(0, Math.min(save.spots || 0, BOSSES.length)).map(b => b[2]);
+  save.cores = { rasta: 1, snapback: 1, bucket: 1, afro: 1, ...(save.cores || {}) };
+  save.resin = save.resin || 0; save.seeds = save.seeds || 0; save.wild = save.wild || null;
+  // v1.1 one-time migration: never break old saves. Any pre-v1.1 save had `weapons`/`wlv`/`throws` counts
+  // that no longer mean anything under the two-slot Core/Wild system, so bank their value as Resin/coins
+  // instead of silently deleting it, and seed each homie's starting Core level from their old flat weapon level.
+  if (!save.migratedV11) {
+    const oldWeaponCount = Math.max(0, (save.weapons || []).length - 1); // -1: 'puff' was always free/starting
+    const oldThrowCount = Object.values(save.throws || {}).reduce((a, b) => a + (b || 0), 0);
+    const bankedResin = oldWeaponCount * 15 + oldThrowCount * 2;
+    if (bankedResin > 0) save.resin += bankedResin;
+    CORE_HOMIE.forEach(h => {
+      const oldId = CORE_WEAPON_ID[h];
+      const oldLv = (save.wlv && save.wlv[oldId]) || 1; // old flat weapon level, 1-3
+      save.cores[h] = Math.max(save.cores[h] || 1, Math.min(10, oldLv * 2)); // map old 1-3 range onto new 1-10 range
+    });
+    save.migratedV11 = true;
+  }
 }
 loadSlot(1);
+// Core weapon level for the currently-selected homie (Net.color/save.character index into CORE_HOMIE), 1-10.
+// Replaces the old wlv(weaponDef().id) lookup, which was capped at 3.
+function coreLevel(homieIdx) { const h = CORE_HOMIE[homieIdx != null ? homieIdx : (Net.color || 0)] || CORE_HOMIE[0]; return Math.max(1, Math.min(10, (save.cores && save.cores[h]) || 1)); }
 function persist() { checkAchv(); save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length + (Net.color === 0 ? 1 : 0) + (save.pet === 'kushling' ? 1 : 0);
 const weaponDef = () => WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];

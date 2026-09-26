@@ -1262,7 +1262,15 @@ function progressLabel(spots) {
 // level TYPE tag (brief v1.1 B1 "level variety"): assigned deterministically per level number so every world
 // mixes at least 4 of the 6 types. GAUNTLET/ESCORT/CHASE are implemented as light variants of the standard
 // BRAWL flow rather than bespoke mechanics (see buildLevel/updateZones) - documented simplification.
-const LEVEL_TYPES = ['BRAWL', 'GAUNTLET', 'HAZARD', 'BRAWL', 'CHASE', 'BRAWL', 'ESCORT', 'HAZARD', 'BRAWL', 'GAUNTLET'];
+// v1.2 (Step 6): index 3 changed BRAWL->ESCORT so World 1 (li 0,1,3,4 - li2/li5 are the mini/boss overrides)
+// actually hits 4 distinct non-boss types (BRAWL/GAUNTLET/ESCORT/CHASE), matching the brief's "at least 4
+// types per world" instead of only 3 (the old table only ever gave World 1 BRAWL/GAUNTLET/CHASE).
+const LEVEL_TYPES = ['BRAWL', 'GAUNTLET', 'HAZARD', 'ESCORT', 'CHASE', 'BRAWL', 'ESCORT', 'HAZARD', 'BRAWL', 'GAUNTLET'];
+const TYPE_GOAL = {
+  BRAWL: 'CLEAR THE STREETS', GAUNTLET: 'SURVIVE THE WAVES', HAZARD: 'WATCH THE HAZARD',
+  ESCORT: 'PROTECT THE HOMIE', CHASE: "DON'T GET LEFT BEHIND", SECRET: 'FIND THE STASH',
+  MINIBOSS: 'BEAT THE MINI-BOSS', BOSS: 'BEAT THE BOSS',
+};
 function levelType(n) {
   if (isSecretLevel(n)) return 'SECRET';
   const w = worldOf(n), li = levelInWorld(n), wd = WORLDS[w];
@@ -1343,6 +1351,7 @@ let LEN = 0;
 function buildLevel(n, remix) {
   const themeKey = themeKeyFor(n), theme = THEMES[themeKey];
   const diff = Math.min(n, 12) + (remix ? 4 : 0);
+  const type = levelType(n);
   let s = 1000 + (remix ? n + 90000 : n) * 7919; const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const pick = a => a[Math.floor(rand() * a.length)];
   const rz = () => 6 + Math.floor(rand() * (ZMAX - 12));
@@ -1365,8 +1374,15 @@ function buildLevel(n, remix) {
   const [chestZone, goldZone, secretZone, ambushZone] = [zonePicks[0], zonePicks[1] ?? zonePicks[0], zonePicks[2] ?? zonePicks[0], zonePicks[3] ?? zonePicks[0]];
   for (let zi = 0; zi < zoneCount; zi++) {
     const x0 = 300 + zi * 430;
-    const base = (n < 2 ? 7 : 5) + Math.floor(diff * 0.7) + Math.floor(zi / 2);
-    const count = Math.round(base * 2.5) + (n < 2 ? 4 : 0); // enough for a full crew of 4; the host only uses what the crew size needs
+    // v1.2 (Step 6.7): 1-1's very first fight (n===0, zi===0) used to get the SAME n<2 bonus crew as every
+    // other zone of levels 0-1, i.e. it was tuned harder, not softer, than the brief wants for a brand new
+    // player's first fight. Give it its own small flat count instead of the n<2 bump.
+    const firstFight = n === 0 && zi === 0;
+    const base = firstFight ? 3 : (n < 2 ? 7 : 5) + Math.floor(diff * 0.7) + Math.floor(zi / 2);
+    // v1.2 (Step 6.1): a GAUNTLET level's zone 0 is a "survive waves for a timer" arena (see hostUpdate) -
+    // give it a bigger pool so the drip-spawn logic (unchanged) has enough waves to last the timer.
+    const gauntletZone = type === 'GAUNTLET' && zi === 0;
+    const count = firstFight ? 4 : Math.round(base * 2.5 * (gauntletZone ? 1.7 : 1)) + (n < 2 ? 4 : 0); // enough for a full crew of 4; the host only uses what the crew size needs
     const ids = [];
     for (let k = 0; k < count; k++) {
       const kind = pick(theme.enemies);
@@ -1381,7 +1397,7 @@ function buildLevel(n, remix) {
       enemies.push(boss);
       for (let k = 0; k < 8; k++) { boss.summons.push(enemies.length); const kind = pick(theme.enemies); enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, reserve: true, hp: 1 + (VARIANT_HP[kind] || 0), maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
     }
-    zones.push({ x0, ids, base, started: false, cleared: false, ambush: zi === ambushZone });
+    zones.push({ x0, ids, base, started: false, cleared: false, ambush: zi === ambushZone, gauntlet: gauntletZone });
     // stuff inside each fight area
     prop(rand() < .5 ? 'crate' : 'trash', x0 + 60 + Math.floor(rand() * 180), rz(), [pick(['coin', 'munchie', 'nug', 'brownie', 'soda', 'coin']), 'coin', 'coin']);
     if (zi === chestZone) prop('chest', x0 + 150, 20, ['loot']);
@@ -1408,9 +1424,15 @@ function buildLevel(n, remix) {
   const lootPool = MISSION_LOOT.filter(id => !owned.has(id));
   const chestLoot = (lootPool.length ? lootPool : MISSION_LOOT)[Math.floor(rand() * (lootPool.length ? lootPool.length : MISSION_LOOT.length))];
 
+  // v1.2 (Step 6.1): real per-type gameplay flags, read by hostUpdate/updatePlayer/applyHazards/drawScene.
+  // CHASE: an auto-scrolling threat pushes the crew forward instead of locking them into fight areas.
+  // ESCORT: a homie NPC with their own HP walks the level with you and must be kept alive.
+  const chase = type === 'CHASE';
+  const escort = type === 'ESCORT' ? { x: 60, z: 20, hp: 12, maxHp: 12, alive: true } : null;
   return {
     n, themeKey, theme, name: missionName(n, remix), items, props, enemies, zones, deco, legend, spot, chestLoot, remix,
     zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: [],
+    type, chase, chaseX: 0, escort,
     // v1.1 A6: SUBURBIA mousetraps - a few placed on the ground in each fight area, telegraphed by being visible before they trigger
     traps: (themeKey === 'suburb' || theme.base === 'suburb') ? zones.map(z => ({ x: z.x0 + 90 + Math.floor(rand() * 140), z: rz(), armed: true, flash: 0 })) : []
   };
@@ -1427,7 +1449,7 @@ try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.g
 // key used as the save.cores{} key; CORE_WEAPON_ID maps that key to the existing WEAPONS[] id it reuses/skins.
 const CORE_HOMIE = ['rasta', 'snapback', 'bucket', 'afro'];
 const CORE_WEAPON_ID = { rasta: 'puff', snapback: 'bong', bucket: 'grinder', afro: 'lighter' };
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [] }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
@@ -1452,6 +1474,7 @@ function loadSlot(i) {
   if (!Array.isArray(save.skills)) save.skills = Array.from({ length: Math.min(save.spots || 0, TOTAL_LEVELS) }, (_, i) => SKILL_ORDER[i % SKILL_ORDER.length]);
   save.cores = { rasta: 1, snapback: 1, bucket: 1, afro: 1, ...(save.cores || {}) };
   save.resin = save.resin || 0; save.seeds = save.seeds || 0; save.wild = save.wild || null;
+  save.secretsFound = Array.isArray(save.secretsFound) ? save.secretsFound : []; // v1.2 (Step 6.3)
   // v1.1 A2: save.coreCap is the per-save cap on how high ANY core can currently be leveled (separate from
   // save.cores[homie] itself - see coreLevel()/shopEntries()). Never lower it once set. A save that already
   // had migratedV11 (i.e. existed before this cap system landed, possibly with cores already leveled past
@@ -1634,6 +1657,19 @@ function breakProp(p, remote) {
   spawnDrops(p);
   if (!remote) { SFX.stomp(); collect(p.id); }
   if (p.kind === 'chest') openChest(p);
+  if (p.kind === 'secret') foundSecretExit(); // v1.2 (Step 6.3): the hidden door/wall that reveals that world's secret level on the map
+}
+// v1.2 (Step 6.3): breaking the 'secret' prop in ANY level of a world reveals that world's SECRET map node
+// (see mapNodes()/nodeUnlocked()) - one hidden exit per world, exactly as the brief describes.
+function foundSecretExit() {
+  if (!lvl) return;
+  const w = worldOf(lvl.n);
+  save.secretsFound = save.secretsFound || [];
+  if (!save.secretsFound.includes(w)) {
+    save.secretsFound.push(w); persist();
+    banner = { t: 220, a: 'SECRET FOUND!', b: WORLDS[w].name + ' SECRET LEVEL UNLOCKED ON THE MAP' };
+    SFX.power();
+  }
 }
 function openChest(c) {
   const loot = lvl.chestLoot || MISSION_LOOT[lvl.n % MISSION_LOOT.length];
@@ -1915,38 +1951,43 @@ function applyHazards() {
   const bk = lvl.theme.base || lvl.themeKey;
   const zn = lvl.zones[lvl.zi] || lvl.zones[0]; if (!zn) return;
   lvl.hazardOn = false; lvl.hazardX = null; lvl.hazardZ = null; lvl.hazardFog = false;
+  // v1.2 (Step 6.1): "HAZARD: built around the world's hazard" - every level of a world already runs its
+  // theme's ambient hazard (unchanged below), but the level actually TAGGED hazard turns it up: shorter
+  // cycles, more damage. Real, testable difference without touching the (already shipped/tested) baseline.
+  const intense = levelType(lvl.n) === 'HAZARD', im = intense ? 1.7 : 1;
   if (bk === 'park') { // sprinklers: knock everyone around, no damage
-    const midX = zn.x0 + ZW / 2, on = frame % 240 < 40;
+    const midX = zn.x0 + ZW / 2, on = frame % (intense ? 160 : 240) < (intense ? 70 : 40);
     lvl.hazardOn = on;
     if (on && frame % 8 === 0) {
-      if (Math.abs(me.x - midX) < ZW / 2 && me.h < 6) { me.vx += (Math.sign(me.x - midX) || 1) * 0.4; me.vh = Math.max(me.vh, 1.4); puff(me.x, sy(me.z, me.h) - 6, 2, ['#bfe8ff', '#ffffff'], .6); }
-      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - midX) < ZW / 2) { e.vx += (Math.sign(e.x - midX) || 1) * 0.4; e.vh = Math.max(e.vh, 1.2); }
+      if (Math.abs(me.x - midX) < ZW / 2 && me.h < 6) { me.vx += (Math.sign(me.x - midX) || 1) * 0.4 * im; me.vh = Math.max(me.vh, 1.4 * im); puff(me.x, sy(me.z, me.h) - 6, 2, ['#bfe8ff', '#ffffff'], .6); }
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - midX) < ZW / 2) { e.vx += (Math.sign(e.x - midX) || 1) * 0.4 * im; e.vh = Math.max(e.vh, 1.2 * im); }
     }
   } else if (bk === 'beach') { // waves: push everyone along the depth axis, no damage
-    lvl.hazardOn = Math.sin(frame / 70) > 0.7;
+    lvl.hazardOn = Math.sin(frame / (intense ? 46 : 70)) > (intense ? 0.55 : 0.7);
     if (lvl.hazardOn && frame % 6 === 0) {
-      me.vz = (me.vz || 0) + 0.3;
-      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5) e.vz = (e.vz || 0) + 0.25;
+      me.vz = (me.vz || 0) + 0.3 * im;
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5) e.vz = (e.vz || 0) + 0.25 * im;
     }
   } else if (bk === 'suburb') { // rolling BBQ grill: a moving hitbox that burns anyone (player or enemy) it rolls over
-    const gx = zn.x0 + ZW / 2 + Math.sin(frame / 100) * (ZW / 2 - 24), gz = ZMAX / 2;
+    const gx = zn.x0 + ZW / 2 + Math.sin(frame / (intense ? 65 : 100)) * (ZW / 2 - 24), gz = ZMAX / 2;
     lvl.hazardX = gx; lvl.hazardOn = true;
-    if (frame % 30 === 0 && Math.abs(me.x - gx) < 12 && Math.abs(me.z - gz) < 10) hurt(1, 4, gx);
-    if (isHost() && frame % 20 === 0) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - gx) < 12 && Math.abs(e.z - gz) < 10) damageEnemy(e, 1, Math.sign(e.x - gx) || 1, false, null, { burn: 1 });
+    if (frame % (intense ? 20 : 30) === 0 && Math.abs(me.x - gx) < 12 && Math.abs(me.z - gz) < 10) hurt(1, intense ? 6 : 4, gx);
+    if (isHost() && frame % (intense ? 14 : 20) === 0) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - gx) < 12 && Math.abs(e.z - gz) < 10) damageEnemy(e, intense ? 2 : 1, Math.sign(e.x - gx) || 1, false, null, { burn: 1 });
   } else if (bk === 'city') { // traffic lanes: a warning light, then a car passes through the lane
-    const cyc = frame % 150, laneZ = 14 + (Math.floor(frame / 150) % 3) * 20;
-    lvl.hazardOn = cyc > 110; lvl.hazardZ = laneZ;
-    if (cyc === 130) {
-      if (Math.abs(me.z - laneZ) < 10) hurt(1, 3, me.x - 40 * me.face);
-      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.z - laneZ) < 10) damageEnemy(e, 2, 1, true, null, { kb: 1.4 });
+    const period = intense ? 100 : 150, cyc = frame % period, laneZ = 14 + (Math.floor(frame / period) % 3) * 20;
+    lvl.hazardOn = cyc > period - (intense ? 30 : 40); lvl.hazardZ = laneZ;
+    if (cyc === period - 20) {
+      if (Math.abs(me.z - laneZ) < 10) hurt(1, intense ? 4 : 3, me.x - 40 * me.face);
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.z - laneZ) < 10) damageEnemy(e, intense ? 3 : 2, 1, true, null, { kb: 1.4 });
     }
   } else if (bk === 'woods') { // fog: enemies only show up close (handled purely in drawScene)
     lvl.hazardFog = true;
   } else if (bk === 'hq') { // laser grid: switches on/off on a timer, damages anyone standing (not jumping) through it
-    lvl.hazardOn = (frame % 180) < 60;
-    if (lvl.hazardOn && frame % 20 === 0) {
-      if (me.h < 6) hurt(1, 3, me.x);
-      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && e.h < 6) damageEnemy(e, 1, 1, false, null, {});
+    const period = intense ? 130 : 180, onLen = intense ? 55 : 60;
+    lvl.hazardOn = (frame % period) < onLen;
+    if (lvl.hazardOn && frame % (intense ? 14 : 20) === 0) {
+      if (me.h < 6) hurt(1, intense ? 4 : 3, me.x);
+      if (isHost()) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && e.h < 6) damageEnemy(e, intense ? 2 : 1, 1, false, null, {});
     }
   }
 }
@@ -2342,9 +2383,22 @@ function updatePlayer() {
   const zn = lvl.zones[lvl.zi];
   const left = lvl.locked && zn ? zn.x0 + 8 : Math.max(8, camX - 40), right = lvl.locked && zn ? zn.x0 + ZW - 8 : LEN - 8;
   p.x = Math.max(left, Math.min(right, p.x));
-  if (!lvl.locked) { // can't run past the next fight until it's started
+  // v1.2 (Step 6.1): CHASE levels never lock a zone (see below) and must let the crew run straight through
+  // an unfinished fight rather than walling them at its edge - that's the whole "keep moving" point of the type.
+  if (!lvl.locked && !lvl.chase) { // can't run past the next fight until it's started
     const next = lvl.zones.find(z => !z.cleared);
     if (next && next.started && p.x > next.x0 + ZW - 8) p.x = next.x0 + ZW - 8;
+  }
+  // v1.2 (Step 6.1): CHASE - an auto-scrolling threat (a wall of "narcs") advances at a fixed pace behind
+  // you; fall behind it and you take periodic damage and get shoved forward. Cosmetic/self-inflicted only
+  // (each client runs its own frame counter), so no network sync is needed.
+  if (lvl.chase && state === 'play') {
+    lvl.locked = false;
+    lvl.chaseX = (lvl.chaseX || 0) + 0.62;
+    if (p.x < lvl.chaseX + 26) {
+      p.x = Math.max(p.x, lvl.chaseX + 4);
+      if (frame % 40 === 0) { hurt(1, 2, lvl.chaseX); popup(p.x - 14, sy(p.z) - 34, 'CAUGHT UP!', '#ff5a6a'); }
+    }
   }
 
   // v1.2 fix (Step 5.3): BONG tap vs hold is its OWN input rule, not gated behind the `charge` skill -
@@ -2440,6 +2494,7 @@ function updatePlayer() {
     else if (L.gift === 'heal') { p.hp = maxHp(); lg.gift = 'FULL HEARTS'; }
     else { addCoins(40); lg.gift = '+40 HASH COINS'; }
     p.legendT = 300;
+    checkpoint = { x: lg.x, z: 8 }; // v1.2 (Step 6.5): the legend NPC is one of the only 2 checkpoint spots now
   }
   if (p.legendT > 0) p.legendT--;
   // the smoke spot
@@ -2495,18 +2550,21 @@ function bossAI(e, tgt, dx, dz, cloud) {
   }
   if (e.state === 3) { if (--e.t <= 0) e.state = 0; return [0, 0]; }
   e.dir = Math.sign(dx) || 1; e.cd--;
-  const shooter = e.ai === 'karen' || (e.mega && e.phase);
+  // v1.2 (Step 6.4): mini-bosses (e.mini) now get the same phase-toggled 2nd attack pattern mega bosses
+  // already had (ranged volleys alternating with the brawler pattern below) - was mega-only before, so
+  // every mini-boss only ever used one pattern.
+  const shooter = e.ai === 'karen' || ((e.mega || e.mini) && e.phase);
   if (shooter) { // keep distance, throw volleys
     const side = e.x < tgt.x ? -1 : 1, wantX = tgt.x + side * 84;
     if (e.cd <= 0 && Math.abs(dz) < 20) {
-      e.cd = Math.round(110 / spd); e.state = 3; e.t = 40; e.phase = e.mega ? !e.phase : e.phase;
+      e.cd = Math.round(110 / spd); e.state = 3; e.t = 40; e.phase = (e.mega || e.mini) ? !e.phase : e.phase;
       for (const oz of rage ? [-18, -8, 0, 8, 18] : [-12, 0, 12]) { const shot = { x: e.x + e.dir * 12, z: Math.max(0, Math.min(ZMAX, e.z + oz)), vx: e.dir * 1.7, life: 170, spin: 0 }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n }); }
       SFX.karen(); if (Math.random() < .4) popup(e.x - 20, sy(e.z) - 50, e.quote.split(' ').slice(0, 3).join(' '), '#ffb0b0');
     }
     return [Math.sign(wantX - e.x) * Math.min(0.6 * spd, Math.abs(wantX - e.x)), Math.sign(dz) * Math.min(0.6, Math.abs(dz))];
   }
   // brawler: walk up and swing, or wind up a charging dash
-  if (e.cd <= 0 && Math.abs(dx) > 50 && Math.abs(dz) < 14) { e.state = 1; e.t = 34; e.dash = true; e.dashDir = e.dir; e.cd = Math.round(170 / spd); e.phase = e.mega ? !e.phase : e.phase; return [0, 0]; }
+  if (e.cd <= 0 && Math.abs(dx) > 50 && Math.abs(dz) < 14) { e.state = 1; e.t = 34; e.dash = true; e.dashDir = e.dir; e.cd = Math.round(170 / spd); e.phase = (e.mega || e.mini) ? !e.phase : e.phase; return [0, 0]; }
   if (Math.abs(dx) < 40 && Math.abs(dz) < 10 && tgt.h < 16) { e.state = 1; e.t = 22; e.dash = false; return [0, 0]; }
   const wantX = tgt.x - e.dir * 30;
   return [Math.sign(wantX - e.x) * Math.min(1.0 * spd, Math.abs(wantX - e.x)), Math.sign(dz) * Math.min(0.8, Math.abs(dz))];
@@ -2534,7 +2592,12 @@ function hostUpdate() {
       const crew = players.length, need = Math.round(z.base * (1 + 0.55 * (crew - 1)));
       z.ids.filter(i => !lvl.enemies[i].boss).slice(need).forEach(i => { lvl.enemies[i].alive = false; lvl.enemies[i].skipped = true; });
       z.maxOn = 5 + 2 * (crew - 1);
-      banner = { t: 70, a: 'HERE THEY COME!', b: '' }; SFX.karen();
+      // v1.2 (Step 6.5): checkpoints only at the legend NPC (see updatePlayer) and the boss arena start -
+      // not at every cleared zone anymore. The boss zone is always the last one.
+      if (nz === lvl.zones.length - 1) checkpoint = { x: z.x0 + 20, z: 30 };
+      if (z.gauntlet) { z.timer = 2700; banner = { t: 90, a: 'SURVIVE!', b: 'HOLD THIS SPOT FOR 45 SECONDS' }; }
+      else banner = { t: 70, a: 'HERE THEY COME!', b: '' };
+      SFX.karen();
     }
     if (z.started && !z.cleared) {
       const alive = z.ids.map(i => lvl.enemies[i]).filter(e => e.alive);
@@ -2549,7 +2612,36 @@ function hostUpdate() {
         z.spawnT = z.ambush ? (onScreen < 3 ? 6 : 20) : onScreen < 2 ? 12 : 34;
         if (e.boss) { e.x = z.x0 + ZW + 30; e.dir = -1; e.z = ZMAX / 2; bossIntro(e); Net.send({ t: 'boss', i: e.id, l: lvl.n }); }
       }
-      if (!alive.length) { z.cleared = true; lvl.locked = false; banner = { t: 90, a: 'GO GO GO!', b: '' }; SFX.cp(); checkpoint = { x: z.x0 + 20, z: 30 }; } // v1.1 A5: this zone is now the respawn checkpoint
+      // v1.2 (Step 6.1): GAUNTLET - survive a timer instead of requiring every enemy dead. Waves keep
+      // dripping in from the (bigger) pool via the spawn logic above, unchanged; when the timer runs out
+      // (or the pool genuinely runs dry) the arena clears regardless of who's still standing.
+      if (z.gauntlet) {
+        if (z.timer == null) z.timer = 2700;
+        if (--z.timer === 150) banner = { t: 90, a: 'ALMOST THERE!', b: '' };
+        if (z.timer <= 0 || (!alive.length && !waiting.length)) {
+          for (const e of alive) if (e.spawned) { e.alive = false; e.state = 5; e.t = 30; }
+          z.cleared = true; lvl.locked = false; banner = { t: 110, a: 'GAUNTLET CLEARED!', b: '' }; SFX.cp();
+        }
+      } else if (!alive.length) { z.cleared = true; lvl.locked = false; banner = { t: 90, a: 'GO GO GO!', b: '' }; SFX.cp(); }
+    }
+  }
+  // v1.2 (Step 6.1): ESCORT - the homie NPC waits outside an active fight (taking chip damage from nearby
+  // enemies) and otherwise walks steadily toward the next zone. Host-authoritative; hp<=0 fails the level
+  // through the exact same restartLevelOutOfLives() path a crew wipe already uses (fully tested, synced).
+  if (lvl.escort && lvl.escort.alive) {
+    const es = lvl.escort, z2 = lvl.zones[lvl.zi];
+    if (z2 && z2.started && !z2.cleared) {
+      es.x = Math.min(es.x, z2.x0 - 10); es.z = 20;
+      if (frame % 45 === 0) {
+        const near = z2.ids.map(i => lvl.enemies[i]).filter(e => e.alive && e.spawned && Math.abs(e.x - es.x) < 40 && Math.abs(e.z - es.z) < 24);
+        if (near.length) {
+          es.hp -= near.length; puff(es.x, sy(es.z) - 10, 4, ['#ff5a6a', '#ffffff'], .8); shake = Math.max(shake, 4);
+          if (es.hp <= 0) { es.hp = 0; es.alive = false; banner = { t: 140, a: 'THE HOMIE WENT DOWN!', b: '' }; SFX.bump(); restartLevelOutOfLives(); }
+        }
+      }
+    } else {
+      const nextZ = lvl.zones[lvl.zi + 1] || lvl.zones[lvl.zones.length - 1];
+      es.x = Math.min(es.x + 0.55, (nextZ ? nextZ.x0 - 10 : LEN - 20)); es.z = 20;
     }
   }
   const zLock = lvl.locked && lvl.zones[lvl.zi], zMin = zLock ? zLock.x0 + 16 : -1e9, zMax = zLock ? zLock.x0 + ZW - 16 : 1e9;
@@ -3178,6 +3270,11 @@ function drawHazard() {
   } else if (bk === 'hq' && lvl.hazardOn) {
     for (let X = 4; X < W; X += 16) { ctx.fillStyle = 'rgba(255,40,60,' + (0.35 + 0.15 * Math.sin(frame / 6 + X)).toFixed(2) + ')'; ctx.fillRect(X, FLOOR_Y - 40, 2, 40); }
   }
+  // v1.2 (Step 6.1): CHASE - draw the auto-scrolling threat wall so it's obvious what's pushing you forward
+  if (lvl.chase) {
+    const X = Math.round((lvl.chaseX || 0) - camX);
+    if (X > -30 && X < W + 30) { ctx.fillStyle = 'rgba(255,40,60,.4)'; ctx.fillRect(X - 4, FLOOR_Y - 44, 6, ZMAX + 44); ctx.fillStyle = 'rgba(255,120,60,.5)'; for (let k = 0; k < 5; k++) ctx.fillRect(X - 2, FLOOR_Y - 8 - k * 8, 2, 6); }
+  }
 }
 function draw() { if (state === 'transit') return; TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
 function drawTransitWait() {
@@ -3251,6 +3348,14 @@ function drawScene() {
     if (!lg.met && frame % 80 < 60) text('!', lg.x - camX, sy(lg.z) - 36, '#ffffff', 1, 'center');
     if (frame % 12 === 0) puff(lg.x + 5, sy(lg.z) - 12, 1, ['#ffffff', '#e8e4f4'], .3, -0.03);
   } });
+  // v1.2 (Step 6.1): ESCORT NPC - a simple homie sprite (reuses the player art in a distinct color) with an
+  // HP bar, walking the level with the crew (see hostUpdate for its movement/damage logic).
+  if (lvl.escort && lvl.escort.alive) { const es = lvl.escort; list.push({ z: es.z, d: () => {
+    shadow(es.x, es.z, 0); const X = Math.round(es.x - camX), Y = sy(es.z);
+    ctx.drawImage(PLAYER[3][frame % 30 < 15 ? 0 : 1], X - 5, Y - 17);
+    text('THE HOMIE', X, Y - 26, '#7fe07a', 1, 'center');
+    R(ctx, P.k, X - 8, Y - 32, 16, 3); R(ctx, '#ff5a6a', X - 7, Y - 31, Math.round(14 * es.hp / es.maxHp), 1);
+  } }); }
   for (const r of remotes.values()) {
     if (r.tx < -500 || r.l !== lvl.n) continue;
     list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer.say = r.say && r.say.msg; drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash, r.b & 8 ? true : 0, r.cl || 1); } });
@@ -3326,6 +3431,8 @@ function drawHUD() {
   for (let i = 0; i < mh; i++) ctx.drawImage(i < me.hp ? (i >= 4 ? HEART_A : HEART) : HEART_E, 3 + i * 8, 3);
   ctx.drawImage(COIN, 3, 10 - 1, 7, 6); text(save.coins, 12, 10, '#ffd84a');
   text(crewLives + ' LIFE' + (crewLives === 1 ? '' : 'S'), 40, 10, crewLives <= 1 ? '#ff8a8a' : '#c8ffa0'); // v1.1 A5
+  // v1.2 (Step 6.1): GAUNTLET survive-timer readout
+  { const gz = lvl.zones[lvl.zi]; if (gz && gz.gauntlet && gz.started && !gz.cleared && gz.timer != null) text('SURVIVE: ' + Math.ceil(gz.timer / 60) + 's', W - 4, 3, '#ffd84a', 1, 'right'); }
   // cooked meter
   const mx = 72, c = Math.round(me.cooked);
   ctx.drawImage(LEAF_ICON, mx, 2);
@@ -3757,6 +3864,9 @@ function mapNodes(w) {
     if (k === 1) nodes.push({ kind: 'shop', x: Math.round(px(k) + 10), y: Math.round(py(k) + 22) });
     if (k === wd.miniAt) nodes.push({ kind: 'hotbox', x: Math.round((px(k) + px(Math.min(count - 1, k + 1))) / 2), y: Math.round(Math.min(py(k), py(Math.min(count - 1, k + 1))) - 18) });
   }
+  // v1.2 (Step 6.3): the SECRET level's own map node - invisible (see the draw loop's `nd.secret` check)
+  // and unselectable (nodeUnlocked() gates it on save.secretsFound) until its world's hidden door is found.
+  nodes.push({ kind: 'level', n: SECRET_BASE + w, secret: true, x: Math.round(px(count - 1)), y: Math.round(py(count - 1)) + 30 });
   nodes.push(w === WORLDS.length - 1 ? { kind: 'farm', x: MW - 40, y: 82 } : { kind: 'gate', to: w + 1, x: MW - 40, y: 82 });
   return nodes;
 }
@@ -3767,7 +3877,7 @@ let mapSel = 0, mapCanvas = null, mapWater = null, mapRoads = [], storyPage = 0,
 const mapCache = {};
 function useMap(w) { if (!mapCache[w]) { const nodesWas = MAP_NODES; MAP_NODES = mapNodes(w); const c = buildMapCanvas(w); mapCache[w] = { c, water: mapWater, roads: mapRoads }; MAP_NODES = nodesWas; } mapCanvas = mapCache[w].c; mapWater = mapCache[w].water; mapRoads = mapCache[w].roads; return mapCanvas; }
 function nodeUnlocked(nd) {
-  if (nd.kind === 'level') return nd.n <= save.spots;
+  if (nd.kind === 'level') return nd.secret ? save.secretsFound.includes(worldOf(nd.n)) : nd.n <= save.spots;
   if (nd.kind === 'gate') return save.spots >= WORLD_START[curWorld + 1];
   if (nd.kind === 'shop') return true;
   if (nd.kind === 'hotbox') return save.spots >= WORLD_START[curWorld] + WORLDS[curWorld].miniAt;
@@ -4157,6 +4267,7 @@ function drawMap_() {
   particles = particles.filter(p => !p.map || --p.life > 0);
   // stops
   MAP_NODES.forEach((nd, i) => {
+    if (nd.secret && !nodeUnlocked(nd)) return; // v1.2 (Step 6.3): truly hidden until its secret exit is found
     const open = nodeUnlocked(nd), done = nd.kind === 'level' && nd.n < save.spots, sel = i === mapSel;
     const col = nd.kind === 'shop' ? '#c070ff' : nd.kind === 'hotbox' ? '#5affd0' : nd.kind === 'gate' ? '#7ac8ff' : nd.kind === 'farm' ? (save.farm ? '#7fe07a' : '#ffd84a') : done ? '#7fe07a' : nd.mega && open ? '#ff5a6a' : nd.mini && open ? '#ff9a5a' : open ? '#ffd84a' : '#8a809a';
     const r = sel ? 5 + (frame % 30 < 15 ? 1 : 0) : 4;
@@ -4192,7 +4303,7 @@ function drawMap_() {
     const th = THEMES[themeKeyFor(nd.n)];
     const bd = bossDataFor(nd.n);
     text(nd.n < save.spots ? 'CLEARED - REPLAY FOR COINS' : (bd[4] ? 'MEGA BOSS: ' : bd[5] ? 'MINI-BOSS: ' : 'BOSS: ') + bd[0] + '  -  TEACHES: ' + SKILLS[bd[2]].name, 6, H - 27, nd.n < save.spots ? '#c8ffa0' : bd[4] ? '#ff8a8a' : bd[5] ? '#ff9a5a' : '#ffffff');
-    text('TYPE: ' + levelType(nd.n) + '   WATCH OUT:', 6, H - 16, '#b0a8c0');
+    text('TYPE: ' + levelType(nd.n) + ' - ' + (TYPE_GOAL[levelType(nd.n)] || '') + '   WATCH OUT:', 6, H - 16, '#b0a8c0');
     [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 90 + i * 12, H - 4 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
   } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 27, '#ffffff');
   else if (nd.kind === 'hotbox') text('HOTBOX HIGHWAY - A CO-OP DRIVING MINI-GAME', 6, H - 27, '#ffffff');
@@ -4689,5 +4800,8 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   // v1.2 fix (Step 5) debug hooks: set the current homie's Core straight to a level (bypassing coreCap and
   // the coins/Resin/Seed cost) for the "screenshot every form" check, plus the tier/form-name helpers.
   setCoreLevel: lv => { save.cores[CORE_HOMIE[Net.color || 0]] = Math.max(1, Math.min(10, lv | 0)); save.coreCap = Math.max(save.coreCap || 3, lv | 0); },
-  coreTier, formName, weaponDef, CORE_FORMS, attack, get shots() { return shots; }, coreLevel, WEAPONS };
+  coreTier, formName, weaponDef, CORE_FORMS, attack, get shots() { return shots; }, coreLevel, WEAPONS,
+  // v1.2 (Step 6) debug hooks: level-type gameplay + secret exits, for the automated per-world playthrough test.
+  TYPE_GOAL, foundSecretExit, hostUpdate, applyHazards, nodeUnlocked, get checkpoint() { return checkpoint; },
+  breakProp, get particles() { return particles; } };
 })();

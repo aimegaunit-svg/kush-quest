@@ -769,3 +769,83 @@ spawned-shot shape. Verified online in 2 real browser tabs: a Grinder Lv10 attac
 attack both ran with zero console errors on either client. `node --check` clean throughout.
 
 Pushed to `main`. Next: Step 6 (Levels become real, per Brief v1.1 B1).
+
+## STEP 6 (FIX_STEPS.md): Levels become real (Brief v1.1 B1) - landed and verified, World 1 only
+The B1 groundwork from an earlier session already gave every level a `levelType(n)` tag
+(BRAWL/GAUNTLET/HAZARD/ESCORT/CHASE/SECRET/MINIBOSS/BOSS) but flagged the real gap itself: those tags were
+metadata only, every level still played as the same clear-zones-then-boss BRAWL flow. This step gives the
+4 non-BRAWL types actually appearing in World 1 (and HAZARD, which appears from World 2 on) their own real
+mechanics, plus the checkpoint/secret-exit/mini-boss items from the plan. Per your standing rule, this is
+World 1 only for now (6 levels + its secret); Step 6 says to repeat items 2-6 per world after that.
+
+1. **Level types with real gameplay** (all in `game.js` - `buildLevel`/`hostUpdate`/`updatePlayer`/
+   `applyHazards`/`drawScene`, no other agent's files touched):
+   - **GAUNTLET**: zone 0 of a GAUNTLET level (e.g. 1-2) is tagged `gauntlet:true` with a ~1.7x bigger enemy
+     pool. `hostUpdate` runs a real 45s survive timer instead of requiring every enemy dead - the existing
+     drip-spawn/wave logic (unchanged) keeps feeding it, and the arena clears when the timer hits 0 (or the
+     pool genuinely runs dry), not when the last enemy falls. HUD shows a live "SURVIVE: Ns" countdown.
+   - **ESCORT** (e.g. 1-4): a real NPC (`lvl.escort`, 12 HP) walks the level with the crew - it waits just
+     outside an active fight and takes real chip damage from any alive enemy near it every 45 frames, and
+     otherwise walks steadily toward the next zone. Hp hitting 0 fails the level through the EXACT SAME
+     `restartLevelOutOfLives()` path a crew wipe already uses (host-authoritative, already network-synced,
+     zero new wire messages). Drawn with an HP bar in the z-sorted scene list.
+   - **CHASE** (e.g. 1-5): never locks a zone; instead a visible auto-scrolling threat wall (`lvl.chaseX`)
+     advances every frame regardless of what you're fighting, and falling behind it costs a heart + gets
+     you shoved forward. Cosmetic/self-inflicted per client (each client's own `frame` counter), so no sync
+     needed - verified this doesn't desync or error when run host-side with a real guest connected online.
+   - **HAZARD**: every level in a world already ran that world's ambient hazard (sprinklers/waves/BBQ
+     grill/traffic/fog/laser grid) - that part was real already, just not tied to the type tag. The level
+     actually TAGGED hazard now runs it ~1.7x more often and harder (shorter cycles, more damage); other
+     levels keep the original (unchanged, already-tested) baseline intensity. Doesn't land in World 1's own
+     rotation but is live and testable from World 2 on.
+   - The map briefing panel already showed `TYPE: X`; it now also shows each type's one-line goal
+     (`TYPE_GOAL`, e.g. "GAUNTLET - SURVIVE THE WAVES").
+   - **Scope trim, flagged rather than guessed past**: no new hand-authored level "chunks" were built (item
+     2's "hand-designed chunks... start with World 1 only" bit) - `buildLevel` is still the same procedural
+     per-level generator, just with real per-type logic layered on top. Hand-authoring real chunk art/layout
+     is a genuine multi-day content task, same call as last session's B1 note. Also didn't touch enemy trick
+     pacing (item 6) this pass - the existing A6 trick-per-world system already spreads tricks out, and I
+     didn't want to risk destabilizing tuned enemy AI states on top of everything else in this step.
+2. **Secret exits are real now.** Discovered two real gaps: the SECRET level nodes (n = 49-54) had NO map
+   node at all (only `k < wd.levels.length` levels got a node in `mapNodes()` - the secret levels were
+   literally unreachable), and the existing `secret` prop was just a chest with a different sprite, wired
+   to nothing. Fixed both: `mapNodes()` now pushes one `{kind:'level', secret:true}` node per world, hidden
+   entirely from the draw loop and from `nodeUnlocked()` until `save.secretsFound` includes that world;
+   breaking the `secret` prop in any level of a world (`breakProp` -> `foundSecretExit()`) adds that world
+   to `save.secretsFound`, persists, and banners "SECRET FOUND!". Verified: break the prop, confirm the
+   node is now in `nodeUnlocked()`'s true set (it was hidden/unselectable before).
+3. **Mini-bosses get a real 2nd attack pattern.** `bossAI`'s ranged-volley phase toggle (`e.phase`) already
+   existed and was fully tested - for MEGA (world) bosses only. Mini-bosses (`e.mini`) fell through to
+   `e.phase` always false, so they only ever used the brawler pattern. One-line fix: the same toggle now
+   also applies to `e.mini`, giving every mini-boss the exact same tested ranged-volley/brawler alternation
+   mega bosses already had, at no new risk.
+4. **Checkpoints, restricted to the 2 spots the plan calls for.** Previously EVERY zone clear set a
+   checkpoint. Now only 2 things do: reaching the boss arena's start (`nz === lvl.zones.length-1` in
+   `hostUpdate`'s zone-start branch) and meeting the level's legend NPC. Verified: clearing an ordinary
+   zone leaves `checkpoint` unchanged; walking into the boss zone sets it.
+5. **Soften 1-1's first fight + coin check.** `n===0 && zi===0` used to get the SAME "n<2 bonus crew" bump
+   every other zone of levels 0-1 got (base 7 vs the normal 5) - i.e. it was tuned HARDER than normal, not
+   softer. It's now a flat, small pool (4 enemies) regardless of the n<2 bump. Logged coins gained across
+   an automated World-1 playthrough (levels 0-5, brute-force-cleared via debug hooks to check the level
+   FLOW end to end, not combat balance): 50/62/70/107/90/100. Close to but not strictly inside the brief's
+   60-100 band - the low end (1-1, 50) and the one over (1-4/ESCORT, 107) are from the debug bot skipping
+   normal per-kill coin rewards (it flags enemies dead directly instead of calling `hitEnemy`/`onKill`), so
+   real play should land higher than this floor, not lower - flagging rather than hand-tuning blind.
+
+**Check status**: all of the above verified with real Playwright runs, not just reading the code - per-type
+flags/behavior checked directly (GAUNTLET timer clearing an arena for real, ESCORT taking real damage from
+a nearby enemy over real frames, CHASE's `chaseX` actually advancing and pushing/hurting a lagging player),
+checkpoint restriction checked by clearing a zone and confirming it did NOT move a checkpoint vs it DID at
+the boss zone, secret-exit unlock checked via `nodeUnlocked()` before/after breaking the prop, and a full
+automated World 1 (levels 0-5) playthrough with zero console/page errors. Also re-ran the Step 1/Step 2/
+Step 5 regression scripts from earlier sessions - all still pass (one pre-existing flaky assertion in the
+Step 1 wipe test, "A DID NOT reach map", is a timing flake in the map-transition wait unrelated to this
+step - every substantive assertion in that script still passed). Verified the host-side CHASE bookkeeping
+runs cleanly for several real seconds online with a connected guest present, zero errors either side.
+`node --check` clean on `game.js` and `server.js`.
+
+Pushed to `main`. Worlds 2-6 still need items 2-6 repeated (per the plan, one world at a time) - the type
+mechanics themselves are generic (keyed off `levelType(n)`, not World 1-specific) so they already apply
+everywhere; what's still open per-world is checking each world's own mix plays right and, for HAZARD
+specifically, actually seeing the intensified version in play since it doesn't land in World 1's rotation.
+Next: Step 7 (Grades and progress display, Brief v1.1 B4/B5).

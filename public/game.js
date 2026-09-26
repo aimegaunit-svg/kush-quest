@@ -677,7 +677,11 @@ const ENV_WEAPONS = {
   chair: { id: 'chair', name: 'OFFICE CHAIR', dmg: 3, cd: 22, reach: 34, zr: 16, kb: 1.8, uses: 3 },
 };
 const ENV_BY_THEME = { park: 'lid', beach: 'surfboard', suburb: 'cone', city: 'cone', woods: 'lid', hq: 'chair' };
-const wlv = id => (save.wlv && save.wlv[id]) || 1;
+// v1.1 A2: weapons are no longer individually leveled/bought - each homie's one permanent Core weapon
+// levels 1-10 via save.cores[homie] (see CORE_HOMIE/CORE_WEAPON_ID + coreLevel(), defined near the save
+// code above). wlv() keeps its old (id) signature for every existing call site, but now ignores id and
+// always returns the current homie's Core level, since the only weapon ever equipped IS that Core weapon.
+const wlv = id => coreLevel();
 const WEAPON_LV3 = { // LV3 unique perks, unlocked on the upgrade to LV3
   puff: 'LV3 PERK: BURN LASTS 2X LONGER + HITS SOMETIMES DROP A SMOKE RING',
   lighter: 'LV3 PERK: BURN SPREADS FURTHER + LEAVES A BURNING FIRE PATCH',
@@ -741,13 +745,12 @@ function checkAchv() {
 }
 function farmHas(strainId) { return (save.farmPlots || []).includes(strainId); }
 const farmSpeedMul = () => (save.pet === 'zippy' ? 1.1 : 1);
+// v1.1 A1: weapons and throwable ammo are no longer sold here - your Core weapon is fixed per-homie and
+// levels with Resin (see the 'coreup' entry shopEntries() builds), and loose throwables are gone entirely
+// (Wild weapons, still to come in A3, cover that role instead).
 const SHOP = [
-  ...WEAPONS.slice(1).map(w => ({ kind: 'weapon', ...w })),
   ...ARMORS.map(a => ({ kind: 'armor', ...a })),
   { kind: 'item', id: 'pouch', name: 'STASH POUCH', icon: 'pouch', price: 130, desc: 'HALVES THEFT AMOUNT (THIEF GETS +1 BONUS COIN)' },
-  { kind: 'ammo', id: 'papers', name: 'ROLLING PAPERS x10', icon: 'papers', price: 30, desc: 'THROWING STARS. THROW KEY OR RIGHT-CLICK' },
-  { kind: 'ammo', id: 'bombs', name: 'NUG BOMBS x5', icon: 'bombs', price: 60, desc: 'LOB A SMOKY BOMB INTO A CROWD' },
-  { kind: 'ammo', id: 'smoke', name: 'SMOKE GRENADES x3', icon: 'smoke', price: 70, desc: 'LOB A HIDING CLOUD - GREAT FOR ESCAPES + FAST REVIVES' },
 ];
 const SHOPKEEP_LINES = [
   'WELCOME BACK, LEGEND.', "DON'T SPEND IT ALL ON PAPERS.", 'THE GRINDER SPIN SLAPS, TRUST ME.',
@@ -1125,7 +1128,9 @@ function drawLayer(img, factor, camX, drift = 0, yOff = 0) {
 // ============================================================
 const FLOOR_Y = 110, ZMAX = 66;                 // screen y of the back edge of the street, depth of the street
 const sy = (z, h = 0) => FLOOR_Y + z - h;        // world (z,h) -> screen y (feet)
-const MISSION_LOOT = ['lighter', 'papers', 'blunt', 'hoodie', 'bombs', 'dab', 'vest', 'bong', 'grinder', 'crown', 'pouch'];
+// v1.1 A1: papers/bombs (throwable ammo) and per-weapon pickups (lighter/blunt/dab/bong/grinder) are gone -
+// chests now drop Resin (fuel for Wild weapons + Core-weapon shop upgrades) or armor/pouch as before.
+const MISSION_LOOT = ['resin', 'hoodie', 'resin', 'vest', 'resin', 'crown', 'pouch'];
 function missionName(n, remix) {
   const th = THEMES[themeKeyFor(n)];
   return ['WORLD ' + (worldOf(n) % WORLDS.length + 1) + '-' + (n % LEVELS_PER_WORLD + 1), th.name + (n >= TOTAL_LEVELS || remix ? ' REMIX' : '')];
@@ -1250,7 +1255,8 @@ loadSlot(1);
 function coreLevel(homieIdx) { const h = CORE_HOMIE[homieIdx != null ? homieIdx : (Net.color || 0)] || CORE_HOMIE[0]; return Math.max(1, Math.min(10, (save.cores && save.cores[h]) || 1)); }
 function persist() { checkAchv(); save.played = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0) + ['heart1', 'heart2', 'heart3', 'heart4'].filter(k => (save.skills || []).includes(k)).length + (Net.color === 0 ? 1 : 0) + (save.pet === 'kushling' ? 1 : 0);
-const weaponDef = () => WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];
+// v1.1 A1/A2: your weapon is fixed by which homie you're playing (no more shop-bought weapon swapping).
+const weaponDef = () => WEAPONS.find(w => w.id === CORE_WEAPON_ID[CORE_HOMIE[Net.color || 0]]) || WEAPONS[0];
 
 // ============================================================
 //  WORLD STATE
@@ -1348,19 +1354,19 @@ function breakProp(p, remote) {
 function openChest(c) {
   const loot = lvl.chestLoot || MISSION_LOOT[lvl.n % MISSION_LOOT.length];
   SFX.power(); shake = 5;
-  if (loot === 'papers' || loot === 'bombs') {
-    save.throws[loot] = (save.throws[loot] || 0) + (loot === 'papers' ? 15 : 6); save.throwSel = loot; persist();
-    banner = loot === 'papers' ? { t: 260, a: 'FOUND: ROLLING PAPERS x15!', b: 'THROW WITH ' + KL('throw') + ' OR RIGHT-CLICK. GREAT FOR BUZZKILLS WHO KEEP THEIR DISTANCE...' } : { t: 220, a: 'FOUND: NUG BOMBS x6!', b: 'PRESS ' + KL('throwsel') + ' TO SWITCH, ' + KL('throw') + ' TO LOB ONE INTO A CROWD' };
+  if (loot === 'resin') {
+    const amt = 6 + Math.floor(rand() * 6);
+    save.resin += amt; persist();
+    banner = { t: 220, a: 'FOUND: ' + amt + ' RESIN!', b: 'SPEND IT ON WILD WEAPONS OR CORE-WEAPON UPGRADES AT THE HEAD SHOP' };
     return;
   }
-  const def = [...WEAPONS, ...ARMORS, { id: 'pouch', name: 'STASH POUCH' }].find(i => i.id === loot);
-  const owned = save.weapons.includes(loot) || save.armor.includes(loot) || (loot === 'pouch' && save.pouch);
+  const def = [...ARMORS, { id: 'pouch', name: 'STASH POUCH' }].find(i => i.id === loot);
+  const owned = save.armor.includes(loot) || (loot === 'pouch' && save.pouch);
   if (owned) { addCoins(30); banner = { t: 140, a: 'TREASURE CHEST!', b: 'ALREADY HAVE ' + def.name + ' - TOOK 30 COINS' }; }
   else {
-    if (WEAPONS.some(w => w.id === loot)) { save.weapons.push(loot); save.weapon = loot; }
-    else if (loot === 'pouch') save.pouch = true;
+    if (loot === 'pouch') save.pouch = true;
     else { save.armor.push(loot); me.hp = maxHp(); }
-    banner = { t: 180, a: 'FOUND: ' + def.name + '!', b: WEAPONS.some(w => w.id === loot) ? 'EQUIPPED - CLICK OR ' + KL('attack') + ' TO SWING, ' + KL('weapon') + ' TO SWITCH' : 'SAVED IN YOUR BAG - OPEN IT WITH ' + KL('bag') + ', QUICK-USE WITH ' + KL('quick') };
+    banner = { t: 180, a: 'FOUND: ' + def.name + '!', b: 'SAVED IN YOUR BAG - OPEN IT WITH ' + KL('bag') + ', QUICK-USE WITH ' + KL('quick') };
   }
   persist();
 }
@@ -2830,9 +2836,12 @@ function drawMap(y) {
 // ============================================================
 let shopTab = 0;
 const SHOP_TABS = ['ALL', 'WEAPONS', 'ARMOR', 'ITEMS', 'AMMO', 'UPGRADES'];
-const SHOP_TAB_OF = { weapon: 'WEAPONS', armor: 'ARMOR', item: 'ITEMS', use: 'ITEMS', ammo: 'AMMO', upgrade: 'UPGRADES' };
+const SHOP_TAB_OF = { armor: 'ARMOR', item: 'ITEMS', use: 'ITEMS', coreup: 'UPGRADES' };
 function shopEntries(all) {
-  const ups = WEAPONS.filter(w => save.weapons.includes(w.id)).map(w => ({ kind: 'upgrade', id: w.id, icon: w.icon, name: 'UPGRADE ' + w.name + (wlv(w.id) < 3 ? ' LV' + (wlv(w.id) + 1) : ''), price: 60 * wlv(w.id) + w.dmg * 20, desc: wlv(w.id) === 2 ? WEAPON_LV3[w.id] : '+1 DAMAGE AND STRONGER EFFECTS. MAX LV3' }));
+  // v1.1 A2: one Core-weapon upgrade entry for whichever homie you're playing, paid in Resin (not coins),
+  // 1-10 levels instead of the old flat 1-3. WEAPON_LV3's flavor text is reused as a "LV3+" milestone note.
+  const w = weaponDef(), lv = coreLevel();
+  const ups = lv >= 10 ? [] : [{ kind: 'coreup', id: w.id, icon: w.icon, name: 'LEVEL UP ' + w.name + ' - LV' + (lv + 1), resinPrice: 8 + lv * 4, desc: lv === 2 ? WEAPON_LV3[w.id] : '+1 DAMAGE AND STRONGER EFFECTS. MAX LV10 (' + lv + '/10)' }];
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
   const nav = [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }];
   const armorTier = Math.max(-1, ...save.armor.map(id => ARMORS.findIndex(a => a.id === id))); // ARMOR is an upgrade line now: only the highest tier owned counts (also migrates old saves that stacked several pieces)
@@ -2848,12 +2857,10 @@ function shopEntries(all) {
   return [...nav, ...(all || tab === 'ALL' ? goods : goods.filter(g => SHOP_TAB_OF[g.kind] === tab))];
 }
 function itemStatus(it) {
-  if (it.kind === 'weapon' && save.weapons.includes(it.id)) return 'OWNED';
   if (it.kind === 'armor' && it.owned) return 'OWNED';
   if (it.kind === 'item' && save.pouch) return 'OWNED';
   if (it.kind === 'use' && save[it.id] >= itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0)) return 'MAX ' + (itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0));
-  if (it.kind === 'upgrade' && wlv(it.id) >= 3) return 'MAXED';
-  if (it.kind === 'ammo' && save.throws[it.id] >= 60) return 'FULL';
+  if (it.kind === 'coreup' && coreLevel() >= 10) return 'MAXED';
   if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (save.spots < SPOTS_TO_FARM) return 'LOCKED'; }
   if (it.kind === 'ready') return readyInfo && readyInfo.me ? 'WAITING ' + readyInfo.n + '/' + readyInfo.of : '';
   return null;
@@ -2929,14 +2936,18 @@ function shopConfirm() {
   }
   const st = itemStatus(it);
   if (st) { SFX.bump(); results.msg = st === 'LOCKED' ? 'REACH ' + SPOTS_TO_FARM + ' SMOKE SPOTS FIRST' : 'CANT BUY THAT'; return; }
+  if (it.kind === 'coreup') { // v1.1 A2: Core-weapon levels are paid in Resin, not coins
+    if (save.resin < it.resinPrice) { SFX.bump(); results.msg = 'NEED ' + (it.resinPrice - save.resin) + ' MORE RESIN'; return; }
+    save.resin -= it.resinPrice;
+    save.cores[CORE_HOMIE[Net.color || 0]] = coreLevel() + 1;
+    persist(); SFX.buy(); results.msg = weaponDef().name + ' IS NOW LV' + coreLevel() + '!';
+    return;
+  }
   if (save.coins < it.price) { SFX.bump(); results.msg = 'NEED ' + (it.price - save.coins) + ' MORE HASH COINS'; return; }
   save.coins -= it.price;
-  if (it.kind === 'weapon') { save.weapons.push(it.id); save.weapon = it.id; }
-  else if (it.kind === 'armor') save.armor = [it.id]; // an upgrade line: the new piece replaces whatever was worn before
+  if (it.kind === 'armor') save.armor = [it.id]; // an upgrade line: the new piece replaces whatever was worn before
   else if (it.kind === 'item') save.pouch = true;
   else if (it.kind === 'use') save[it.id] = Math.min(itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0), save[it.id] + 1);
-  else if (it.kind === 'upgrade') save.wlv[it.id] = wlv(it.id) + 1;
-  else if (it.kind === 'ammo') save.throws[it.id] = (save.throws[it.id] || 0) + (it.id === 'papers' ? 10 : 5);
   else if (it.kind === 'farm') { save.farm = true; results.farmScene = true; SFX.flag(); }
   persist(); SFX.buy(); results.msg = 'BOUGHT ' + it.name + '!';
 }
@@ -2988,16 +2999,17 @@ function drawShop() {
   text('Q/E OR CLICK TO SWITCH TABS', W - 6, 60, '#8a809a', 1, 'right');
   // shop list
   text('HEAD SHOP', 8, 68, '#ffd84a', 1);
-  text('YOUR STASH: ' + save.coins, W - 8, 68, '#ffd84a', 1, 'right');
+  text('COINS ' + save.coins + '   RESIN ' + save.resin, W - 8, 68, '#ffd84a', 1, 'right');
   const list = shopEntries(), rows = 9, start = Math.max(0, Math.min(shopSel - 4, list.length - rows));
   for (let i = start; i < Math.min(list.length, start + rows); i++) {
     const it = list[i], y = 76 + (i - start) * 10, sel = i === shopSel, st = itemStatus(it);
+    const isResin = it.kind === 'coreup', cost = isResin ? it.resinPrice : it.price, have = isResin ? save.resin : save.coins;
     hot(4, y - 1, 190, 10, () => { if (shopSel === i) shopConfirm(); else { shopSel = i; SFX.tick(); } }, () => { shopSel = i; });
     if (sel) { R(ctx, '#4a3a60', 4, y - 1, 190, 10); R(ctx, '#c8ffa0', 4, y - 1, 2, 10); }
     const plain = it.kind === 'ready' || it.kind === 'quit';
     if (!plain) ctx.drawImage(ICONS[it.icon], 8, y - 1, 9, 9);
     text(it.name, plain ? 10 : 20, y + 1, it.kind === 'ready' ? '#c8ffa0' : it.kind === 'quit' ? '#ff9ab8' : st ? '#8a809a' : '#ffffff');
-    if (!plain) text(st || it.price, 192, y + 1, st ? '#8a809a' : save.coins >= it.price ? '#ffd84a' : '#ff8a8a', 1, 'right');
+    if (!plain) text(st || (cost + (isResin ? ' RESIN' : '')), 192, y + 1, st ? '#8a809a' : have >= cost ? '#ffd84a' : '#ff8a8a', 1, 'right');
     else if (st) text(st, 192, y + 1, '#e4b3ff', 1, 'right');
   }
   if (start > 0 && frame % 30 < 20) text('^ MORE', 150, 68, '#b0a8c0');
@@ -3006,9 +3018,8 @@ function drawShop() {
   R(ctx, '#4a3a60', 202, 76, 112, 96);
   if (it.kind !== 'ready' && it.kind !== 'quit') ctx.drawImage(ICONS[it.icon], 246, 80, 20, 20);
   wrap(it.desc, 206, 106, 26, '#ffffff');
-  if (it.kind === 'weapon') {
-    const cur = weaponDef(), dd = it.dmg - cur.dmg, rd = it.reach - cur.reach;
-    text('DMG ' + (dd >= 0 ? '+' : '') + dd + '  REACH ' + (rd >= 0 ? '+' : '') + rd, 206, 128, dd + rd >= 0 ? '#7fe07a' : '#ff8a8a');
+  if (it.kind === 'coreup') {
+    text('LV ' + coreLevel() + ' -> LV ' + (coreLevel() + 1) + '   +1 DAMAGE', 206, 128, '#7fe07a');
   } else if (it.kind === 'armor') {
     const curHp = ARMORS.filter(a => save.armor.includes(a.id)).reduce((m, a) => Math.max(m, a.hp), 0), hd = it.hp - curHp;
     text('HEARTS ' + (hd >= 0 ? '+' : '') + hd, 206, 128, hd >= 0 ? '#7fe07a' : '#ff8a8a');

@@ -826,7 +826,7 @@ THEMES.suburb = {
     for (let x = 0; x < W; x += 8) { R(g, '#2a1838', x, H - 46, 5, 30); R(g, '#fff6f0', x + 1, H - 45, 3, 29); }
     for (let i = 0; i < 6; i++) { const x = i * 56 + 10; g.fillStyle = '#5aa86a'; for (let yy = -7; yy <= 7; yy++) { const w = Math.floor(Math.sqrt(49 - yy * yy) * 1.6); g.fillRect(x + 11 - w, H - 24 + yy, w * 2, 1); } }
   }),
-  enemies: ['karen', 'karen', 'squirrel', 'mouse', 'cop'],
+  enemies: ['karen', 'lawnmower', 'squirrel', 'lawnmower', 'cop'],
 };
 // ---- DOWNTOWN (night) ----
 function skyline(g, base, minH, maxH, col, winCol, neon) {
@@ -852,7 +852,7 @@ THEMES.city = {
   clouds: layer(g => { g.fillStyle = 'rgba(192,112,255,.14)'; for (let i = 0; i < 5; i++) g.fillRect(i * 70, 90 + (i % 2) * 14, 60, 6); }),
   far: layer(g => { seed = 31; skyline(g, 20, 40, 100, '#2a1d4c', 'rgba(255,216,74,.45)', false); }),
   near: layer(g => { seed = 41; skyline(g, 0, 20, 60, '#1f1438', 'rgba(255,216,74,.8)', true); }),
-  enemies: ['cop', 'cop', 'mouse', 'karen', 'mouse'],
+  enemies: ['cop', 'segway', 'mouse', 'karen', 'segway'],
 };
 const THEME_ORDER = ['park', 'suburb', 'city'];
 // as you push through a level the light changes: [end color, max alpha]
@@ -881,7 +881,7 @@ THEMES.beach = {
     R(g, '#ffffff', 200, H - 70, 26, 14); R(g, '#ff5a6a', 200, H - 70, 26, 4); R(g, '#9a6a42', 203, H - 56, 2, 26); R(g, '#9a6a42', 221, H - 56, 2, 26);
   }),
   floor: null, floorKey: 'beach',
-  enemies: ['mouse', 'cop', 'squirrel', 'mouse', 'cop'],
+  enemies: ['mouse', 'crab', 'crab', 'mouse', 'cop'],
 };
 // ---- MISTY WOODS ----
 THEMES.woods = {
@@ -899,7 +899,7 @@ THEMES.woods = {
     for (let i = 0; i < 12; i++) R(g, '#ff9ab8', (i * 29) % W, H - 22 - (i % 3), 2, 2); // little mushrooms/flowers
   }),
   floor: null, floorKey: 'woods',
-  enemies: ['squirrel', 'squirrel', 'cop', 'mouse', 'karen'],
+  enemies: ['owl', 'squirrel', 'cop', 'owl', 'karen'],
 };
 // ---- BUZZKILL CORP HQ ----
 THEMES.hq = {
@@ -917,7 +917,7 @@ THEMES.hq = {
     for (let x = 40; x < W; x += 128) { R(g, '#c87a3a', x, H - 34, 10, 10); R(g, '#6a8a5a', x - 2, H - 48, 14, 14); }
   }),
   floor: null, floorKey: 'hq',
-  enemies: ['cop', 'karen', 'cop', 'karen', 'mouse'],
+  enemies: ['securitybot', 'karen', 'securitybot', 'karen', 'mouse'],
 };
 THEME_ORDER.length = 0; THEME_ORDER.push('park', 'beach', 'suburb', 'city', 'woods', 'hq');
 // ============================================================
@@ -929,8 +929,8 @@ function variantTheme(base, name, tint, a, enemies) {
   return { name, tiles: b.tiles, sky: tl(b.sky), clouds: b.clouds, far: tl(b.far), near: tl(b.near), enemies, base, floorTint: [tint, a * 0.7] };
 }
 // enemy variants: same moves as the originals, new looks, a bit tougher
-const BASE_AI = { ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel' };
-const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1 };
+const BASE_AI = { ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop' };
+const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2 };
 {
   const tintSprites = (src, map) => src.map(img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { const key = d.data[i] + ',' + d.data[i + 1] + ',' + d.data[i + 2]; if (map[key]) { d.data[i] = map[key][0]; d.data[i + 1] = map[key][1]; d.data[i + 2] = map[key][2]; } } g.putImageData(d, 0, 0); return c; });
   const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -940,7 +940,13 @@ const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1 };
   ENEMY_IMG.suit = tintSprites(ENEMY_IMG.karen, swap([[P.p, '#5a5a78'], [P.q, '#3a3a58'], [P.h, '#4a3a2a'], [P.H, '#2a2018']]));
   ENEMY_IMG.rat = tintSprites(ENEMY_IMG.mouse, swap([[P.m, '#6a5a58'], [P.M, '#4a3a38'], [P.u, '#c86a6a']]));
   ENEMY_IMG.raccoon = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#7a7a8a'], [P.T, '#4a4a58'], [P.y, '#e8e8f0']]));
-  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
+  // new-per-world enemies (Phase 5): same base moves, new looks + a signature quirk applied elsewhere
+  ENEMY_IMG.crab = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#ff5a3a'], [P.T, '#c83018'], [P.y, '#ffd84a']])); // Beach: CRAB
+  ENEMY_IMG.lawnmower = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#3a8a3a'], [P.D, '#1e5a1e'], [P.y, '#c8a030']])); // Suburbia: LAWNMOWER DAD
+  ENEMY_IMG.segway = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#3a6a9a'], [P.D, '#1e3a6a'], [P.y, '#e8e8f0']])); // Downtown: MALL COP ON A SEGWAY
+  ENEMY_IMG.owl = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#8a6a4a'], [P.T, '#5a3a20'], [P.y, '#e8e0c8']])); // Misty Woods: OWL NARC
+  ENEMY_IMG.securitybot = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#2a2a3a'], [P.D, '#15151f'], [P.y, '#ff3a3a']])); // Buzzkill HQ: SECURITY BOT
+  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
 }
 Object.assign(THEMES, {
   nightwoods: variantTheme('woods', 'MIDNIGHT WOODS', '#101a4a', 0.5, ['ranger', 'raccoon', 'squirrel', 'ranger', 'mouse']),
@@ -1407,10 +1413,13 @@ function hitEnemy(e, dmg, dir, strong, fx = {}) {
   SFX.hit();
   if (fx.burn) puff(e.x, sy(e.z, e.h) - 10, 4, ['#ff9a3a', '#ffd84a', '#ff5a6a'], .8, -0.03);
   if (isHost()) damageEnemy(e, dmg, dir, strong, Net.id, fx);
-  else Net.send({ t: 'hit', i: e.id, d: dmg, dir, s: strong ? 1 : 0, l: lvl.n, b: fx.burn || 0, sp: fx.sp || 0, st: fx.stun || 0, bl: fx.bleed || 0, kb: fx.kb || 1, hr: fx.hr || 0 });
+  else Net.send({ t: 'hit', i: e.id, d: dmg, dir, s: strong ? 1 : 0, l: lvl.n, b: fx.burn || 0, sp: fx.sp || 0, st: fx.stun || 0, bl: fx.bleed || 0, kb: fx.kb || 1, hr: fx.hr || 0, a: fx.air ? 1 : 0 });
 }
 function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (!e.alive || e.state === 5) return;
+  if (e.kind === 'crab' && e.h > 0 && dmg > 0) { popup(e.x - 14, sy(e.z, e.h) - 30, 'PINCHED SHUT!', '#ffb0b0'); return; } // CRAB: can't be hit while pinching/hopping
+  if (e.kind === 'securitybot' && dmg > 0 && !fx.stun) { popup(e.x - 10, sy(e.z, e.h) - 30, 'SHIELDED!', '#9ab0ff'); return; } // SECURITY BOT: shielded unless stunned (Bong)
+  if (e.kind === 'owl' && dmg > 0 && !fx.air) dmg = Math.max(1, Math.floor(dmg / 3)); // OWL NARC: needs an air hit to really connect
   if (by === Net.id && tooHigh() && dmg > 0) dmg += 1; // too-high zone (90-99% Cooked): hit harder, but slower on your feet
   let teamBonus = 0;
   if (by && e.lastHitBy && e.lastHitBy !== by && frame - (e.lastHitT || -999) < 30) { teamBonus = Math.max(1, Math.ceil(dmg * 0.5)); popup(e.x - 22, sy(e.z) - 30, 'TEAM UP!', '#ffd84a'); SFX.power(); }
@@ -1494,7 +1503,8 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   if (by !== Net.id) return;
   const reward = (e.boss ? (e.mega ? 150 : 60) : { cop: 8, karen: 6, mouse: 2, squirrel: 3 }[e.ai]) + e.stolen;
   addCoins(reward); addCooked(3); me.kills++; addCombo(e.x, sy(e.z) - 30); SFX.stomp();
-  popup(e.x - 14, sy(e.z) - 34, { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' }[e.ai] + ' +' + reward, '#ffffff');
+  const KO_LINE = { crab: 'CRACKED!', lawnmower: 'MOWED DOWN!', segway: 'WIPED OUT!', owl: 'GROUNDED!', securitybot: 'SHUT DOWN!' };
+  popup(e.x - 14, sy(e.z) - 34, (KO_LINE[e.kind] || { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' }[e.ai]) + ' +' + reward, '#ffffff');
   e.stolen = 0;
 }
 function attack(charged) {
@@ -1525,7 +1535,7 @@ function attack(charged) {
   if (charged) dmg = dmg * 2 + 2;
   const reach = w.reach + (charged ? 12 : 0);
   const baseBurn = w.id === 'puff' ? (hasSkill('cherry') ? w.burn : 0) : (w.burn || 0);
-  const fx = { burn: Math.max(baseBurn ? baseBurn + (lv - 1) : 0, hasSkill('embers') ? 1 : 0), sp: w.spread ? 1 : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0 };
+  const fx = { burn: Math.max(baseBurn ? baseBurn + (lv - 1) : 0, hasSkill('embers') ? 1 : 0), sp: w.spread ? 1 : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0, air };
   let hits = 0;
   const targets = lvl.enemies.filter(e => e.spawned && e.alive && e.state !== 5).map(e => ({ e, dx: e.x - me.x, dz: Math.abs(e.z - me.z) }))
     .filter(t => { const r = reach + (t.e.boss ? 14 : 0); return (w.spin || air ? Math.abs(t.dx) < r : t.dx * me.face > -6 && Math.abs(t.dx) < r) && t.dz < w.zr + (air ? 6 : 0) + (t.e.boss ? 10 : 0) && Math.abs(t.e.h - me.h) < 30; })
@@ -1940,15 +1950,23 @@ function hostUpdate() {
     else if (e.state === 6) { // running off with your coins
       e.dir = e.dir || 1; sx = e.dir * 2.6;
       if (e.x < camX - 60 || e.x > camX + W + 60) { e.alive = false; e.gone = true; }
+    } else if (e.kind === 'lawnmower') { // SUBURBIA: charges in a straight line, ignoring depth - dodge by moving up/down
+      if (e.state === 0) {
+        e.dir = Math.sign(dx) || 1; sz = 0;
+        if (Math.abs(dx) > 40) sx = e.dir * 1.5; else { e.state = 1; e.t = 22; }
+      } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 48; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
+      else if (e.state === 2) { sx = e.dir * 3; sz = 0; if (--e.t <= 0) { e.state = 3; e.t = 50; } }
+      else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
     } else if (e.ai === 'cop') {
       if (e.state === 0) {
         e.dir = Math.sign(dx) || 1;
         // take turns: only a couple of cops go for you at once, the rest circle and wait
         const busy = lvl.enemies.filter(o => o !== e && o.ai === 'cop' && o.alive && (o.state === 1 || o.state === 2 || o.near)).length;
         e.near = busy < 1 + players.length;
+        const spdMul = e.kind === 'segway' ? 1.8 : 1; // DOWNTOWN: fast segway ram - jump (h>=14) to dodge, same as any melee contact
         const wantX = inZone(tgt.x - e.dir * (e.near ? 20 : 52 + (e.id % 3) * 12));
-        sx = Math.sign(wantX - e.x) * Math.min(0.9, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.9, Math.abs(dz));
-        if (e.near && Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = 26; }
+        sx = Math.sign(wantX - e.x) * Math.min(0.9 * spdMul, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.9, Math.abs(dz));
+        if (e.near && Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = e.kind === 'segway' ? 14 : 26; }
       } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
       else if (e.state === 2) { if (--e.t <= 0) { e.state = 3; e.t = 44; } }
       else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
@@ -3281,12 +3299,19 @@ function drawBrief() {
   text('3. CHILL AT THE SMOKE SPOT AT THE END', 40, 92, '#ffffff');
   { const bd = BOSSES[lvl.n % BOSSES.length]; text((bd[4] ? 'MEGA BOSS: ' : 'BOSS: ') + bd[0] + ' - BEAT HIM TO LEARN ' + SKILLS[bd[2]].name, 40, 104, bd[4] ? '#ff8a8a' : '#e4b3ff'); }
   const fresh = [...new Set(th.enemies)].find(k => !save.met.includes(k) && k !== 'mouse' && k !== 'squirrel' && k !== 'cop');
-  if (fresh === 'karen') {
-    R(ctx, '#4a2a40', 34, 112, W - 68, 38); ctx.drawImage(ENEMY_IMG.karen[1], 40, 116);
-    text('NEW BUZZKILL: KAREN', 60, 115, '#ff9ab8');
-    text('THROWS PURSES FROM AFAR. JUMP THEM (SPACE)', 60, 124, '#ffffff');
-    text('THEN RUSH HER WHILE SHE CATCHES HER BREATH.', 60, 132, '#ffffff');
-    text('ROLLING PAPERS (K) HIT HER FROM RANGE!', 60, 140, '#c8ffa0');
+  const NEW_TIP = {
+    karen: ['KAREN', '#ff9ab8', ['THROWS PURSES FROM AFAR. JUMP THEM (SPACE)', 'THEN RUSH HER WHILE SHE CATCHES HER BREATH.', 'ROLLING PAPERS (K) HIT HER FROM RANGE!']],
+    crab: ['CRAB', '#ff9a6a', ["CAN'T BE HIT WHILE IT'S HOPPING/PINCHING.", 'WAIT FOR IT TO LAND, THEN STRIKE.']],
+    lawnmower: ['LAWNMOWER DAD', '#9af0a0', ['CHARGES STRAIGHT AT YOU IN A LINE.', 'DODGE BY MOVING UP OR DOWN (W/S).']],
+    segway: ['MALL COP ON A SEGWAY', '#9ac8ff', ['FAST AND RAMS YOU HEAD-ON.', 'JUMP (SPACE) OVER HIM TO DODGE THE HIT.']],
+    owl: ['OWL NARC', '#e0d0a0', ['SWOOPS IN FROM ABOVE.', 'HIT IT WITH AN AIR ATTACK (JUMP + SWING) TO REALLY HURT IT.']],
+    securitybot: ['SECURITY BOT', '#ff6a6a', ['SHIELDED UP FRONT - NORMAL HITS BOUNCE OFF.', 'A BONG HAMMER STUN GETS THROUGH THE SHIELD.']],
+  };
+  if (fresh && NEW_TIP[fresh]) {
+    const [nm, col, lines] = NEW_TIP[fresh];
+    R(ctx, '#4a2a40', 34, 112, W - 68, 38); ctx.drawImage(ENEMY_IMG[fresh][1] || ENEMY_IMG[fresh][0], 40, 116);
+    text('NEW BUZZKILL: ' + nm, 60, 115, col);
+    lines.forEach((ln, i) => text(ln, 60, 124 + i * 8, i === lines.length - 1 ? '#c8ffa0' : '#ffffff'));
     return;
   }
   text('WATCH OUT FOR:', 40, 118, '#ffd84a');
@@ -3428,7 +3453,7 @@ function onNet(m) {
       break;
     }
     case 'es': if (!isHost()) applySnapshot(m); break;
-    case 'hit': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e && e.spawned) damageEnemy(e, m.d, m.dir, !!m.s, m.id, { burn: m.b, sp: m.sp, stun: m.st, bleed: m.bl, kb: m.kb || 1, hr: m.hr }); } break;
+    case 'hit': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e && e.spawned) damageEnemy(e, m.d, m.dir, !!m.s, m.id, { burn: m.b, sp: m.sp, stun: m.st, bleed: m.bl, kb: m.kb || 1, hr: m.hr, air: !!m.a }); } break;
     case 'kill': if (m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) { e.stolen = m.st || 0; onKill(e, m.by); } } break;
     case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0 }); break;
     case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) thiefFlee(e, m.k); } break;

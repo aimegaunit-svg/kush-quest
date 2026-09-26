@@ -97,23 +97,35 @@
 
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
+      if (intro.handle(fromId, payload)) return;
+      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'fire' && isHost) doFire(payload.turret, payload.angle);
     };
 
-    const pool = T.makeSwapPool(['ZEROG']);
     const swap = T.makeSwapRunner();
     let nextSwapAt = 900 + Math.random() * 700;
-    function doZeroG() { seats.push(seats.shift()); T.tone(400, 0.3, 'sine', 0.2); }
+    const deck = T.makeSwapDeck([
+      { id: 'zerog', banner: 'ZERO-G!', reseat: 'rotate', sfx: [400, 'sine'],
+        fx: () => { st.vx += (Math.random() - 0.5) * 80; st.vy += (Math.random() - 0.5) * 80; } },
+      { id: 'wormhole', banner: 'WORMHOLE!', reseat: 'shuffle', sfx: [700, 'triangle'],
+        fx: () => { st.x = W - st.x; st.dist += 60; } },
+      { id: 'breach', banner: 'HULL BREACH!', reseat: 'reverse', sfx: [100, 'sawtooth'],
+        fx: () => { st.fuel = Math.max(0.05, st.fuel - 0.15); st.vy += 40; } },
+      { id: 'munchies', banner: 'SPACE MUNCHIES!', reseat: 'swap01', sfx: [880, 'square'],
+        fx: () => { st.fuel = Math.min(1, st.fuel + 0.2); } },
+      { id: 'flare', banner: 'SOLAR FLARE!', reseat: 'rotate2', sfx: [1200, 'square'],
+        fx: () => { st.invertT = 3; } } // pilot controls inverted for 3s
+    ], { seats, runner: swap, net, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
 
-    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
-    const intro = T.showInstructionCard(ctx, {
-      save, seenKey: 'seenBongRocket', canvas, title: 'BONG ROCKET',
+    let running = false;
+    const intro = T.makeStartGate(ctx, {
+      save, gameKey: 'br', seenKey: 'seenBongRocket', canvas, net, title: 'BONG ROCKET',
       lines: soloMode
         ? ['WASD/arrows to fly freely, hold', 'SHIFT/SPACE to boost (burns fuel).', 'Auto-gun fires — press to fire manually.', 'Collect fuel bubbles, dodge drones!']
         : ['Pilot: free 8-way flight + boost.', 'Gunners: aim turret with MOUSE,', 'click to fire at drones & satellites.']
-    }, () => { running = true; });
+    }, () => { running = true; }, () => finish(true));
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;
@@ -123,7 +135,7 @@
       ctx.clearRect(0, 0, W, H);
       drawSpace();
       if (!running) { intro.draw(); return; }
-      if (swap.tick(dt * 1000)) { st.dist += 20 * dt; swap.draw(ctx, 'ZERO-G!'); drawHud(); return; }
+      if (swap.tick(dt * 1000)) { st.dist += 20 * dt; draw(); swap.draw(ctx); drawHud(); return; }
       if (st.ended) {
         results.draw(ctx, { canvas, title: 'DOCKED AT HQ!', coins: st.coins, score: st.score, awards: st.wonAwards });
         if (results.dismissed()) finish();
@@ -143,7 +155,8 @@
     function applyRemoteState(p) { st.x = p.x; st.y = p.y; st.dist = p.dist; st.fuel = p.fuel; st.coins = p.coins; st.hits = p.hits; }
 
     function step(dt) {
-      const { dx, dy, boost } = pilotAxes();
+      let { dx, dy, boost } = pilotAxes();
+      if (st.invertT > 0) { st.invertT -= dt; dx = -dx; dy = -dy; }
       const ACC = 90;
       st.vx += dx * ACC * dt * (boost ? 1.6 : 1);
       st.vy += dy * ACC * dt * (boost ? 1.6 : 1);
@@ -176,7 +189,7 @@
       nextSwapAt -= dt * 60;
       if (nextSwapAt <= 0 && st.dist > 500 && st.dist < st.boss.p - 200) {
         nextSwapAt = 99999;
-        swap.trigger('ZERO-G!', { freezeMs: 1300, onReseat: doZeroG, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
+        deck.fire();
       }
       if ((!st.boss || st.boss.defeated) && st.dist >= st.finishDist) endRun();
       if (st.fuel <= 0 && st.hits >= 5) endRun();
@@ -265,20 +278,24 @@
       }
     }
 
-    function finish() {
+    function finish(skipped) {
       cleanup();
-      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), fuel: st.fuel, hits: st.hits, from: opts.from, to: opts.to });
+      if (skipped) { opts.onDone && opts.onDone({ coins: 0, score: 0, awards: [], skipped: true, fuel: 1, hits: 0, swaps: [], from: opts.from, to: opts.to }); return; }
+      T.markDone(save, 'br');
+      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), fuel: st.fuel, hits: st.hits, swaps: deck.history.slice(), from: opts.from, to: opts.to });
     }
     function cleanup() {
       cancelAnimationFrame(raf);
+      intro.cleanup();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mouseup', onMouseUp);
     }
 
     raf = requestAnimationFrame(loop);
-    return { cleanup };
+    // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
+    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
   }
 
-  window.BongRocket = { start };
+  window.BongRocket = { start, needsPlay: (save) => T.needsPlay(save, 'br') };
 })();

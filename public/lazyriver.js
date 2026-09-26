@@ -93,12 +93,14 @@
     // remote inputs from non-host players, keyed by seat/net id
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
+      if (intro.handle(fromId, payload)) return;
+      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
     };
 
     function combinedPaddles() {
-      if (soloMode) { const i = myInputs(); return { left: i.left, right: i.right }; }
+      if (soloMode) { const i = myInputs(); return st.mirrorT > 0 ? { left: i.right, right: i.left } : { left: i.left, right: i.right }; }
       // multi-seat: seat0 = left paddle, seat1 = right paddle (2p); solo-per-seat reads own keys
       // if this client IS that seat, else pulled from remoteInputs.
       let left = false, right = false;
@@ -109,31 +111,37 @@
         else input = remoteInputs.get(s.player && s.player.id) || {};
         if (idx === 0) left = !!input.left || left;
         if (idx === 1) right = !!input.right || right;
-        if (soloMode) { left = left || !!input.left; right = right || !!input.right; }
       });
       return { left, right };
     }
 
     // ---- swap event ----
-    const pool = T.makeSwapPool(['CAPSIZE']);
     const swap = T.makeSwapRunner();
     let nextSwapAt = 900 + Math.random() * 800;
-
-    function doCapsize() {
-      // flip: everyone lands on a different side -> rotate seat roles
-      seats.push(seats.shift());
-      T.tone(140, 0.4, 'sawtooth', 0.2);
-    }
+    // Swap events (Step 4.3). Every one reseats the crew a different way and has its own
+    // physical effect on the tube, so solo runs still feel each one.
+    const deck = T.makeSwapDeck([
+      { id: 'capsize', banner: 'CAPSIZE!', reseat: 'rotate', sfx: [140, 'sawtooth'],
+        fx: () => { st.angle = -st.angle; st.angVel = -st.angVel; st.speed *= 0.6; } },
+      { id: 'spin', banner: 'SPIN CYCLE!', reseat: 'reverse', sfx: [260, 'triangle'],
+        fx: () => { st.angVel += (Math.random() < 0.5 ? -1 : 1) * 0.25; } },
+      { id: 'swan', banner: 'SWAN ATTACK!', reseat: 'shuffle', sfx: [520, 'square'],
+        fx: () => { st.swans.push({ p: st.progress + 140, x: RIVER_L + 20 + Math.random() * (RIVER_R - RIVER_L - 40), dir: 1, r: 7 }); } },
+      { id: 'butter', banner: 'BUTTERFINGERS!', reseat: 'swap01', sfx: [180, 'square'],
+        fx: () => { st.mirrorT = 4; } }, // paddles swapped hands: left/right reversed for 4s
+      { id: 'rapids', banner: 'RAPIDS!', reseat: 'rotate2', sfx: [90, 'sawtooth'],
+        fx: () => { st.speed = 140; st.angVel += (Math.random() - 0.5) * 0.2; } }
+    ], { seats, runner: swap, net, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
 
     // ---- results / instructions ----
-    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
-    const intro = T.showInstructionCard(ctx, {
-      save, seenKey: 'seenLazyRiver', canvas,
+    let running = false;
+    const intro = T.makeStartGate(ctx, {
+      save, gameKey: 'lr', seenKey: 'seenLazyRiver', canvas, net,
       title: 'LAZY RIVER',
       lines: soloMode
         ? ['A = left paddle  D = right paddle', 'Left paddle turns you RIGHT,', 'right paddle turns you LEFT.', 'Both together = straight & fast!']
         : ['Paddlers: coordinate left/right!', 'Extra crew: SPACE to fend off', 'hazards and grab snacks.']
-    }, () => { running = true; });
+    }, () => { running = true; }, () => finish(true));
     const results = T.makeResultsScreen();
 
     // ---- main loop ----
@@ -146,7 +154,7 @@
 
       if (!running) { intro.draw(); return; }
 
-      if (swap.tick(dt * 1000)) { simVisualsOnly(dt); swap.draw(ctx, 'CAPSIZE!'); drawHud(); return; }
+      if (swap.tick(dt * 1000)) { simVisualsOnly(dt); draw(); swap.draw(ctx); drawHud(); return; }
 
       if (st.ended) {
         results.draw(ctx, { canvas, title: st.popped ? 'TUBE POPPED!' : 'SPLASHDOWN!', coins: st.coins, score: st.score, awards: st.wonAwards });
@@ -171,7 +179,9 @@
     function simVisualsOnly(dt) { st.progress += 20 * dt; }
 
     function step(dt) {
-      const { left, right } = combinedPaddles();
+      if (st.mirrorT > 0) st.mirrorT -= dt;
+      let { left, right } = combinedPaddles();
+      if (!soloMode && st.mirrorT > 0) { const t = left; left = right; right = t; }
       const TURN_ACC = 2.4, DAMP = 0.9, THRUST = 34, DRAG = 0.985;
       if (left) st.angVel += TURN_ACC * dt * 60 * dt; // right turn
       if (right) st.angVel -= TURN_ACC * dt * 60 * dt;
@@ -205,7 +215,7 @@
       nextSwapAt -= dt * 60;
       if (nextSwapAt <= 0 && st.progress > 400 && st.progress < st.finishAt - 300) {
         nextSwapAt = 99999;
-        swap.trigger(pool.next() + '!', { freezeMs: 1300, onReseat: doCapsize, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
+        deck.fire();
       }
 
       if (st.progress >= st.finishAt) endRun(false);
@@ -276,14 +286,17 @@
       ]);
     }
 
-    function finish() {
+    function finish(skipped) {
       cleanup();
+      if (skipped) { opts.onDone && opts.onDone({ coins: 0, score: 0, awards: [], skipped: true, popped: false, hazardsHit: 0, swaps: [], from: opts.from, to: opts.to }); return; }
+      T.markDone(save, 'lr');
       const awards = st.wonAwards.slice();
-      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards, popped: st.popped, hazardsHit: st.hits, from: opts.from, to: opts.to });
+      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards, popped: st.popped, hazardsHit: st.hits, swaps: deck.history.slice(), from: opts.from, to: opts.to });
     }
 
     function cleanup() {
       cancelAnimationFrame(raf);
+      intro.cleanup();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       canvas.removeEventListener('touchstart', onTouch);
@@ -293,8 +306,9 @@
     }
 
     raf = requestAnimationFrame(loop);
-    return { cleanup };
+    // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
+    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
   }
 
-  window.LazyRiver = { start };
+  window.LazyRiver = { start, needsPlay: (save) => T.needsPlay(save, 'lr') };
 })();

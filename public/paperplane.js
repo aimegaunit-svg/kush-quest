@@ -77,6 +77,8 @@
 
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
+      if (intro.handle(fromId, payload)) return;
+      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
     };
@@ -100,18 +102,28 @@
       return !!input.dive;
     }
 
-    const pool = T.makeSwapPool(['GUST']);
     const swap = T.makeSwapRunner();
     let nextSwapAt = 900 + Math.random() * 700;
-    function doGust() { seats.push(seats.shift()); T.tone(220, 0.3, 'sawtooth', 0.2); }
+    const deck = T.makeSwapDeck([
+      { id: 'gust', banner: 'GUST!', reseat: 'rotate', sfx: [220, 'sawtooth'],
+        fx: () => { st.vx = Math.min(160, st.vx + 30); st.vy -= 30; } },
+      { id: 'roll', banner: 'BARREL ROLL!', reseat: 'reverse', sfx: [330, 'triangle'],
+        fx: () => { st.vy = 45; st.shakeT = 0.5; } },
+      { id: 'pelican', banner: 'PELICAN SNATCH!', reseat: 'shuffle', sfx: [160, 'square'],
+        fx: () => { st.pelicans.push({ p: st.dist + 110, y: st.y }); } },
+      { id: 'soggy', banner: 'SOGGY PAPER!', reseat: 'swap01', sfx: [110, 'sine'],
+        fx: () => { st.wet = Math.min(1, st.wet + 0.4); } },
+      { id: 'thermal', banner: 'THERMAL!', reseat: 'rotate2', sfx: [620, 'sine'],
+        fx: () => { st.updrafts.push({ p: st.dist + 90, y: st.y, w: 70 }); st.wet = Math.max(0, st.wet - 0.3); } }
+    ], { seats, runner: swap, net, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
 
-    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
-    const intro = T.showInstructionCard(ctx, {
-      save, seenKey: 'seenPaperPlane', canvas, title: 'PAPER PLANE',
+    let running = false;
+    const intro = T.makeStartGate(ctx, {
+      save, gameKey: 'pp', seenKey: 'seenPaperPlane', canvas, net, title: 'PAPER PLANE',
       lines: soloMode
         ? ['Hold SPACE/click to DIVE (gain speed).', 'Release to PULL UP (gain height).', 'Ride updrafts, dodge gulls & pelicans!']
         : ['Pilot: hold to dive, release to climb.', 'Others: A/D to lean & grab coins —', "don't all lean the same way!"]
-    }, () => { running = true; });
+    }, () => { running = true; }, () => finish(true));
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;
@@ -121,7 +133,7 @@
       ctx.clearRect(0, 0, W, H);
       drawSky();
       if (!running) { intro.draw(); return; }
-      if (swap.tick(dt * 1000)) { st.dist += 15 * dt; swap.draw(ctx, 'GUST!'); drawHud(); return; }
+      if (swap.tick(dt * 1000)) { st.dist += 15 * dt; draw(); swap.draw(ctx); drawHud(); return; }
       if (st.ended) {
         results.draw(ctx, { canvas, title: st.dunked ? 'DUNKED!' : 'LANDED SAFE!', coins: st.coins, score: st.score, awards: st.wonAwards });
         if (results.dismissed()) finish();
@@ -171,7 +183,7 @@
       nextSwapAt -= dt * 60;
       if (nextSwapAt <= 0 && st.dist > 400 && st.dist < st.finishDist - 300) {
         nextSwapAt = 99999;
-        swap.trigger('GUST!', { freezeMs: 1300, onReseat: doGust, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
+        deck.fire();
       }
       if (st.dist >= st.finishDist) endRun(false);
     }
@@ -228,20 +240,24 @@
       ]);
     }
 
-    function finish() {
+    function finish(skipped) {
       cleanup();
-      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), tips: st.tips, dunked: st.dunked, from: opts.from, to: opts.to });
+      if (skipped) { opts.onDone && opts.onDone({ coins: 0, score: 0, awards: [], skipped: true, tips: 0, dunked: false, swaps: [], from: opts.from, to: opts.to }); return; }
+      T.markDone(save, 'pp');
+      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), tips: st.tips, dunked: st.dunked, swaps: deck.history.slice(), from: opts.from, to: opts.to });
     }
     function cleanup() {
       cancelAnimationFrame(raf);
+      intro.cleanup();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mouseup', onMouseUp);
     }
 
     raf = requestAnimationFrame(loop);
-    return { cleanup };
+    // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
+    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
   }
 
-  window.PaperPlane = { start };
+  window.PaperPlane = { start, needsPlay: (save) => T.needsPlay(save, 'pp') };
 })();

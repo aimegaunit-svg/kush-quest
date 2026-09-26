@@ -258,9 +258,48 @@ pages / eventually in `game.js`'s own socket handler once these are hooked into 
 
 ## Owned by the transit-games agent
 
+### Step 4 progress (transit agent, 2026-09-26) — what actually works now
+Files touched: `public/transit.js`, the 5 game files, their 5 `*-test.html` pages. Nothing else.
+
+**4.2 Replay skip — works (solo, headless-verified).** New in `transit.js`: `hasDone/markDone/needsPlay`
+and `makeStartGate()`. A run that reaches its results screen sets `save.transitDone[<gk>] = true`
+(gk = `lr/pp/mt/sb/br`, calls `save.__persist()` if present). Next launch shows **PLAY AGAIN / SKIP**
+(arrows+Enter, `P`, `S`/Esc, or click left/right half). SKIP calls `onDone({coins:0, score:0, awards:[],
+skipped:true, ...})` right away. Each game also exports `<Game>.needsPlay(save)` if the map wants to
+decide before launching. Online (coded, **not yet tested live**): only the room host picks; others see
+"WAITING FOR THE HOST" and follow a relayed `{type:'gate', skip}` (they poll with `{type:'gate?'}`
+every 0.5s so a late joiner still gets it).
+**Main session:** a skipped result carries `skipped:true` — treat it as "advance, no rewards".
+
+**4.3 Swap events — works (5 per game, headless-verified).** New `Transit.makeSwapDeck()`: no repeats
+until the deck is used up; every event reseats the crew a different way (rotate / reverse / shuffle /
+swap first two / rotate by 2) and has its own gameplay effect, so solo runs feel them too:
+- Lazy River: CAPSIZE, SPIN CYCLE, SWAN ATTACK, BUTTERFINGERS (paddles mirrored 4s), RAPIDS
+- Paper Plane: GUST, BARREL ROLL, PELICAN SNATCH, SOGGY PAPER, THERMAL
+- Munchie Truck: BRAIN FREEZE, POTHOLE, SUGAR RUSH, WRONG TURN, SPRINKLE SPILL
+- Smoke Balloon: HICCUPS, COUGHING FIT, CONTACT HIGH, BIRD STRIKE, LOOSE SANDBAG
+- Bong Rocket: ZERO-G, WORMHOLE, HULL BREACH, SPACE MUNCHIES, SOLAR FLARE (controls inverted 3s)
+The authority broadcasts `{type:'swap', id, order:[playerIds]}` so every client reseats the same way
+(coded, not live-tested yet). The banner shows the new seats underneath ("YOU ARE NOW: GUNR" online).
+`onDone` now also returns `swaps: [ids]`.
+
+**Headless click-through — done, all 5 pass with zero console/page errors** (Playwright, real button
+clicks + key/mouse input on each `*-test.html`): intro card on first run → play with held inputs →
+5 swaps in solo (5 distinct banners) → forced finish → results dismissed → `onDone` fires and
+`transitDone` is set → replay shows the gate → SKIP by key → PLAY by click (intro auto-skipped) →
+SKIP by click → 4-seat crew: seat order changed on every one of 5 swaps → 2-seat crew runs.
+Test pages now have **Mark done (test replay SKIP)** / **Reset save** buttons, and each `start()`
+returns a `_debug` handle (`st`, `seats`, `deck`, `fireSwap()`, `running()`) for tests.
+
+**Not done yet:** 4.1 live online test with 2–4 real tabs (waiting for Step 2 push); 4.4 carry-over
+check against Step 2's `onDone` handling (none of the 5 return `cooked`/`munchies` yet — to decide once
+Step 2 lands); known online gap to fix then: non-host clients never see `ended`/results because the
+state snapshot doesn't carry it. Astral Bong Rocket: waiting for Step 7.
+
+
 **Scope:** Part B3 of brief v1.1 — 5 transit mini-games + shared framework.
 
-**Status: complete.**
+**Status (original B3 build): complete. See Step 4 progress above for current state.**
 
 Files added (all new, nothing existing touched):
 - `public/transit.js` — shared IIFE framework (`window.Transit`): canvas setup at the game's

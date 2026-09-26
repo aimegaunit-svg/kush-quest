@@ -132,14 +132,16 @@
   // resumes. `tick(dtMs)` must be called every frame from the host game's loop; returns true
   // while a swap is in progress (game should skip normal simulation / render banner on top).
   function makeSwapRunner() {
-    let active = false, t = 0, total = 0, banner = '', reseated = false, onReseat = null, onDone = null;
+    let active = false, t = 0, total = 0, banner = '', sub = '', reseated = false, onReseat = null, onDone = null;
     return {
       trigger(bannerText, opts) {
         opts = opts || {};
-        active = true; t = 0; total = opts.freezeMs || 1400; banner = bannerText;
+        active = true; t = 0; total = opts.freezeMs || 1400; banner = bannerText; sub = '';
         reseated = false; onReseat = opts.onReseat || null; onDone = opts.onDone || null;
       },
       get active() { return active; },
+      get banner() { return banner; },
+      setSub(x) { sub = x || ''; },
       tick(dtMs) {
         if (!active) return false;
         t += dtMs;
@@ -161,6 +163,7 @@
         ctx.font = 'bold 16px monospace';
         ctx.textAlign = 'center';
         ctx.fillText(banner, BASE_W / 2, BASE_H / 2 + 5);
+        if (sub) { ctx.font = '7px monospace'; ctx.fillStyle = '#fff'; ctx.fillText(sub.slice(0, 70), BASE_W / 2, BASE_H / 2 + 26); }
         ctx.restore();
       }
     };
@@ -271,6 +274,171 @@
     ctx.restore();
   }
 
+  // ---------------------------------------------------------------------
+  // Replay skip (FIX_STEPS Step 4.2). Completion is tracked separately from "seen the intro":
+  // save.transitDone[gameKey] = true once a run reaches its results screen. On a replay the
+  // start gate shows PLAY / SKIP instead of the intro card. Online, only the room host picks;
+  // everyone else waits and follows the host's decision (relayed as {type:'gate', skip}).
+  // ---------------------------------------------------------------------
+  function hasDone(save, gk) { return !!(save && save.transitDone && save.transitDone[gk]); }
+  function markDone(save, gk) {
+    if (!save || !gk) return;
+    save.transitDone = save.transitDone || {};
+    save.transitDone[gk] = true;
+    try { if (typeof save.__persist === 'function') save.__persist(); } catch (e) {}
+  }
+  // true = first time (must play), false = already done (SKIP is offered)
+  function needsPlay(save, gk) { return !hasDone(save, gk); }
+
+  // makeStartGate(ctx, { save, gameKey, seenKey, canvas, net, title, lines }, onPlay, onSkip)
+  // Returns { draw(), handle(fromId, payload) -> bool, active() }. Call draw() every frame
+  // until onPlay/onSkip fires; route incoming net payloads through handle() first.
+  function makeStartGate(ctx, o, onPlay, onSkip) {
+    const net = o.net || null, isHost = !net || net.isHost;
+    const replay = hasDone(o.save, o.gameKey);
+    let phase = 'decide', sel = 0, decision = null, intro = null, pingT = 0, last = performance.now();
+    function begin(skip) {
+      if (decision !== null) return;
+      decision = skip;
+      unbind();
+      if (net && isHost) net.send({ type: 'gate', skip });
+      if (skip) { phase = 'done'; onSkip(); return; }
+      phase = 'intro';
+      intro = showInstructionCard(ctx, { save: o.save, seenKey: o.seenKey, canvas: o.canvas, title: o.title, lines: o.lines }, () => { phase = 'done'; onPlay(); });
+    }
+    function onKey(e) {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowleft' || k === 'a') sel = 0;
+      else if (k === 'arrowright' || k === 'd') sel = 1;
+      else if (k === 's' || k === 'escape') begin(true);
+      else if (k === 'p') begin(false);
+      else if (k === 'enter' || k === ' ') begin(sel === 1);
+    }
+    function onClick(e) {
+      const r = (o.canvas || document.body).getBoundingClientRect();
+      const x = (e.clientX - r.left) * (BASE_W / r.width);
+      begin(x >= BASE_W / 2);
+    }
+    let bound = false;
+    function bind() { if (bound) return; bound = true; window.addEventListener('keydown', onKey); if (o.canvas) o.canvas.addEventListener('mousedown', onClick); }
+    function unbind() { if (!bound) return; bound = false; window.removeEventListener('keydown', onKey); if (o.canvas) o.canvas.removeEventListener('mousedown', onClick); }
+
+    if (isHost) { if (replay) bind(); else setTimeout(() => begin(false), 0); }
+
+    function drawChoice() {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, BASE_W, BASE_H);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#ffe98a'; ctx.font = 'bold 12px monospace';
+      ctx.fillText(o.title || 'TRANSIT', BASE_W / 2, 50);
+      ctx.font = '8px monospace'; ctx.fillStyle = '#e8ffe0';
+      if (isHost) {
+        ctx.fillText("You've done this ride before.", BASE_W / 2, 70);
+        const bx = [BASE_W / 2 - 80, BASE_W / 2 + 10];
+        ['PLAY AGAIN', 'SKIP'].forEach((lab, i) => {
+          ctx.fillStyle = sel === i ? '#8fdc6a' : '#2a3a28'; ctx.fillRect(bx[i], 90, 70, 22);
+          ctx.fillStyle = sel === i ? '#000' : '#c9ffb0'; ctx.font = 'bold 9px monospace';
+          ctx.fillText(lab, bx[i] + 35, 104);
+        });
+        ctx.fillStyle = '#9fff9f'; ctx.font = '7px monospace';
+        ctx.fillText('<-/-> + ENTER  ·  P = play  ·  S = skip  ·  or click', BASE_W / 2, 132);
+      } else {
+        ctx.fillText('WAITING FOR THE HOST TO START...', BASE_W / 2, 90);
+      }
+      ctx.restore();
+    }
+    return {
+      active: () => phase !== 'done',
+      draw() {
+        const now = performance.now(); const dt = now - last; last = now;
+        if (phase === 'intro') { if (intro && intro.draw) intro.draw(); return; }
+        if (phase !== 'decide') return;
+        if (!isHost && net) { pingT -= dt; if (pingT <= 0) { pingT = 500; net.send({ type: 'gate?' }); } }
+        if (isHost && !replay) return; // first run: begin(false) is already queued
+        drawChoice();
+      },
+      handle(fromId, p) {
+        if (!p) return false;
+        if (p.type === 'gate?') { if (isHost && decision !== null) net.send({ type: 'gate', skip: decision }, fromId); return true; }
+        if (p.type === 'gate') { if (!isHost) begin(!!p.skip); return true; }
+        return false;
+      },
+      cleanup: unbind
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Swap deck (FIX_STEPS Step 4.3): a pool of distinct swap events per game. Each event is
+  //   { id, banner, reseat: 'rotate'|'reverse'|'shuffle'|'swap01'|'rotate2', fx(), sfx:[freq,type] }
+  // fire() (authority only) draws the next event, computes the new seat order, broadcasts
+  // {type:'swap', id, order:[playerIds]} so every client reseats identically, then runs the
+  // banner freeze via the swap runner. handle() applies a relayed swap on non-authority clients.
+  // ---------------------------------------------------------------------
+  function reorder(seats, mode) {
+    const s = seats.slice();
+    if (s.length < 2) return s;
+    if (mode === 'reverse') s.reverse();
+    else if (mode === 'rotate2') { s.push(s.shift()); if (s.length > 2) s.push(s.shift()); }
+    else if (mode === 'swap01') { const t = s[0]; s[0] = s[1]; s[1] = t; }
+    else if (mode === 'shuffle') {
+      const orig = s.slice();
+      for (let tries = 0; tries < 8; tries++) {
+        for (let i = s.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const t = s[i]; s[i] = s[j]; s[j] = t; }
+        if (s.some((x, i) => x !== orig[i])) break;
+      }
+    } else s.push(s.shift()); // 'rotate' (default)
+    return s;
+  }
+  function pid(seat, i) { return seat.player && seat.player.id != null ? seat.player.id : 'seat' + i; }
+  function makeSwapDeck(events, o) {
+    const seats = o.seats, runner = o.runner, net = o.net || null;
+    const roles = seats.map(s => s.role);
+    const pool = makeSwapPool(events.map(e => e.id));
+    const byId = {}; events.forEach(e => { byId[e.id] = e; });
+    const ids0 = seats.map(pid);
+    const history = [];
+    function applyOrder(order) {
+      const map = {}; seats.forEach((s, i) => { map[pid(s, i)] = s; });
+      const next = order.map(id => map[id]).filter(Boolean);
+      if (next.length !== seats.length) return;
+      seats.length = 0; next.forEach((s, i) => { s.role = roles[i]; s.seat = i; seats.push(s); });
+    }
+    function myRole() {
+      if (!net) return null;
+      const s = seats.find(x => x.player && x.player.id === net.id);
+      return s ? s.role : null;
+    }
+    function run(ev, order) {
+      history.push(ev.id);
+      runner.trigger(ev.banner, {
+        freezeMs: o.freezeMs || 1300,
+        onReseat: () => {
+          applyOrder(order);
+          try { ev.fx && ev.fx(); } catch (e) {}
+          const f = ev.sfx || [300, 'square']; tone(f[0], 0.3, f[1], 0.2);
+          const r = myRole(); if (r) runner.setSub('YOU ARE NOW: ' + r.toUpperCase());
+          else if (seats.length > 1) runner.setSub(seats.map(s => (s.player && s.player.name || '?') + '=' + s.role).join('  '));
+        },
+        onDone: o.onDone
+      });
+    }
+    return {
+      history, events,
+      fire() {
+        const ev = byId[pool.next()];
+        const order = reorder(seats, ev.reseat).map(pid);
+        if (net) net.send({ type: 'swap', id: ev.id, order });
+        run(ev, order);
+        return ev;
+      },
+      handle(p) {
+        if (!p || p.type !== 'swap' || !byId[p.id]) return false;
+        run(byId[p.id], p.order || seats.map(pid));
+        return true;
+      },
+      initialIds: ids0
+    };
+  }
+
   window.Transit = {
     BASE_W, BASE_H,
     makeCanvas, autoScale,
@@ -281,6 +449,8 @@
     makeResultsScreen,
     tone, noise,
     makeNet,
-    isTouchDevice, drawTouchZones
+    isTouchDevice, drawTouchZones,
+    hasDone, markDone, needsPlay, makeStartGate,
+    reorder, makeSwapDeck
   };
 })();

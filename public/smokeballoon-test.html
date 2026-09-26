@@ -10,6 +10,8 @@ button{margin:4px}</style></head>
   <button onclick="startSolo()">Start solo (1p)</button>
   <button onclick="startCrew(2)">Simulate 2p seats</button>
   <button onclick="startCrew(4)">Simulate 4p seats</button>
+  <button onclick="save.transitDone={sb:true};save.seenSmokeBalloon=true;log('marked as done: next start shows PLAY/SKIP')">Mark done (test replay SKIP)</button>
+  <button onclick="save={};log('save reset')">Reset save</button>
 </div>
 <div id="log"></div>
 <script src="transit.js"></script>
@@ -17,22 +19,22 @@ button{margin:4px}</style></head>
 <script>
 const log = m => { document.getElementById('log').textContent += m + '\n'; console.log(m); };
 window.onerror = (m,s,l,c,e) => log('ERROR: ' + m + ' @' + l + ':' + c);
-let save = {};
-function clearMount(){ document.getElementById('mount').innerHTML=''; }
+let save = {}; window.game = null; window.results = [];
+function clearMount(){ try { window.game && window.game.cleanup(); } catch(e){} document.getElementById('mount').innerHTML=''; }
 function startSolo() {
   clearMount();
-  SmokeBalloon.start({
+  window.game = SmokeBalloon.start({
     from: 'downtown', to: 'woods', world: 0, crew: 1, save, net: null, mount: document.getElementById('mount'), scale: 3,
-    onDone: (r) => log('onDone: ' + JSON.stringify(r))
+    onDone: (r) => { window.results.push(r); log('onDone: ' + JSON.stringify(r)); }
   });
   log('started solo');
 }
 function startCrew(n) {
   clearMount();
   const crew = []; for (let i=0;i<n;i++) crew.push({id:'p'+i,name:'P'+i,color:i});
-  SmokeBalloon.start({
+  window.game = SmokeBalloon.start({
     from: 'downtown', to: 'woods', world: 0, crew, save, net: null, mount: document.getElementById('mount'), scale: 3,
-    onDone: (r) => log('onDone: ' + JSON.stringify(r))
+    onDone: (r) => { window.results.push(r); log('onDone: ' + JSON.stringify(r)); }
   });
   log('started crew of ' + n);
 }

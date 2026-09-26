@@ -91,29 +91,39 @@
 
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
+      if (intro.handle(fromId, payload)) return;
+      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
     };
 
-    const pool = T.makeSwapPool(['HICCUPS']);
     const swap = T.makeSwapRunner();
     let nextSwapAt = 900 + Math.random() * 700;
-    function doHiccups() {
-      // shuffle which lane index maps to which player color
-      st.notes.forEach(n => { n.lane = (n.lane + 1) % nLanes; });
-      T.tone(300, 0.3, 'triangle', 0.2);
-    }
+    // Every event reseats players (so each player's lane/colour changes) and does its own thing.
+    const shiftLanes = (k) => { if (nLanes > 1) st.notes.forEach(n => { if (!n.hit && !n.missed) n.lane = (n.lane + k) % nLanes; }); };
+    const deck = T.makeSwapDeck([
+      { id: 'hiccups', banner: 'HICCUPS!', reseat: 'shuffle', sfx: [300, 'triangle'],
+        fx: () => { shiftLanes(1); } },
+      { id: 'cough', banner: 'COUGHING FIT!', reseat: 'rotate', sfx: [120, 'sawtooth'],
+        fx: () => { st.lung = Math.max(0, st.lung - 0.2); st.combo = 0; } },
+      { id: 'contact', banner: 'CONTACT HIGH!', reseat: 'reverse', sfx: [660, 'sine'],
+        fx: () => { st.lung = Math.min(1, st.lung + 0.2); } },
+      { id: 'bird', banner: 'BIRD STRIKE!', reseat: 'swap01', sfx: [900, 'square'],
+        fx: () => { st.vy += 35; shiftLanes(nLanes > 2 ? 2 : 1); } },
+      { id: 'sandbag', banner: 'LOOSE SANDBAG!', reseat: 'rotate2', sfx: [80, 'sine'],
+        fx: () => { if (st.sandbags > 0) { st.sandbags--; st.vy -= 50; } else st.vy += 20; } }
+    ], { seats, runner: swap, net, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
 
-    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
-    const intro = T.showInstructionCard(ctx, {
-      save, seenKey: 'seenSmokeBalloon', canvas, title: 'SMOKE BALLOON',
+    let running = false;
+    const intro = T.makeStartGate(ctx, {
+      save, gameKey: 'sb', seenKey: 'seenSmokeBalloon', canvas, net, title: 'SMOKE BALLOON',
       lines: [
         'Tap your lane key on the beat!',
         '(1/2/3/4 or SPACE solo)', 'Good timing = lift, miss = cough.',
         'B/SHIFT drops a sandbag for a quick climb.',
         "Don't get lit up by chopper lights!"
       ]
-    }, () => { running = true; });
+    }, () => { running = true; }, () => finish(true));
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;
@@ -123,7 +133,7 @@
       ctx.clearRect(0, 0, W, H);
       drawSky();
       if (!running) { intro.draw(); return; }
-      if (swap.tick(dt * 1000)) { st.dist += 12 * dt; swap.draw(ctx, 'HICCUPS!'); drawHud(); touchTaps.clear(); return; }
+      if (swap.tick(dt * 1000)) { st.dist += 12 * dt; draw(); swap.draw(ctx); drawHud(); touchTaps.clear(); return; }
       if (st.ended) {
         results.draw(ctx, { canvas, title: 'RIDE OVER!', coins: st.coins, score: st.score, awards: st.wonAwards });
         if (results.dismissed()) finish();
@@ -185,7 +195,7 @@
       nextSwapAt -= dt * 60;
       if (nextSwapAt <= 0 && st.dist > 400 && st.dist < st.finishDist - 300) {
         nextSwapAt = 99999;
-        swap.trigger('HICCUPS!', { freezeMs: 1300, onReseat: doHiccups, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
+        deck.fire();
       }
       if (st.dist >= st.finishDist) endRun();
     }
@@ -253,19 +263,23 @@
       }
     }
 
-    function finish() {
+    function finish(skipped) {
       cleanup();
-      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), heat: st.heat, forcedDescents: st.forcedDescents, from: opts.from, to: opts.to });
+      if (skipped) { opts.onDone && opts.onDone({ coins: 0, score: 0, awards: [], skipped: true, heat: 0, forcedDescents: 0, swaps: [], from: opts.from, to: opts.to }); return; }
+      T.markDone(save, 'sb');
+      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), heat: st.heat, forcedDescents: st.forcedDescents, swaps: deck.history.slice(), from: opts.from, to: opts.to });
     }
     function cleanup() {
       cancelAnimationFrame(raf);
+      intro.cleanup();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     }
 
     raf = requestAnimationFrame(loop);
-    return { cleanup };
+    // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
+    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
   }
 
-  window.SmokeBalloon = { start };
+  window.SmokeBalloon = { start, needsPlay: (save) => T.needsPlay(save, 'sb') };
 })();

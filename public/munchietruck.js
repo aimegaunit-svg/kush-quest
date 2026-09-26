@@ -95,23 +95,35 @@
 
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
+      if (intro.handle(fromId, payload)) return;
+      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'throw' && isHost) doThrow(payload.side, payload.snack);
     };
 
-    const pool = T.makeSwapPool(['BRAINFREEZE']);
     const swap = T.makeSwapRunner();
     let nextSwapAt = 900 + Math.random() * 700;
-    function doBrainFreeze() { seats.push(seats.shift()); T.tone(150, 0.35, 'square', 0.2); }
+    const deck = T.makeSwapDeck([
+      { id: 'freeze', banner: 'BRAIN FREEZE!', reseat: 'rotate', sfx: [150, 'square'],
+        fx: () => { st.speed = 0; } },
+      { id: 'pothole', banner: 'POTHOLE!', reseat: 'shuffle', sfx: [90, 'sawtooth'],
+        fx: () => { st.selSnack = SNACKS[(Math.random() * SNACKS.length) | 0]; st.speed *= 0.5; } },
+      { id: 'sugar', banner: 'SUGAR RUSH!', reseat: 'reverse', sfx: [880, 'square'],
+        fx: () => { st.speed = 90; st.rushT = 4; } },
+      { id: 'wrongturn', banner: 'WRONG TURN!', reseat: 'swap01', sfx: [240, 'triangle'],
+        fx: () => { st.ang += Math.PI / 3 * (Math.random() < 0.5 ? -1 : 1); } },
+      { id: 'spill', banner: 'SPRINKLE SPILL!', reseat: 'rotate2', sfx: [400, 'sine'],
+        fx: () => { st.drift = 1; st.combo = 0; } }
+    ], { seats, runner: swap, net, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
 
-    let running = false; // declared before showInstructionCard: its done() can fire synchronously on replay
-    const intro = T.showInstructionCard(ctx, {
-      save, seenKey: 'seenMunchieTruck', canvas, title: 'MUNCHIE TRUCK',
+    let running = false;
+    const intro = T.makeStartGate(ctx, {
+      save, gameKey: 'mt', seenKey: 'seenMunchieTruck', canvas, net, title: 'MUNCHIE TRUCK',
       lines: soloMode
         ? ['WASD/arrows to drive, SHIFT/SPACE', 'to handbrake-drift corners.', '1-4 pick snack, click to throw', 'at matching-color customers!']
         : ['Driver: WASD + SHIFT to drift.', 'Throwers: aim with MOUSE, click', 'to throw matching-color snacks.']
-    }, () => { running = true; });
+    }, () => { running = true; }, () => finish(true));
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;
@@ -121,7 +133,7 @@
       ctx.clearRect(0, 0, W, H);
       drawStreet();
       if (!running) { intro.draw(); return; }
-      if (swap.tick(dt * 1000)) { st.dist += 10 * dt; swap.draw(ctx, 'BRAIN FREEZE!'); drawHud(); return; }
+      if (swap.tick(dt * 1000)) { st.dist += 10 * dt; draw(); swap.draw(ctx); drawHud(); return; }
       if (st.ended) {
         results.draw(ctx, { canvas, title: 'DELIVERED!', coins: st.coins, score: st.score, awards: st.wonAwards });
         if (results.dismissed()) finish();
@@ -147,7 +159,8 @@
       if (inp.throttle) st.speed += ACC * dt;
       if (inp.brake) st.speed -= ACC * dt * 1.4;
       st.speed *= 0.98;
-      st.speed = Math.max(-30, Math.min(90, st.speed));
+      if (st.rushT > 0) { st.rushT -= dt; st.speed = Math.max(st.speed, 80); }
+      st.speed = Math.max(-30, Math.min(st.rushT > 0 ? 120 : 90, st.speed));
       const turnAmt = TURN * dt * (inp.handbrake ? 1.8 : 1);
       if (inp.left) st.ang -= turnAmt;
       if (inp.right) st.ang += turnAmt;
@@ -167,7 +180,7 @@
       nextSwapAt -= dt * 60;
       if (nextSwapAt <= 0 && st.dist > 400 && st.dist < st.finishDist - 300) {
         nextSwapAt = 99999;
-        swap.trigger('BRAIN FREEZE!', { freezeMs: 1300, onReseat: doBrainFreeze, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
+        deck.fire();
       }
     }
 
@@ -258,20 +271,24 @@
       }
     }
 
-    function finish() {
+    function finish(skipped) {
       cleanup();
-      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), combo: st.bestCombo, angry: st.angry, from: opts.from, to: opts.to });
+      if (skipped) { opts.onDone && opts.onDone({ coins: 0, score: 0, awards: [], skipped: true, combo: 0, angry: 0, swaps: [], from: opts.from, to: opts.to }); return; }
+      T.markDone(save, 'mt');
+      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), combo: st.bestCombo, angry: st.angry, swaps: deck.history.slice(), from: opts.from, to: opts.to });
     }
     function cleanup() {
       cancelAnimationFrame(raf);
+      intro.cleanup();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mouseup', onMouseUp);
     }
 
     raf = requestAnimationFrame(loop);
-    return { cleanup };
+    // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
+    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
   }
 
-  window.MunchieTruck = { start };
+  window.MunchieTruck = { start, needsPlay: (save) => T.needsPlay(save, 'mt') };
 })();

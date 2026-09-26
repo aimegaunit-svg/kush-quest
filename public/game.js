@@ -4,16 +4,20 @@
 'use strict';
 (() => {
 
-const W = 320, H = 192, T = 16, ROWS = 12;
+let W = 400; const H = 192, T = 16, ROWS = 12, ZW = 320, LW = 400; // W becomes the screen-fitted view width after the art is built
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 ctx.imageSmoothingEnabled = false;
+// fill the whole window: height stays 192 game pixels, width stretches to match the screen shape
 function fit() {
-  let s = Math.min(innerWidth / W, innerHeight / H);
-  if (s >= 1) s = Math.floor(s);
-  cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
+  const aspect = innerWidth / innerHeight;
+  W = Math.max(300, Math.min(LW, Math.round(H * aspect)));
+  if (cv.width !== W) { cv.width = W; cv.height = H; }
+  ctx.imageSmoothingEnabled = false;
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  cv.style.width = Math.round(W * s) + 'px'; cv.style.height = Math.round(H * s) + 'px';
 }
-addEventListener('resize', fit); fit();
+addEventListener('resize', () => { fit(); if (running) draw(); });
 
 // ============================================================
 //  BITMAP FONT (3x5)
@@ -198,6 +202,7 @@ addEventListener('keydown', e => {
   if (c === 'ArrowDown' || c === 'KeyS') K.downPressed = true;
   if (state === 'results' && (c === 'ArrowUp' || c === 'ArrowDown' || c === 'KeyW' || c === 'KeyS' || c === 'Space')) { e.preventDefault(); if (c === 'Space') press('jump', true); return; }
   if (c === 'KeyM') { musicOn = !musicOn; return; }
+  if (c === 'KeyF') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); return; }
   if ((c === 'KeyP' || c === 'Escape') && !Net.online && state !== 'results') { paused = !paused; return; }
   if ((c === 'KeyI' || c === 'Tab') && state !== 'results' && state !== 'story') { e.preventDefault(); invOpen = !invOpen; for (const k in K) if (typeof K[k] === 'boolean') K[k] = false; return; }
   if (c === 'Escape' && invOpen) { invOpen = false; return; }
@@ -789,8 +794,8 @@ THEMES.hq = {
 THEME_ORDER.length = 0; THEME_ORDER.push('park', 'beach', 'suburb', 'city', 'woods', 'hq');
 
 function drawLayer(img, factor, camX, drift = 0, yOff = 0) {
-  const off = ((camX * factor + drift) % W + W) % W;
-  ctx.drawImage(img, -Math.floor(off), yOff); ctx.drawImage(img, W - Math.floor(off), yOff);
+  const iw = img.width, off = ((camX * factor + drift) % iw + iw) % iw;
+  for (let x = -Math.floor(off); x < W; x += iw) ctx.drawImage(img, x, yOff);
 }
 // ============================================================
 //  STAGES (beat-em-up streets: walk left/right AND up/down)
@@ -824,21 +829,22 @@ function buildLevel(n) {
   let nugCount = 0;
   for (let zi = 0; zi < zoneCount; zi++) {
     const x0 = 300 + zi * 430;
-    const count = 3 + Math.floor(diff * 0.6) + Math.floor(zi / 2) + (zi === zoneCount - 1 ? 2 : 0);
+    const base = 5 + Math.floor(diff * 0.7) + Math.floor(zi / 2) + (zi === zoneCount - 1 ? 3 : 0);
+    const count = Math.round(base * 2.5); // enough for a full crew of 4; the host only uses what the crew size needs
     const ids = [];
     for (let k = 0; k < count; k++) {
       const kind = pick(theme.enemies);
-      const hp = { cop: 5 + Math.floor(diff / 3), karen: 3, mouse: 1, squirrel: 2 }[kind];
+      const hp = { cop: 3 + Math.floor(diff / 3), karen: 2 + Math.floor(diff / 4), mouse: 1, squirrel: 1 }[kind];
       ids.push(enemies.length);
       enemies.push({ id: enemies.length, kind, zone: zi, hp, maxHp: hp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60 + Math.floor(rand() * 60), flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0 });
     }
-    zones.push({ x0, ids, started: false, cleared: false });
+    zones.push({ x0, ids, base, started: false, cleared: false });
     // stuff inside each fight area
     prop(rand() < .5 ? 'crate' : 'trash', x0 + 60 + Math.floor(rand() * 180), rz(), [pick(['coin', 'munchie', 'nug', 'papers', 'bombs']), 'coin', 'coin']);
     if (zi === 2) prop('chest', x0 + 150, 20, ['loot']);
     if (zi === 3) prop('crate', x0 + 220, 40, ['gold']);
     // the walk to the next fight: coins, nugs, rings, bonuses
-    const gx = x0 + W + 10;
+    const gx = x0 + ZW + 10;
     coinArc(gx, rz(), 5);
     item('nug', gx + 60, rz(), 6); nugCount++;
     item('ring', gx + 30, rz(), 12);
@@ -847,15 +853,15 @@ function buildLevel(n) {
     deco.push(x0 - 30, x0 + 120, x0 + 260);
   }
   while (nugCount < 7) { item('nug', 320 + nugCount * 300, rz(), 6); nugCount++; }
-  const midGap = zones[Math.floor(zoneCount / 2)].x0 + W + 90;
+  const midGap = zones[Math.floor(zoneCount / 2)].x0 + ZW + 90;
   const legend = { x: midGap, z: 8, who: n % LEGENDS.length, met: false };
-  const endX = zones[zoneCount - 1].x0 + W;
+  const endX = zones[zoneCount - 1].x0 + ZW;
   coinLine(endX + 30, 34, 6); item('ring', endX + 130, 20, 10); item('ring', endX + 150, 44, 10);
   const spot = { x: LEN - 150, w: 60 };
 
   return {
     n, themeKey, theme, name: missionName(n), items, props, enemies, zones, deco, legend, spot,
-    zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: []
+    zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: []
   };
 }
 
@@ -992,7 +998,7 @@ function hurt(dmg = 1, cookedLoss = 0, fromX) {
   me.hp -= dmg; me.inv = 70; me.vx = (fromX !== undefined ? Math.sign(me.x - fromX) || -me.face : -me.face) * 2.2; me.vh = 2;
   me.puffed = false; me.combo = 0; shake = 10; hitstop = 4;
   if (cookedLoss) { addCooked(-cookedLoss); popup(me.x - 16, sy(me.z) - 34, 'BUZZKILL -' + cookedLoss + '%', '#ff8a8a'); }
-  SFX.hurt(); puff(me.x, sy(me.z, me.h) - 10, 10, ['#ff5a6a', '#ffffff']);
+  SFX.hurt(); puff(me.x, sy(me.z, me.h) - 10, 5, ['#ffffff']); bleed(me.x, me.z, me.h, 5, me.vx > 0 ? 1 : -1);
   if (me.hp <= 0) knockedOut();
 }
 function knockedOut() {
@@ -1025,10 +1031,30 @@ function selectWeapon(i) {
 // ============================================================
 const REACH = { puff: 32, lighter: 30, bong: 30, dab: 44, grinder: 32 };
 // my hit landed on an enemy: the host applies it, everyone else asks the host
+// ---- impact juice: cartoon blood, hit sparks, POW text, bodies that stay down ----
+const POWS = ['POW!', 'WHAM!', 'BONK!', 'SMACK!', 'CRACK!', 'OOF!'];
+function bleed(x, z, h, n, dir = 0) {
+  for (let i = 0; i < n; i++) particles.push({ x: x + (Math.random() - .5) * 6, y: sy(z, h) - 10 - Math.random() * 6, vx: dir * (0.6 + Math.random() * 1.6) + (Math.random() - .5), vy: -1 - Math.random() * 1.8, life: 22 + Math.random() * 14, col: Math.random() < .7 ? '#d82040' : '#a01830', s: 1 + Math.floor(Math.random() * 2), g: 0.16, drip: z });
+  if (lvl.decals.length > 90) lvl.decals.shift();
+  if (Math.random() < 0.6) lvl.decals.push({ x: x + dir * (4 + Math.random() * 10), z: z + (Math.random() - .5) * 4, r: 2 + Math.random() * 3 });
+}
+function impact(x, z, h, strong) {
+  particles.push({ x, y: sy(z, h) - 12, vx: 0, vy: 0, life: strong ? 7 : 5, col: '#ffffff', s: 1, g: 0, burst: strong ? 9 : 6 });
+  if (strong && Math.random() < 0.45) popup(x - 10, sy(z, h) - 30, POWS[Math.floor(Math.random() * POWS.length)], ['#ffd84a', '#ffffff', '#ff9ab8'][Math.floor(Math.random() * 3)]);
+}
+function layBody(e) {
+  if (e.skipped || e.gone || e.bodied) return;
+  e.bodied = true;
+  if (lvl.bodies.length > 45) lvl.bodies.shift();
+  lvl.bodies.push({ kind: e.kind, x: e.x, z: e.z, dir: e.dir || 1 });
+  lvl.decals.push({ x: e.x, z: e.z + 1, r: e.kind === 'mouse' ? 3 : 6, pool: true });
+  puff(e.x, sy(e.z) - 2, 5, ['#e8e0d0', '#ffffff'], .8);
+}
 function hitEnemy(e, dmg, dir, strong) {
   if (!e.alive || e.state === 5) return;
-  e.flash = 8; hitstop = 3; shake = Math.max(shake, strong ? 5 : 3);
-  puff(e.x, sy(e.z, e.h) - 12, 6, ['#ffffff', '#fff6b0', '#ff9ab8'], 1.2);
+  e.flash = 8; hitstop = strong ? 5 : 3; shake = Math.max(shake, strong ? 5 : 3);
+  puff(e.x, sy(e.z, e.h) - 12, 4, ['#ffffff', '#fff6b0'], 1.2);
+  bleed(e.x, e.z, e.h, strong ? 7 : 4, dir); impact(e.x - dir * 4, e.z, e.h, strong);
   SFX.hit();
   if (isHost()) damageEnemy(e, dmg, dir, strong, Net.id);
   else Net.send({ t: 'hit', i: e.id, d: dmg, dir, s: strong ? 1 : 0, l: lvl.n });
@@ -1041,12 +1067,14 @@ function damageEnemy(e, dmg, dir, strong, by) { // host only
     Net.send({ t: 'kill', i: e.id, by, l: lvl.n });
     onKill(e, by);
   } else {
-    e.state = 4; e.t = strong ? 26 : 16; e.vx = dir * (strong ? 3 : 1.4); if (strong) e.vh = 2.2;
+    e.state = 4; e.t = strong ? 30 : 20; e.vx = dir * (strong ? 3 : 1.4); if (strong) e.vh = 2.2;
   }
 }
 function onKill(e, by) { // everyone: death effect; the one who landed it gets the goods
   e.state = 5; e.t = Math.max(e.t, 40);
-  puff(e.x, sy(e.z) - 10, 12, ['#ffffff', '#e8e4f4', '#c8ffa0', '#ff9ab8'], 1.4);
+  puff(e.x, sy(e.z) - 10, 8, ['#ffffff', '#e8e4f4', '#c8ffa0'], 1.4); bleed(e.x, e.z, e.h, 8, e.vx > 0 ? 1 : -1);
+  const zn = lvl.zones[lvl.zi];
+  if (zn && lvl.locked && zn.ids.every(i => { const o = lvl.enemies[i]; return o === e || !o.alive || o.state === 5 || !o.spawned && o.skipped; }) && zn.ids.filter(i => !lvl.enemies[i].spawned && lvl.enemies[i].alive).length === 0) { hitstop = 14; shake = 10; }
   if (by !== Net.id) return;
   const reward = { cop: 8, karen: 6, mouse: 2, squirrel: 3 }[e.kind] + e.stolen;
   addCoins(reward); addCooked(3); me.kills++; addCombo(e.x, sy(e.z) - 30); SFX.stomp();
@@ -1171,10 +1199,10 @@ function update() {
   // camera: follow me, but stay put while a fight area is locked
   const z = lvl.zones[lvl.zi];
   let target = me.x - W * 0.4;
-  if (lvl.locked && z) target = z.x0;
+  if (lvl.locked && z) target = z.x0 + (ZW - W) / 2;
   camX += (target - camX) * 0.1;
   camX = Math.max(0, Math.min(camX, LEN - W));
-  if (lvl.locked && z) camX = Math.max(z.x0 - 40, Math.min(camX, z.x0 + 40));
+  if (lvl.locked && z) camX = Math.max(z.x0 + (ZW - W) / 2 - 40, Math.min(camX, z.x0 + 40));
 
   if (Net.online && frame % 3 === 0 && (state === 'play' || state === 'sitting')) {
     Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked) });
@@ -1210,11 +1238,11 @@ function updatePlayer() {
   p.x += p.vx; p.z += p.vz;
   p.z = Math.max(0, Math.min(ZMAX, p.z));
   const zn = lvl.zones[lvl.zi];
-  const left = lvl.locked && zn ? zn.x0 + 8 : Math.max(8, camX - 40), right = lvl.locked && zn ? zn.x0 + W - 8 : LEN - 8;
+  const left = lvl.locked && zn ? zn.x0 + 8 : Math.max(8, camX - 40), right = lvl.locked && zn ? zn.x0 + ZW - 8 : LEN - 8;
   p.x = Math.max(left, Math.min(right, p.x));
   if (!lvl.locked) { // can't run past the next fight until it's started
     const next = lvl.zones.find(z => !z.cleared);
-    if (next && next.started && p.x > next.x0 + W - 8) p.x = next.x0 + W - 8;
+    if (next && next.started && p.x > next.x0 + ZW - 8) p.x = next.x0 + ZW - 8;
   }
 
   if (K.attackPressed) attack();
@@ -1319,16 +1347,19 @@ function hostUpdate() {
     const z = lvl.zones[nz];
     if (!z.started && players.some(p => p.x > z.x0 + 70)) {
       z.started = true; lvl.zi = nz; lvl.locked = true; z.spawnT = 0;
+      const crew = players.length, need = Math.round(z.base * (1 + 0.55 * (crew - 1)));
+      z.ids.slice(need).forEach(i => { lvl.enemies[i].alive = false; lvl.enemies[i].skipped = true; });
+      z.maxOn = 5 + 2 * (crew - 1);
       banner = { t: 70, a: 'HERE THEY COME!', b: '' }; SFX.karen();
     }
     if (z.started && !z.cleared) {
       const alive = z.ids.map(i => lvl.enemies[i]).filter(e => e.alive);
       const onScreen = alive.filter(e => e.spawned).length;
       const waiting = alive.filter(e => !e.spawned);
-      if (waiting.length && onScreen < 4 && --z.spawnT <= 0) {
+      if (waiting.length && onScreen < (z.maxOn || 5) && --z.spawnT <= 0) {
         const e = waiting[0], fromLeft = e.id % 3 === 0;
-        e.spawned = true; e.x = fromLeft ? z.x0 - 20 : z.x0 + W + 20; e.z = 6 + (e.id * 23) % (ZMAX - 12); e.dir = fromLeft ? 1 : -1;
-        z.spawnT = 50;
+        e.spawned = true; e.x = fromLeft ? Math.min(z.x0 - 20, camX - 20) : Math.max(z.x0 + ZW + 20, camX + W + 20); e.z = 6 + (e.id * 23) % (ZMAX - 12); e.dir = fromLeft ? 1 : -1;
+        z.spawnT = onScreen < 2 ? 12 : 34;
       }
       if (!alive.length) { z.cleared = true; lvl.locked = false; banner = { t: 90, a: 'GO GO GO!', b: '' }; SFX.cp(); }
     }
@@ -1337,7 +1368,7 @@ function hostUpdate() {
     if (!e.spawned || !e.alive) continue;
     if (e.state === 5) { // knocked out, flying back
       e.vh -= 0.2; e.h = Math.max(0, e.h + e.vh); e.x += e.vx; e.vx *= 0.95; e.x = Math.max(camX + 6, Math.min(camX + W - 6, e.x));
-      if (--e.t <= 0) e.alive = false;
+      if (--e.t <= 0) { e.alive = false; layBody(e); }
       continue;
     }
     // target the closest homie
@@ -1354,11 +1385,14 @@ function hostUpdate() {
     } else if (e.kind === 'cop') {
       if (e.state === 0) {
         e.dir = Math.sign(dx) || 1;
-        const wantX = tgt.x - e.dir * 20;
+        // take turns: only a couple of cops go for you at once, the rest circle and wait
+        const busy = lvl.enemies.filter(o => o !== e && o.kind === 'cop' && o.alive && (o.state === 1 || o.state === 2 || o.near)).length;
+        e.near = busy < 1 + players.length;
+        const wantX = tgt.x - e.dir * (e.near ? 20 : 52 + (e.id % 3) * 12);
         sx = Math.sign(wantX - e.x) * Math.min(0.9, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.9, Math.abs(dz));
-        if (Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = 22; }
+        if (e.near && Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = 26; }
       } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
-      else if (e.state === 2) { if (--e.t <= 0) { e.state = 3; e.t = 34; } }
+      else if (e.state === 2) { if (--e.t <= 0) { e.state = 3; e.t = 44; } }
       else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
     } else if (e.kind === 'karen') {
       if (e.state === 0) {
@@ -1368,7 +1402,7 @@ function hostUpdate() {
         if (--e.cd <= 0 && Math.abs(dz) < 10) { e.state = 1; e.t = 16; }
       } else if (e.state === 1) {
         if (--e.t <= 0) {
-          e.state = 3; e.t = 30; e.cd = 110 + (e.id * 17) % 60;
+          e.state = 3; e.t = 30; e.cd = 150 + (e.id * 17) % 80;
           const shot = { x: e.x + e.dir * 8, z: e.z, vx: e.dir * 2.1, life: 150, spin: 0 };
           lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n });
           if (e.id % 2) popup(e.x - 18, sy(e.z) - 36, e.id % 4 === 1 ? 'MANAGER!!' : 'UNACCEPTABLE!', '#ffb0b0');
@@ -1385,7 +1419,7 @@ function hostUpdate() {
   }
   // enemies stay inside the fight like you do (thieves running off with coins are the only ones allowed to leave)
   const zb = lvl.zones[lvl.zi];
-  const L = lvl.locked && zb ? zb.x0 + 8 : camX + 8, Rt = lvl.locked && zb ? zb.x0 + W - 8 : camX + W - 8;
+  const L = lvl.locked && zb ? zb.x0 + 8 : camX + 8, Rt = lvl.locked && zb ? zb.x0 + ZW - 8 : camX + W - 8;
   for (const e of lvl.enemies) {
     if (!e.spawned || !e.alive || e.state === 6) continue;
     if (!e.entered) { if (e.x > L && e.x < Rt) e.entered = true; else continue; }
@@ -1408,7 +1442,7 @@ function clientEnemies() {
   for (const e of lvl.enemies) {
     if (!e.spawned) continue;
     e.x += (e.tx - e.x) * 0.3; e.z += (e.tz - e.z) * 0.3; e.h += (e.th - e.h) * 0.4;
-    if (e.state === 5 && --e.t <= 0) e.alive = false;
+    if (e.state === 5 && --e.t <= 0) { e.alive = false; layBody(e); }
   }
 }
 function applySnapshot(m) {
@@ -1589,10 +1623,37 @@ function drawItem(it) {
   else if (it.kind === 'extra') { draw_(EXTRAS[it.sub].img, it.x - 4, y - 10); if (frame % 20 === 0) puff(it.x, y - 8, 1, ['#ffffff', '#fff6b0', '#9ae8ff'], .4); }
 }
 
+// menus are laid out for 320 wide: center them on wider screens
+function draw320(fn, bg) {
+  if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H); }
+  const w = W, ox = Math.floor((W - 320) / 2); ctx.save(); ctx.translate(ox, 0); W = 320; try { fn(); } finally { W = w; ctx.restore(); }
+}
+const FG_KIND = { park: ['leaves', 'bush'], beach: ['frond', 'post'], suburb: ['bush', 'post'], city: ['post', 'hydrant'], woods: ['leaves', 'fern'], hq: ['plant', 'post'] };
+function drawForeground() {
+  const kinds = FG_KIND[lvl.themeKey] || ['leaves'], f = 1.5, spacing = 260;
+  const start = Math.floor(camX * f / spacing) - 1;
+  ctx.save(); ctx.filter = 'blur(1.5px)'; ctx.globalAlpha = 0.9;
+  for (let i = start; i < start + Math.ceil(W / spacing) + 3; i++) {
+    const seedv = (i * 9301 + 49297 + lvl.n * 17) % 233280; if (seedv % 3 === 0) continue; // only now and then
+    const kind = kinds[seedv % kinds.length], x = Math.round(i * spacing + (seedv % 90) - camX * f), bottom = H + 4;
+    if (x < -80 || x > W + 80) continue;
+    if (kind === 'leaves' || kind === 'fern' || kind === 'frond') {
+      const col = kind === 'frond' ? '#2f8e4a' : kind === 'fern' ? '#1e5a2e' : '#2f7a3a', lite = kind === 'fern' ? '#2f7a3a' : '#4fae5a';
+      for (let k = 0; k < 6; k++) { const a = -Math.PI / 2 + (k - 2.5) * 0.35, len = 38 + (k % 3) * 10; ctx.strokeStyle = k % 2 ? col : lite; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(x, bottom); ctx.quadraticCurveTo(x + Math.cos(a) * len * 0.6 + 8, bottom + Math.sin(a) * len * 0.6, x + Math.cos(a) * len, bottom + Math.sin(a) * len); ctx.stroke(); }
+    } else if (kind === 'bush' || kind === 'plant') {
+      ctx.fillStyle = kind === 'plant' ? '#4a7a4a' : '#3a8a48'; circle(x, bottom - 6, 22); ctx.fillStyle = kind === 'plant' ? '#6a9a5a' : '#5aae62'; circle(x - 8, bottom - 14, 12); circle(x + 10, bottom - 10, 10);
+    } else if (kind === 'post') {
+      R(ctx, '#2a1838', x - 5, 0, 10, H); R(ctx, lvl.themeKey === 'beach' ? '#c89a6a' : '#6a6480', x - 4, 0, 8, H); R(ctx, '#ffffff', x - 3, 0, 2, H);
+    } else if (kind === 'hydrant') {
+      R(ctx, '#2a1838', x - 9, bottom - 34, 18, 34); R(ctx, '#e03b3b', x - 8, bottom - 33, 16, 33); R(ctx, '#ff7a7a', x - 6, bottom - 33, 4, 33); R(ctx, '#e03b3b', x - 13, bottom - 24, 26, 6);
+    }
+  }
+  ctx.restore(); ctx.filter = 'none'; ctx.globalAlpha = 1;
+}
 function draw() {
-  if (state === 'story') { drawStory(); return; }
-  if (state === 'map') { drawMap_(); if (invOpen) drawInventory(); return; }
-  if (state === 'results' && results && results.shopOnly) { drawShop(); return; }
+  if (state === 'story') { draw320(drawStory, '#2a1838'); return; }
+  if (state === 'map') { drawMap_(); if (invOpen) draw320(drawInventory); return; }
+  if (state === 'results' && results && results.shopOnly) { draw320(drawShop, '#1e122c'); return; }
   const th = lvl.theme;
   ctx.save();
   if (shake > 0) { ctx.translate(Math.round((Math.random() - .5) * shake), Math.round((Math.random() - .5) * shake)); shake *= 0.85; if (shake < 0.5) shake = 0; }
@@ -1607,8 +1668,16 @@ function draw() {
   drawSpot();
   // fight area edges
   const zn = lvl.zones[lvl.zi];
-  if (lvl.locked && zn && frame % 30 < 20) { R(ctx, 'rgba(255,90,106,.5)', Math.round(zn.x0 + W - 4 - camX), FLOOR_Y, 3, ZMAX + 10); R(ctx, 'rgba(255,90,106,.5)', Math.round(zn.x0 + 2 - camX), FLOOR_Y, 3, ZMAX + 10); }
+  if (lvl.locked && zn && frame % 30 < 20) { R(ctx, 'rgba(255,90,106,.5)', Math.round(zn.x0 + ZW - 4 - camX), FLOOR_Y, 3, ZMAX + 10); R(ctx, 'rgba(255,90,106,.5)', Math.round(zn.x0 + 2 - camX), FLOOR_Y, 3, ZMAX + 10); }
 
+  // blood on the street + the fallen (stays for the whole mission)
+  for (const d of lvl.decals) { const X = Math.round(d.x - camX), Y = sy(d.z); if (X < -10 || X > W + 10) continue; ctx.fillStyle = d.pool ? 'rgba(150,20,40,.55)' : 'rgba(170,24,48,.6)'; ctx.fillRect(X - d.r, Y - 1, d.r * 2, 2); ctx.fillRect(X - d.r + 1, Y - 2, d.r * 2 - 2, 4); }
+  for (const b of lvl.bodies) {
+    const img = ENEMY_IMG[b.kind][0], X = Math.round(b.x - camX), Y = sy(b.z);
+    if (X < -30 || X > W + 30) continue;
+    ctx.save(); ctx.translate(X, Y - img.width / 2 + 2); ctx.rotate(b.dir > 0 ? Math.PI / 2 : -Math.PI / 2); ctx.filter = 'brightness(.75) saturate(.7)'; ctx.drawImage(img, -img.width / 2, -img.height / 2); ctx.restore(); ctx.filter = 'none';
+    if (b.kind !== 'mouse' && b.kind !== 'squirrel') text('X X', X - 5, Y - 6 - (b.dir > 0 ? 0 : 0), '#2a1838');
+  }
   // everything standing on the street, back to front
   const list = [];
   for (const it of lvl.items) if (!it.taken && Math.abs(it.x - camX - W / 2) < W) list.push({ z: it.z, d: () => { shadow(it.x, it.z, it.h || 0, 4); drawItem(it); } });
@@ -1641,9 +1710,12 @@ function draw() {
   list.sort((a, b) => a.z - b.z).forEach(o => o.d());
 
   for (const p of particles) {
+    if (p.burst) { const X = Math.round(p.x - camX), Y = Math.round(p.y), r = p.burst * (1 - p.life / 9) + 3; ctx.fillStyle = '#ffffff'; for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; ctx.fillRect(Math.round(X + Math.cos(a) * r), Math.round(Y + Math.sin(a) * r), 2, 2); } ctx.fillStyle = '#fff6b0'; ctx.fillRect(X - 2, Y - 2, 4, 4); continue; }
+    if (p.drip !== undefined && p.y > sy(p.drip) - 1) { p.vx = p.vy = p.g = 0; p.y = sy(p.drip) - 1; }
     ctx.globalAlpha = Math.min(1, p.life / 15); ctx.fillStyle = p.col;
     ctx.fillRect(Math.round(p.x - camX), Math.round(p.y), p.s, p.s); ctx.globalAlpha = 1;
   }
+  drawForeground();
   for (const p of popups) text(p.str, p.x - camX, p.y, p.col);
   if (lg && lg.met && me.legendT > 0 && state === 'play') {
     const L = LEGENDS[lg.who];
@@ -1664,9 +1736,9 @@ function draw() {
     text('WASD MOVE  SPACE JUMP  CLICK HIT  K THROW  TAB BAG', W / 2, 180, '#fff6b0', 1, 'center');
   }
   drawHUD();
-  if (state === 'brief') drawBrief();
-  if (invOpen) drawInventory();
-  if (state === 'results') drawShop();
+  if (state === 'brief') draw320(drawBrief);
+  if (invOpen) draw320(drawInventory);
+  if (state === 'results') draw320(drawShop, '#1e122c');
 }
 function drawHUD() {
   if (state === 'results') return;
@@ -1864,56 +1936,113 @@ function explode(s) {
 }
 
 // ============================================================
-//  WORLD MAP (pick your mission, Mario style)
+//  WORLD MAP (procedural, dithered, weirdly realistic 8-bit terrain)
 // ============================================================
-// every stop on the map looks like the area you'll play in
+const MW = 400;
 const MAP_NODES = [
-  { kind: 'level', n: 0, x: 34, y: 148 },
-  { kind: 'level', n: 1, x: 78, y: 110 },
-  { kind: 'level', n: 2, x: 124, y: 146 },
-  { kind: 'shop', x: 160, y: 112 },
-  { kind: 'level', n: 3, x: 196, y: 148 },
-  { kind: 'level', n: 4, x: 232, y: 100 },
-  { kind: 'level', n: 5, x: 272, y: 136 },
-  { kind: 'farm', x: 290, y: 62 },
+  { kind: 'level', n: 0, x: 84, y: 138 },   // the park
+  { kind: 'level', n: 1, x: 70, y: 70 },    // the beach cove
+  { kind: 'level', n: 2, x: 140, y: 104 },  // suburbia
+  { kind: 'shop', x: 184, y: 142 },         // head shop
+  { kind: 'level', n: 3, x: 226, y: 100 },  // downtown
+  { kind: 'level', n: 4, x: 280, y: 64 },   // misty woods
+  { kind: 'level', n: 5, x: 312, y: 134 },  // buzzkill hq
+  { kind: 'farm', x: 350, y: 82 },          // the farm on the hill
 ];
-let mapSel = 0, mapCanvas = null, storyPage = 0, briefT = 0;
+let mapSel = 0, mapCanvas = null, mapWater = null, mapRoads = [], storyPage = 0, briefT = 0;
 function nodeUnlocked(nd) {
   if (nd.kind === 'level') return nd.n <= save.spots;
   if (nd.kind === 'shop') return true;
   return save.spots >= SPOTS_TO_FARM;
 }
 function buildMapCanvas() {
-  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  // sea + land
-  gradient(g, ['#5ab4f0', '#5ab4f0', '#62baf2', '#6ac0f4', '#72c6f4', '#7acbf6', '#82d0f8', '#8ad4f8']);
-  for (let i = 0; i < 60; i++) R(g, '#c8ecff', (i * 71) % W, (i * 37) % H, 5, 1);
-  const blob = (cx, cy, rx, ry, col) => { g.fillStyle = col; for (let y = -ry; y <= ry; y++) { const w = Math.round(rx * Math.sqrt(1 - (y * y) / (ry * ry))); g.fillRect(cx - w, cy + y, w * 2, 1); } };
-  blob(160, 118, 156, 70, '#2a1838'); blob(160, 118, 154, 68, '#8ad890'); blob(160, 112, 146, 58, '#a0e8a0');
-  // PARK: lollipop trees
-  blob(34, 150, 26, 16, '#7fe07a');
-  for (const [x, y, col] of [[18, 140, '#ff9ab8'], [48, 142, '#98e888'], [26, 160, '#98e888']]) { R(g, '#8a5a3a', x, y, 2, 6); blob(x + 1, y - 2, 4, 4, col); }
-  // BEACH: sand + water edge + palm
-  blob(70, 100, 30, 18, '#ffe8a8'); blob(56, 88, 14, 8, '#5ab4f0');
-  R(g, '#9a6a42', 92, 96, 2, 12); R(g, '#3fae5a', 86, 94, 14, 2); R(g, '#3fae5a', 89, 92, 8, 2);
-  // SUBURBIA: little houses
-  for (let i = 0; i < 3; i++) { const x = 108 + i * 12, y = 150 - (i % 2) * 6; R(g, '#2a1838', x - 1, y - 1, 10, 9); R(g, '#fff6f0', x, y, 8, 7); for (let k = 0; k < 5; k++) R(g, '#d06088', x - 1 + k, y - 1 - k, 10 - k * 2, 1); R(g, '#ffd84a', x + 2, y + 2, 2, 2); }
-  // HEAD SHOP: hut with a leaf sign
-  R(g, '#2a1838', 151, 100, 18, 12); R(g, '#c070ff', 152, 101, 16, 10); for (let k = 0; k < 6; k++) R(g, '#7fe07a', 150 + k, 99 - k, 20 - k * 2, 1); g.drawImage(LEAF_ICON, 157, 103);
-  // DOWNTOWN: towers
-  for (const [x, h] of [[184, 22], [192, 30], [200, 18], [207, 26]]) { R(g, '#2a1838', x - 1, 150 - h - 1, 9, h + 1); R(g, '#4a3a70', x, 150 - h, 7, h); for (let y = 150 - h + 2; y < 148; y += 4) R(g, '#ffd84a', x + 2, y, 1, 1), R(g, '#ffd84a', x + 4, y + 2, 1, 1); }
-  // MISTY WOODS: pines
-  for (const [x, y] of [[218, 98], [228, 90], [238, 96], [248, 88], [224, 108], [244, 106]]) { for (let k = 0; k < 10; k++) R(g, k % 3 ? '#2a6a3a' : '#1e4a2a', x - Math.floor(k / 2), y + k, Math.floor(k / 2) * 2 + 1, 1); R(g, '#5a3a24', x, y + 10, 1, 3); }
-  // BUZZKILL HQ: grey tower with red sign
-  R(g, '#2a1838', 263, 104, 20, 34); R(g, '#9a96b8', 264, 105, 18, 32); for (let y = 108; y < 134; y += 5) for (let x = 266; x < 280; x += 4) R(g, '#8ecbff', x, y, 2, 3); R(g, '#ff5a6a', 262, 100, 22, 5);
-  // THE FARM: fields + barn up on the hill
-  blob(290, 70, 28, 20, '#c8e888'); for (let y = 58; y < 84; y += 4) R(g, '#7fe07a', 268, y, 44, 2);
-  R(g, '#2a1838', 283, 50, 16, 13); R(g, '#e03b3b', 284, 51, 14, 11); for (let k = 0; k < 7; k++) R(g, '#8a2020', 283 + k, 50 - k, 16 - k * 2, 1); R(g, '#ffffff', 289, 56, 4, 6);
-  // the path between stops
-  for (let i = 0; i < MAP_NODES.length - 1; i++) {
-    const a = MAP_NODES[i], b = MAP_NODES[i + 1], steps = Math.round(Math.hypot(b.x - a.x, b.y - a.y) / 5);
-    for (let k = 1; k < steps; k++) { const x = Math.round(a.x + (b.x - a.x) * k / steps), y = Math.round(a.y + (b.y - a.y) * k / steps); R(g, '#2a1838', x - 1, y - 1, 4, 4); R(g, '#fff0c0', x, y, 2, 2); }
+  const c = document.createElement('canvas'); c.width = MW; c.height = H; const g = c.getContext('2d');
+  // value noise
+  let sd = 1337; const rnd2 = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  const GRID = 24, gw = Math.ceil(MW / GRID) + 2, gh = Math.ceil(H / GRID) + 2, lat = [];
+  for (let o = 0; o < 4; o++) { lat[o] = []; for (let i = 0; i < gw * gh * (1 << o) * (1 << o); i++) lat[o].push(rnd2()); }
+  const vnoise = (x, y, o) => {
+    const sc = GRID / (1 << o), W2 = gw * (1 << o), xi = Math.floor(x / sc), yi = Math.floor(y / sc), fx = x / sc - xi, fy = y / sc - yi;
+    const L = lat[o], v = (a, b) => L[(b * W2 + a) % L.length];
+    const sx = fx * fx * (3 - 2 * fx), sy2 = fy * fy * (3 - 2 * fy);
+    return (v(xi, yi) * (1 - sx) + v(xi + 1, yi) * sx) * (1 - sy2) + (v(xi, yi + 1) * (1 - sx) + v(xi + 1, yi + 1) * sx) * sy2;
+  };
+  const fbm = (x, y) => vnoise(x, y, 0) * 0.5 + vnoise(x, y, 1) * 0.28 + vnoise(x, y, 2) * 0.15 + vnoise(x, y, 3) * 0.07;
+  const bump = (x, y, cx, cy, r, amt) => { const d = Math.hypot(x - cx, (y - cy) * 1.2) / r; return d < 1 ? amt * (1 - d * d) : 0; };
+  const height = (x, y) => {
+    const dx = (x - MW / 2) / 185, dy = (y - H / 2 - 4) / 86, mask = 1 - Math.min(1, Math.sqrt(dx * dx + dy * dy));
+    let h = fbm(x, y) * 0.5 + mask * 0.75 - 0.08;
+    h += bump(x, y, 46, 58, 38, -0.35);   // the beach cove
+    h += bump(x, y, 350, 80, 40, 0.25);   // farm hill
+    h += bump(x, y, 285, 55, 45, 0.12);   // wooded highlands
+    h += bump(x, y, 105, 150, 10, -0.2);  // park pond
+    return h;
+  };
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const bands = [
+    [0.00, '#1c3a6e'], [0.22, '#24508c'], [0.30, '#2e6aa8'], [0.36, '#4a8ec4'], [0.40, '#e8d8a0'],
+    [0.44, '#a8c870'], [0.52, '#7aa858'], [0.62, '#5a8a48'], [0.72, '#8a8a6a'], [0.80, '#a8a494'], [0.88, '#e8eef0'],
+  ];
+  const img = g.createImageData(MW, H), d = img.data, hex = hcol => [parseInt(hcol.slice(1, 3), 16), parseInt(hcol.slice(3, 5), 16), parseInt(hcol.slice(5, 7), 16)];
+  const bandCols = bands.map(b => hex(b[1]));
+  mapWater = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < MW; x++) {
+    let h = height(x, y);
+    // light from the top-left: compare with the neighbour for relief shading
+    const shade = (h - height(x + 1, y + 1)) * 6;
+    let i = 0; while (i < bands.length - 1 && h >= bands[i + 1][0]) i++;
+    const lo = bands[i][0], hi = i < bands.length - 1 ? bands[i + 1][0] : 1;
+    const t = (h - lo) / (hi - lo), th = BAYER[(y & 3) * 4 + (x & 3)] / 16;
+    let col = bandCols[t > 0.72 + th * 0.28 && i < bands.length - 1 ? i + 1 : i].slice();
+    if (h > 0.40) { const k = Math.max(-0.18, Math.min(0.18, shade)); col = col.map(v => Math.max(0, Math.min(255, v * (1 + k)))); }
+    if (h < 0.40 && h > 0.375 && BAYER[(y & 3) * 4 + (x & 3)] < 5) col = [220, 240, 255]; // foam at the shore
+    if (h < 0.36 && (x + y) % 5 === 0) mapWater.push(x, y);
+    const o = (y * MW + x) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
   }
+  g.putImageData(img, 0, 0);
+  const dot = (x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); };
+  let r3 = 99; const rr = () => (r3 = (r3 * 16807) % 2147483647) / 2147483647;
+  // ROADS: real roads with a dashed center line
+  mapRoads = [];
+  for (let i = 0; i < MAP_NODES.length - 1; i++) {
+    const a = MAP_NODES[i], b = MAP_NODES[i + 1], mx = (a.x + b.x) / 2 + (i % 2 ? 10 : -10), my = (a.y + b.y) / 2 + (i % 2 ? -8 : 8), pts = [];
+    for (let k = 0; k <= 40; k++) { const t = k / 40, x = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * mx + t * t * b.x, y = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * my + t * t * b.y; pts.push([x, y]); }
+    mapRoads.push(pts);
+    for (const [x, y] of pts) { g.fillStyle = '#2a2838'; g.fillRect(Math.round(x) - 2, Math.round(y) - 2, 5, 5); }
+    for (const [x, y] of pts) { g.fillStyle = '#5a5870'; g.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3); }
+    pts.forEach(([x, y], k) => { if (k % 4 < 2) dot(Math.round(x), Math.round(y), '#e8c84a'); });
+  }
+  // THE PARK: round trees, a pond, paths
+  for (let k = 0; k < 16; k++) { const x = 60 + rr() * 50, y = 122 + rr() * 34; if (Math.hypot(x - 105, y - 150) < 12) continue; g.fillStyle = '#1e4a2a'; g.fillRect(Math.round(x) - 2, Math.round(y) - 1, 5, 4); g.fillStyle = rr() < .3 ? '#e890b0' : '#5ab860'; g.fillRect(Math.round(x) - 2, Math.round(y) - 2, 4, 3); dot(Math.round(x) - 1, Math.round(y) - 2, '#c8f0a0'); }
+  // THE BEACH COVE: umbrellas, a pier
+  for (let k = 0; k < 5; k++) { const x = 62 + k * 7, y = 80 + (k % 2) * 4; g.fillStyle = ['#ff5a6a', '#ffd84a', '#7ac8ff'][k % 3]; g.fillRect(x - 2, y - 2, 5, 2); dot(x, y, '#6a4428'); }
+  g.fillStyle = '#8a5a3a'; g.fillRect(40, 62, 18, 2); for (let x = 40; x < 58; x += 3) dot(x, 64, '#5a3a24');
+  // SUBURBIA: little houses in rows along streets
+  for (let row = 0; row < 3; row++) {
+    g.fillStyle = '#6a6880'; g.fillRect(118, 92 + row * 10, 46, 1);
+    for (let k = 0; k < 6; k++) { const x = 120 + k * 8, y = 88 + row * 10; g.fillStyle = '#2a1838'; g.fillRect(x - 1, y - 1, 6, 5); g.fillStyle = '#f4ece8'; g.fillRect(x, y, 4, 3); g.fillStyle = ['#c84860', '#6a5ac8', '#4a8a5a'][(k + row) % 3]; g.fillRect(x - 1, y - 1, 6, 1); dot(x + 1, y + 1, '#ffd84a'); g.fillStyle = '#6aae5a'; g.fillRect(x, y + 4, 4, 1); }
+  }
+  // HEAD SHOP: a little purple shack with a neon leaf
+  g.fillStyle = '#2a1838'; g.fillRect(178, 134, 13, 9); g.fillStyle = '#9a5ae8'; g.fillRect(179, 135, 11, 7); g.fillStyle = '#7fe07a'; g.fillRect(183, 132, 3, 3); dot(184, 131, '#c8ffa0');
+  // DOWNTOWN: a street grid of towers casting long shadows
+  for (let gx = 0; gx < 6; gx++) for (let gy = 0; gy < 4; gy++) {
+    const x = 204 + gx * 8, y = 86 + gy * 8, hgt = 3 + Math.floor(rr() * 8);
+    g.fillStyle = 'rgba(20,16,40,.45)'; g.fillRect(x + 2, y + 2, 6 + hgt / 2, 5);
+    g.fillStyle = '#3a3458'; g.fillRect(x, y - hgt, 6, 5 + hgt); g.fillStyle = '#5a5480'; g.fillRect(x, y - hgt, 6, 2);
+    for (let w = 0; w < hgt; w += 2) if (rr() < .6) dot(x + 1 + Math.floor(rr() * 4), y - hgt + 2 + w, '#ffd84a');
+  }
+  // MISTY WOODS: dense dithered pines + fog
+  for (let k = 0; k < 140; k++) { const x = 250 + rr() * 64, y = 40 + rr() * 42; if (Math.hypot((x - 282) / 34, (y - 62) / 22) > 1) continue; g.fillStyle = rr() < .5 ? '#1e3e28' : '#2a5a34'; g.fillRect(Math.round(x), Math.round(y), 2, 3); dot(Math.round(x), Math.round(y) - 1, '#3a7a44'); }
+  g.fillStyle = 'rgba(230,240,240,.18)'; for (let k = 0; k < 6; k++) g.fillRect(252 + k * 4, 50 + k * 5, 50, 2);
+  // BUZZKILL HQ: one grey tower with a huge shadow and a red logo
+  g.fillStyle = 'rgba(20,16,40,.5)'; for (let k = 0; k < 18; k++) g.fillRect(314 + k, 140 - k / 3, 10, 2);
+  g.fillStyle = '#2a1838'; g.fillRect(305, 112, 14, 30); g.fillStyle = '#8a86a8'; g.fillRect(306, 113, 12, 28); g.fillStyle = '#b8b4d0'; g.fillRect(306, 113, 3, 28);
+  for (let y = 116; y < 138; y += 3) for (let x = 309; x < 317; x += 3) dot(x, y, '#7ab8e8');
+  g.fillStyle = '#e03b3b'; g.fillRect(305, 109, 14, 4);
+  // THE FARM: crop rows on the hill + a red barn + silo
+  for (let y = 70; y < 98; y += 3) for (let x = 330; x < 374; x++) if (Math.hypot((x - 352) / 24, (y - 84) / 16) < 1) dot(x, y, (x + y) % 7 ? '#8ad060' : '#6aa848');
+  g.fillStyle = '#2a1838'; g.fillRect(343, 70, 12, 9); g.fillStyle = '#c83838'; g.fillRect(344, 71, 10, 7); g.fillStyle = '#ffffff'; g.fillRect(348, 74, 2, 4);
+  g.fillStyle = '#8a8aa0'; g.fillRect(356, 67, 4, 11); g.fillStyle = '#c8c8d8'; g.fillRect(356, 66, 4, 2);
   return c;
 }
 function nodeLabel(nd) {
@@ -1958,26 +2087,43 @@ function updateMap() {
 function openShop() { results = { shopOnly: true, made: false }; state = 'results'; shopSel = 0; }
 function drawMap_() {
   if (!mapCanvas) mapCanvas = buildMapCanvas();
+  const ox = Math.floor((W - MW) / 2);
+  ctx.fillStyle = '#1c3a6e'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(ox, 0);
   ctx.drawImage(mapCanvas, 0, 0);
-  R(ctx, 'rgba(42,24,56,.8)', 0, 0, W, 16);
-  text('WORLD 1 - ROAD TO THE FARM', 6, 5, '#c8ffa0');
-  ctx.drawImage(COIN, W - 70, 3); text(save.coins + ' / ' + FARM_PRICE, W - 4, 5, '#ffd84a', 1, 'right');
+  // shimmering water
+  for (let i = 0; i < mapWater.length; i += 2) if (((mapWater[i] * 7 + mapWater[i + 1] * 13 + (frame >> 3)) % 23) === 0) { ctx.fillStyle = '#8ac4f0'; ctx.fillRect(mapWater[i], mapWater[i + 1], 2, 1); }
+  // cars driving the roads
+  mapRoads.forEach((pts, i) => { for (let c = 0; c < 2; c++) { const t = ((frame * 0.15 + i * 13 + c * 20) % pts.length) | 0, [x, y] = pts[c ? pts.length - 1 - t : t]; ctx.fillStyle = ['#ff5a6a', '#ffffff', '#ffd84a', '#7ac8ff'][(i + c) % 4]; ctx.fillRect(Math.round(x) - 1 + c, Math.round(y) - 1, 2, 1); } });
+  // drifting cloud shadows
+  ctx.fillStyle = 'rgba(20,30,60,.16)';
+  for (let k = 0; k < 3; k++) { const cx = ((frame * 0.12 + k * 160) % (MW + 120)) - 60, cy = 30 + k * 50; for (let y = -9; y <= 9; y++) { const w = Math.floor(Math.sqrt(81 - y * y) * 3.2); ctx.fillRect(Math.round(cx - w), cy + y, w * 2, 1); } }
+  // birds
+  for (let k = 0; k < 3; k++) { const bx = ((frame * 0.4 + k * 140) % (MW + 40)) - 20, by = 22 + k * 11 + Math.sin(frame / 20 + k) * 3, flap = (frame >> 3) % 2; ctx.fillStyle = '#2a1838'; ctx.fillRect(Math.round(bx) - 2, Math.round(by) - flap, 2, 1); ctx.fillRect(Math.round(bx) + 1, Math.round(by) - flap, 2, 1); ctx.fillRect(Math.round(bx), Math.round(by), 1, 1); }
+  // smoke from the farm + the woods fog breathing
+  if (frame % 14 === 0) particles.push({ x: 358, y: 64, vx: 0.1, vy: -0.25, life: 50, col: 'rgba(255,255,255,.7)', s: 2, g: 0, map: true });
+  for (const p of particles) if (p.map) { p.x += p.vx; p.y += p.vy; ctx.fillStyle = p.col; ctx.fillRect(Math.round(p.x), Math.round(p.y), p.s, p.s); }
+  particles = particles.filter(p => !p.map || --p.life > 0);
+  // stops
   MAP_NODES.forEach((nd, i) => {
-    const open = nodeUnlocked(nd), done = nd.kind === 'level' && nd.n < save.spots;
+    const open = nodeUnlocked(nd), done = nd.kind === 'level' && nd.n < save.spots, sel = i === mapSel;
     const col = nd.kind === 'shop' ? '#c070ff' : nd.kind === 'farm' ? (save.farm ? '#7fe07a' : '#ffd84a') : done ? '#7fe07a' : open ? '#ffd84a' : '#8a809a';
-    R(ctx, P.k, nd.x - 5, nd.y - 5, 11, 11); R(ctx, col, nd.x - 4, nd.y - 4, 9, 9); R(ctx, '#ffffff', nd.x - 3, nd.y - 3, 3, 2);
-    if (nd.kind === 'level') text((nd.n + 1) + '', nd.x + 1, nd.y - 2, P.k, 1, 'center');
-    if (!open) { R(ctx, P.k, nd.x - 2, nd.y - 1, 5, 4); }
-    if (done) text('+', nd.x + 7, nd.y - 10, '#c8ffa0');
+    const r = sel ? 5 + (frame % 30 < 15 ? 1 : 0) : 4;
+    ctx.fillStyle = 'rgba(20,16,40,.4)'; ctx.fillRect(nd.x - r + 1, nd.y + r - 1, r * 2, 2);
+    ctx.fillStyle = P.k; circle(nd.x, nd.y, r + 1); ctx.fillStyle = col; circle(nd.x, nd.y, r); ctx.fillStyle = '#ffffff'; ctx.fillRect(nd.x - 2, nd.y - 3, 2, 1);
+    if (!open) { ctx.fillStyle = P.k; ctx.fillRect(nd.x - 1, nd.y - 1, 3, 3); }
+    if (nd.kind === 'level') { if (open) drawStr((nd.n + 1) + '', nd.x - 1, nd.y - 2, P.k, 1); if (done) text('+', nd.x + 6, nd.y - 9, '#c8ffa0'); }
   });
-  // the crew stands on the selected stop
   const nd = MAP_NODES[mapSel], bob = Math.floor(frame / 15) % 2;
+  for (const d of [-1, 1]) { const t = MAP_NODES[mapSel + d]; if (!t || !nodeUnlocked(t)) continue; const ang = Math.atan2(t.y - nd.y, t.x - nd.x), ax = nd.x + Math.cos(ang) * 15, ay = nd.y + Math.sin(ang) * 15; if (frame % 40 < 28) { R(ctx, P.k, Math.round(ax) - 2, Math.round(ay) - 2, 5, 5); R(ctx, '#ffffff', Math.round(ax) - 1, Math.round(ay) - 1, 3, 3); } }
   ctx.drawImage(PLAYER[me.color || 0][bob ? 1 : 0], nd.x - 8, nd.y - 24);
   let k = 0; for (const r of remotes.values()) { ctx.drawImage(PLAYER[r.color][0], nd.x - 20 - k * 10, nd.y - 22); k++; }
-  // arrows toward the stops you can walk to
-  for (const d of [-1, 1]) { const t = MAP_NODES[mapSel + d]; if (!t || !nodeUnlocked(t)) continue; const ang = Math.atan2(t.y - nd.y, t.x - nd.x), ax = nd.x + Math.cos(ang) * 14, ay = nd.y + Math.sin(ang) * 14; if (frame % 40 < 28) { R(ctx, P.k, Math.round(ax) - 2, Math.round(ay) - 2, 5, 5); R(ctx, '#ffffff', Math.round(ax) - 1, Math.round(ay) - 1, 3, 3); } }
-  // info panel
-  R(ctx, 'rgba(42,24,56,.92)', 0, H - 34, W, 34); R(ctx, '#c8ffa0', 0, H - 34, W, 1);
+  ctx.restore();
+  // header + info panel across the full width
+  R(ctx, 'rgba(26,16,38,.85)', 0, 0, W, 16);
+  text('WORLD 1 - ROAD TO THE FARM', 6, 5, '#c8ffa0');
+  ctx.drawImage(COIN, W - 76, 3); text(save.coins + ' / ' + FARM_PRICE, W - 4, 5, '#ffd84a', 1, 'right');
+  R(ctx, 'rgba(26,16,38,.92)', 0, H - 34, W, 34); R(ctx, '#c8ffa0', 0, H - 34, W, 1);
   text(nodeLabel(nd), 6, H - 30, '#ffd84a', 1);
   if (nd.kind === 'level') {
     const th = THEMES[THEME_ORDER[nd.n % THEME_ORDER.length]];
@@ -1986,7 +2132,7 @@ function drawMap_() {
     [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 50 + i * 12, H - 2 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
   } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 21, '#ffffff');
   else text(save.farm ? 'YOU OWN IT. HOME SWEET HOME' : 'COSTS ' + FARM_PRICE + ' HASH COINS. YOU HAVE ' + save.coins, 6, H - 21, '#ffffff');
-  const hint = Net.online && !isHost() ? 'HOST PICKS THE MISSION   H SHOP   TAB BAG' : 'ARROWS MOVE   SPACE GO   H SHOP   TAB BAG';
+  const hint = Net.online && !isHost() ? 'HOST PICKS   H SHOP   TAB BAG' : 'ARROWS MOVE   SPACE GO   H SHOP   TAB BAG';
   text(hint, W - 4, H - 10, '#c8ffa0', 1, 'right');
   if (banner) { R(ctx, 'rgba(42,24,56,.85)', 0, 70, W, 30); text(banner.a, W / 2, 74, '#ff8a8a', 2, 'center'); text(banner.b, W / 2, 90, '#fff', 1, 'center'); }
 }
@@ -2034,9 +2180,8 @@ function drawStory() {
     ctx.drawImage(LEGENDS[1].img, 160, 100);
   } else {
     if (!mapCanvas) mapCanvas = buildMapCanvas();
-    ctx.drawImage(mapCanvas, 0, 0);
-    for (let i = 0; i < 4; i++) ctx.drawImage(PLAYER[i][Math.floor(frame / 12 + i) % 2 ? 1 : 0], 14 + i * 12, 118);
-    ctx.fillStyle = 'rgba(255,216,74,.5)'; ctx.fillRect(282, 44, 18, 2);
+    ctx.drawImage(mapCanvas, -40, 0);
+    for (let i = 0; i < 4; i++) ctx.drawImage(PLAYER[i][Math.floor(frame / 12 + i) % 2 ? 1 : 0], 30 + i * 12, 112);
   }
   R(ctx, 'rgba(42,24,56,.92)', 0, 0, W, 22); text(pg.title, W / 2, 4, '#c8ffa0', 2, 'center');
   R(ctx, 'rgba(42,24,56,.92)', 0, H - 38, W, 38);
@@ -2251,6 +2396,6 @@ $('reset').onclick = () => { if ($('reset').dataset.sure) { save = defaultSave()
 const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('err').textContent = 'ENTER YOUR NAME AND PRESS JOIN'; }
 
-lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
+fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
 window.__KQ = { get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, K, remotes, Net, startLevel, toResults };
 })();

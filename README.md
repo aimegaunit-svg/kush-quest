@@ -1,4 +1,4 @@
-# KUSH QUEST: Road to the Farm (v0.6)
+# KUSH QUEST: Road to the Farm (v0.7)
 
 Cozy retro co-op platformer starring 4 stoner homies (Rasta, Snapback, Bucket Hat, Afro) swinging oversized weapons: Giant Joint, Giant Lighter, Mega Bong, Dab Tool, Giant Grinder. Up to 4 friends online. Save up hash coins to buy your own pot farm.
 
@@ -36,7 +36,7 @@ Online: the room host picks the mission on the map. Anyone can press **H** on th
 | Switch sword / throwable | Q or wheel / R | |
 | Bag (inventory) | Tab | INV |
 | Munchies / Emotes | E / 1-4 | |
-| Pause (solo) / Music | Esc / M | |
+| Pause (solo) / Music / Fullscreen | Esc / M / F | |
 
 At the smoke spot, press **Enter or Space** to call the crew (20 second timer for everyone else).
 

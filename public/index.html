@@ -10,9 +10,9 @@
 <style>
   :root { --ink:#1a1026; --leaf:#8ef0b0; --leaf2:#3fae5a; --gold:#ffd23f; --haze:#b45cff; }
   * { box-sizing: border-box; }
-  html, body { margin:0; height:100%; background:#120b1c; overflow:hidden; touch-action:none; }
+  html, body { margin:0; height:100%; background:#2a1838; overflow:hidden; touch-action:none; }
   body { display:flex; align-items:center; justify-content:center; font-family:'Press Start 2P', monospace; color:#fff; }
-  #game { image-rendering: pixelated; image-rendering: crisp-edges; display:block; box-shadow:0 0 0 4px var(--ink), 0 0 60px rgba(111,209,63,.25); }
+  #game { image-rendering: pixelated; image-rendering: crisp-edges; display:block; }
   #menu { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
     background: radial-gradient(circle at 50% 30%, #5a3a8a 0%, #1e1030 70%); z-index:5; padding:16px; }
   .panel { width:min(460px,100%); text-align:center; }
@@ -58,7 +58,7 @@
       MOVE: WASD / ARROWS &nbsp; JUMP: SPACE &nbsp; RUN: SHIFT<br>
       SWORD: CLICK / J (3-HIT COMBO) &nbsp; THROW: RIGHT-CLICK / K<br>
       SWITCH SWORD: Q / WHEEL &nbsp; SWITCH THROW: R &nbsp; BAG: TAB<br>
-      MUNCHIES: E &nbsp; EMOTES: 1-4 &nbsp; MUSIC: M &nbsp; SHOP (ON MAP): H<br>
+      MUNCHIES: E &nbsp; EMOTES: 1-4 &nbsp; MUSIC: M &nbsp; SHOP (ON MAP): H &nbsp; FULLSCREEN: F<br>
       <a id="reset" style="color:#6a6080;cursor:pointer">RESET SAVE</a>
     </div>
   </div>

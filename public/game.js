@@ -754,7 +754,9 @@ const ARMORS = [
 // story beat ("then the Astral Plane after the ending") - so SPOTS_TO_FARM is now the full 49-level total,
 // not just world 1. (Can't reference TOTAL_LEVELS here, it's declared later - kept as a literal in sync with
 // WORLD_DEF's level counts: 6+7+8+9+9+10.) Anyone who already owns save.farm keeps it regardless.
-const FARM_PRICE = 1500, SPOTS_TO_FARM = 49;
+// v1.1 B4: "Farm price: about 2500 coins" - raised from the old 1500. The gate stays spots>=SPOTS_TO_FARM
+// (all 49 main levels, i.e. Killjoy's level beaten) AND coins>=FARM_PRICE, matching "the farm needs BOTH".
+const FARM_PRICE = 2500, SPOTS_TO_FARM = 49;
 // ---- Farm Hub (Phase 7): 4 plots growing passive-buff strains, + a farm pet ----
 const STRAINS = [
   { id: 'sunny', name: 'SUNNY HAZE', desc: '+10% HASH COINS' },

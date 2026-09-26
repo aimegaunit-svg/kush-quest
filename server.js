@@ -215,6 +215,10 @@ function handle(client, m) {
         broadcast(room, { t: 'es', l: m.l | 0, zi: m.zi | 0, lk: m.lk | 0, zc: m.zc | 0, sk: Array.isArray(m.sk) ? m.sk.slice(0, 400).map(n => n | 0) : [], e: m.e.map(a => Array.isArray(a) ? a.slice(0, 10).map(n => +n || 0) : []) }, client.id);
       break;
     case 'boss': if (room && client.id === room.host) broadcast(room, { t: 'boss', i: m.i | 0, l: m.l | 0 }, client.id); break;
+    // v1.1 A5: crew-lives system. Host is authoritative on the shared life count and on level restarts
+    // when it hits 0, so every client agrees on both without a full state-sync protocol.
+    case 'lives': if (room && client.id === room.host) broadcast(room, { t: 'lives', n: Math.max(0, Math.min(9, m.n | 0)), l: m.l | 0 }, client.id); break;
+    case 'wipe': if (room && client.id === room.host) broadcast(room, { t: 'wipe', l: m.l | 0 }, client.id); break;
     case 'eshot': if (room && client.id === room.host) broadcast(room, { t: 'eshot', x: +m.x || 0, z: +m.z || 0, vx: Math.max(-4, Math.min(4, +m.vx || 0)), l: m.l | 0 }, client.id); break;
     case 'kill': if (room && client.id === room.host) broadcast(room, { t: 'kill', i: m.i | 0, by: String(m.by).slice(0, 12), st: m.st | 0, l: m.l | 0 }, client.id); break;
     case 'hit': case 'steal': case 'rev': case 'pass': {

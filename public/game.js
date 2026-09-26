@@ -1276,6 +1276,10 @@ const weaponDef = () => WEAPONS.find(w => w.id === CORE_WEAPON_ID[CORE_HOMIE[Net
 let lvl, me, camX = 0, state = 'play', frame = 0, running = false, paused = false, invOpen = false;
 let particles = [], popups = [], shots = [], banner = null, shake = 0, hitstop = 0;
 let finInfo = null, hurryT = 0, results = null, shopSel = 0, readyInfo = null;
+// v1.1 A5: crew-lives. A shared life pool (3 solo / 5 co-op) that any player's final knockout spends one
+// of; while lives remain, that player respawns at the last-cleared zone (the checkpoint) instead of always
+// the level's very start. At 0 lives the whole level restarts and the crew keeps half their coins/Resin.
+let crewLives = 3, checkpoint = null;
 const remotes = new Map();
 const isHost = () => Net.online ? Net.hostId === Net.id : !Net.reconnecting;
 
@@ -1296,6 +1300,7 @@ function startLevel(n) {
   camX = 0; state = 'brief'; briefT = Net.online ? ([...new Set(lvl.theme.enemies)].some(k => !save.met.includes(k) && k === 'karen') ? 480 : 240) : 1200; particles = []; popups = []; shots = [];
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
   banner = null;
+  crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; // v1.1 A5: reset the crew-lives pool + checkpoint for the new level
   if (n === 0 && save.spots === 0) me.tipT = 900;
   persist();
   if (n === LEVELS_PER_WORLD && !save.sawMidpoint) {
@@ -1442,11 +1447,30 @@ function knockedOut() {
 }
 function knockedOutFinal() {
   me.down = 0; save.stats.deaths++;
+  // v1.1 A5: this knockout spends one crew life from the shared pool instead of just costing coins forever.
+  crewLives = Math.max(0, crewLives - 1);
+  if (isHost()) Net.send({ t: 'lives', n: crewLives, l: lvl.n });
+  if (crewLives <= 0) { restartLevelOutOfLives(); return; }
   const loss = Math.min(save.coins, 40, Math.max(5, Math.floor(save.coins * 0.1)));
   save.coins -= loss; me.lost += loss;
-  me.hp = maxHp(); me.x = camX + W / 2; me.z = ZMAX / 2; me.h = 140; me.vx = me.vz = me.vh = 0; me.inv = 150; me.combo = 0; me.puffed = false;
-  banner = { t: 140, a: 'YOU GOT BEAT UP!', b: 'DROPPED ' + loss + ' HASH COINS - BACK IN THE FIGHT' };
+  const cp = checkpoint || lvl.spawn;
+  me.hp = maxHp(); me.x = camX + cp.x; me.z = cp.z; me.h = 140; me.vx = me.vz = me.vh = 0; me.inv = 150; me.combo = 0; me.puffed = false;
+  banner = { t: 160, a: 'YOU GOT BEAT UP!', b: 'DROPPED ' + loss + ' HASH COINS - ' + crewLives + ' CREW LIFE' + (crewLives === 1 ? '' : 'S') + ' LEFT' };
   SFX.hurt();
+}
+// v1.1 A5: the crew is out of lives - restart the whole level (not just a checkpoint respawn), banking the
+// coins/Resin lost at half value rather than wiping them, per the brief ("keeps 50% of coins/Resin").
+function restartLevelOutOfLives() {
+  const coinLoss = Math.ceil(save.coins * 0.5), resinLoss = Math.ceil(save.resin * 0.5);
+  save.coins -= coinLoss; save.resin -= resinLoss; persist();
+  if (isHost()) Net.send({ t: 'wipe', l: lvl.n });
+  banner = null;
+  const n = lvl.n;
+  lvl = buildLevel(n, lvl.remix);
+  me = makePlayer();
+  crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; camX = 0;
+  banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL - LOST HALF YOUR COINS + RESIN' };
+  SFX.bump();
 }
 function emote(i) { me.emote = { e: i, t: 120 }; Net.send({ t: 'emote', e: i }); tone(660, 0.08, 'square', 0.04); tone(880, 0.1, 'square', 0.04, 0.08); }
 // v1.1 A4 (scoped): trimmed from 5 consumables to Munchies (cap 3, was 5) + 2 others. Kept brownie (rage
@@ -2095,7 +2119,7 @@ function hostUpdate() {
         z.spawnT = z.ambush ? (onScreen < 3 ? 6 : 20) : onScreen < 2 ? 12 : 34;
         if (e.boss) { e.x = z.x0 + ZW + 30; e.dir = -1; e.z = ZMAX / 2; bossIntro(e); Net.send({ t: 'boss', i: e.id, l: lvl.n }); }
       }
-      if (!alive.length) { z.cleared = true; lvl.locked = false; banner = { t: 90, a: 'GO GO GO!', b: '' }; SFX.cp(); }
+      if (!alive.length) { z.cleared = true; lvl.locked = false; banner = { t: 90, a: 'GO GO GO!', b: '' }; SFX.cp(); checkpoint = { x: z.x0 + 20, z: 30 }; } // v1.1 A5: this zone is now the respawn checkpoint
     }
   }
   const zLock = lvl.locked && lvl.zones[lvl.zi], zMin = zLock ? zLock.x0 + 16 : -1e9, zMax = zLock ? zLock.x0 + ZW - 16 : 1e9;
@@ -2749,6 +2773,7 @@ function drawHUD() {
   const mh = maxHp();
   for (let i = 0; i < mh; i++) ctx.drawImage(i < me.hp ? (i >= 4 ? HEART_A : HEART) : HEART_E, 3 + i * 8, 3);
   ctx.drawImage(COIN, 3, 10 - 1, 7, 6); text(save.coins, 12, 10, '#ffd84a');
+  text(crewLives + ' LIFE' + (crewLives === 1 ? '' : 'S'), 40, 10, crewLives <= 1 ? '#ff8a8a' : '#c8ffa0'); // v1.1 A5
   // cooked meter
   const mx = 72, c = Math.round(me.cooked);
   ctx.drawImage(LEAF_ICON, mx, 2);
@@ -3790,6 +3815,9 @@ function onNet(m) {
     case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0 }); break;
     case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) thiefFlee(e, m.k); } break;
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
+    // v1.1 A5: non-host crewmates follow the host's authoritative life count / wipe-restart so everyone agrees.
+    case 'lives': if (!isHost() && m.l === lvl.n) crewLives = m.n; break;
+    case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); crewLives = 5; checkpoint = null; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
     case 'pass': if (m.who === Net.id) { addCooked(20); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); } break;
     case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'boss': if (m.l === lvl.n) bossIntro(lvl.enemies[m.i]); break;

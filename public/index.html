@@ -8,13 +8,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
-  :root { --ink:#1a1026; --leaf:#6fd13f; --leaf2:#2f9e44; --gold:#ffd23f; --haze:#b45cff; }
+  :root { --ink:#1a1026; --leaf:#8ef0b0; --leaf2:#3fae5a; --gold:#ffd23f; --haze:#b45cff; }
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; background:#120b1c; overflow:hidden; touch-action:none; }
   body { display:flex; align-items:center; justify-content:center; font-family:'Press Start 2P', monospace; color:#fff; }
   #game { image-rendering: pixelated; image-rendering: crisp-edges; display:block; box-shadow:0 0 0 4px var(--ink), 0 0 60px rgba(111,209,63,.25); }
   #menu { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
-    background: radial-gradient(circle at 50% 30%, #3a2360 0%, #120b1c 70%); z-index:5; padding:16px; }
+    background: radial-gradient(circle at 50% 30%, #5a3a8a 0%, #1e1030 70%); z-index:5; padding:16px; }
   .panel { width:min(460px,100%); text-align:center; }
   h1 { font-size:clamp(26px,7vw,44px); margin:0 0 6px; color:var(--leaf); letter-spacing:2px;
     text-shadow: 4px 4px 0 var(--leaf2), 8px 8px 0 var(--ink); }
@@ -43,7 +43,8 @@
 <div id="menu">
   <div class="panel">
     <h1>KUSH QUEST</h1>
-    <div class="sub">WORLD 1 · KUSH VALLEY</div>
+    <div class="sub">ROAD TO THE FARM</div>
+    <div id="save" class="sub" style="color:#c8ffa0;font-size:8px;margin-top:-18px"></div>
     <label for="name">YOUR NAME</label>
     <input id="name" maxlength="10" placeholder="STONER" autocomplete="off">
     <button id="solo" class="gold">PLAY SOLO</button>
@@ -54,15 +55,17 @@
     </div>
     <div id="err"></div>
     <div class="help">
-      MOVE: ARROWS / A D &nbsp; JUMP: SPACE / W / Z<br>
-      RUN: SHIFT / X &nbsp; MUSIC: M
+      MOVE: ARROWS/AD &nbsp; JUMP + FLOAT: SPACE (TAP IN AIR)<br>
+      ATTACK: X &nbsp; RUN: SHIFT &nbsp; WEAPON: Q / 1-5<br>
+      INVENTORY: I &nbsp; MUNCHIES: C &nbsp; EMOTES: 7-0 &nbsp; MUSIC: M<br>
+      <a id="reset" style="color:#6a6080;cursor:pointer">RESET SAVE</a>
     </div>
   </div>
 </div>
 
 <div id="touch">
   <div class="grp"><button data-k="left">◀</button><button data-k="right">▶</button></div>
-  <div class="grp"><button data-k="run" class="alt">B</button><button data-k="jump" class="gold">A</button></div>
+  <div class="grp"><button data-k="inv" class="alt" style="width:44px;height:44px;font-size:11px;align-self:flex-end">INV</button><button data-k="attack" class="alt">B</button><button data-k="jump" class="gold">A</button></div>
 </div>
 
 <script src="game.js"></script>

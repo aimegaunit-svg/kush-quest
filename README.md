@@ -1,54 +1,37 @@
-# KUSH QUEST (v0.3)
+# KUSH QUEST: Road to the Farm (v0.4)
 
-Retro co-op platformer for the browser. Up to 4 friends online, with Hash Coins, Nugs, combos, and Budmon sidekicks.
+Cozy retro co-op platformer. Up to 4 friends online. Save up hash coins to buy your own pot farm.
 
-**Levels:** 1-1 Kush Valley (find Sprouty = double jump) · 1-2 Hempire City (find Puffball = float)
+**The mission:** each mission, get **COOKED** (50%+ on the meter, from nugs + smoke rings) and reach the **SMOKE SPOT** at the end.
+Every smoke spot gets you closer to the farm. Reach 6 smoke spots and save up 1500 hash coins to buy **THE POT FARM**.
+
+**Enemies:** Cops chase you and beat you up. Karens throw purses and harsh your buzz. Mice and squirrels steal your hash coins; knock them out to get the coins back.
+
+**Pickups:** Hash Coins, Nugs (+cooked), Smoke Rings, Munchies (heal), Golden Leaf (invincible), treasure chests (gear), plus rare bonuses:
+Shatter (speed), Diamonds (+50 coins, +cooked), Kief (coin magnet), Hash (+1 attack damage).
+Legendary stoners hang out at checkpoints and share wisdom (and a gift).
+
+**Head Shop** (between missions): weapons (Lighter, Bong Blaster, Paper Boomerang, Grinder Spin), armor (Hoodie, Tie-Dye Vest, Rasta Crown), Stash Pouch (anti-theft), Munchies, Pre-Rolls, Golden Leaves, and the Farm.
+Your progress saves in your browser.
 
 ## Controls
 | | Keyboard | Phone |
 |---|---|---|
-| Move | Arrows / A D | ◀ ▶ |
-| Jump (hold = higher, in air = double jump / float) | Space / W / Z | A |
-| Run | Shift / X | B |
-| Emotes | 1 = 420!  2 = NICE!  3 = HELP!  4 = LOL | |
-| Music on/off | M | |
-| Pause (solo) | P / Esc | |
+| Move | Arrows / A D | < > |
+| Jump / Float (tap jump in the air) | Space / W / Z | A |
+| Attack (while floating = exhale puff) | X / J | B |
+| Run | Shift | |
+| Switch weapon | Q or 1-5 | |
+| Inventory | I / Tab | INV |
+| Eat munchies | C | |
+| Emotes | 7 8 9 0 | |
+| Pause (solo) / Music | P / M | |
 
-Items: **Golden Leaf** box = rainbow invincibility · **Munchies** (pizza) = +1 heart · coin sounds rise in pitch as your combo climbs.
+At the smoke spot, press **Enter** to call the crew (20 second timer for everyone else). Co-op: you can stand on a friend's head.
 
-Co-op tricks: stand on a friend's head to reach high places. Whoever reaches the flag and presses Enter moves the whole crew to the next level.
+## Run it on your PC
+Install Node.js LTS (https://nodejs.org), then double-click **start.bat**.
 
----
-
-## Test it on your PC
-1. Install **Node.js LTS** from https://nodejs.org (one time).
-2. Double-click **start.bat**. The game opens at http://localhost:3000.
-
-## Put it online (free, about 10 minutes)
-You need a free GitHub account and a free Render account.
-
-**1. Upload to GitHub**
-1. Go to https://github.com/new, name it `kush-quest`, and click **Create repository**.
-2. On the next page click **"uploading an existing file"**.
-3. Drag in everything from this folder: `server.js`, `package.json`, `render.yaml`, `Dockerfile`, `README.md`, `start.bat`, `.gitignore`, and the **public** folder.
-4. Click **Commit changes**.
-
-**2. Host it on Render**
-1. Go to https://render.com and sign in with GitHub.
-2. Click **New + → Blueprint**, pick the `kush-quest` repo, and click **Apply**. The `render.yaml` sets everything up for you.
-   (Or use **New + → Web Service** with Start Command `node server.js` and no build command.)
-3. Wait for the status to show "Live". You get a link like `https://kush-quest.onrender.com`.
-
-**3. Play**
-Open the link, click **CREATE ROOM**, and send friends the link with your code, like
-`https://kush-quest.onrender.com/?room=ABCDE`. The code is filled in for them automatically.
-
-Notes:
-- The free Render plan sleeps after 15 minutes of no visitors. The first visit after that takes about 30–60 seconds to wake it.
-- To update the game, upload the changed files to GitHub again. Render redeploys automatically.
-- Any Node host also works (Railway, Fly.io, a VPS), as does Docker via the included `Dockerfile`. The server reads the `PORT` environment variable.
-
-## Files
-- `server.js`: web server and multiplayer rooms (no dependencies, no npm install)
-- `public/index.html`: menu and touch controls
-- `public/game.js`: the game itself: art, levels, physics, sound, networking
+## Hosting
+This repo deploys to Render as-is (`render.yaml`, start command `node server.js`, health check `/health`). Pushing to GitHub redeploys automatically.
+The free plan sleeps after 15 min idle; the first visit after that takes about 30-60 seconds to wake it.

@@ -82,8 +82,9 @@ server.on('upgrade', (req, socket) => {
 });
 
 // ---------- rooms ----------
-const rooms = new Map(); // code -> { players: Map(id -> {name,color,client}), collected: Set, level, emptySince }
-const MAX_PLAYERS = 4, MAX_ROOMS = 500, LEVEL_COUNT = 2;
+// room: { players: Map(id -> {name,color,client}), collected:Set, level, phase:'play'|'shop', fin:Set, ready:Set, hurried, emptySince }
+const rooms = new Map();
+const MAX_PLAYERS = 4, MAX_ROOMS = 500, MAX_LEVEL = 99;
 
 function makeCode() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -105,11 +106,30 @@ function enter(client, code, name) {
   room.emptySince = 0;
   client.room = code;
   client.send({
-    t: 'joined', code, id: client.id, color, level: room.level,
+    t: 'joined', code, id: client.id, color, level: room.level, phase: room.phase,
     players: [...room.players].filter(([id]) => id !== client.id).map(([id, p]) => ({ id, name: p.name, color: p.color })),
     collected: [...room.collected]
   });
   broadcast(room, { t: 'pj', id: client.id, name, color }, client.id);
+  checkProgress(room);
+}
+
+function startLevel(room, n) {
+  room.level = Math.max(0, Math.min(MAX_LEVEL, n | 0));
+  room.phase = 'play'; room.fin.clear(); room.ready.clear(); room.collected.clear(); room.hurried = false;
+  broadcast(room, { t: 'level', n: room.level });
+}
+
+// everyone at the smoke spot? everyone ready in the shop?
+function checkProgress(room) {
+  const total = room.players.size;
+  if (!total) return;
+  if (room.phase === 'play' && room.fin.size > 0 && [...room.players.keys()].every(id => room.fin.has(id))) {
+    room.phase = 'shop';
+    broadcast(room, { t: 'allfin' });
+  } else if (room.phase === 'shop' && [...room.players.keys()].every(id => room.ready.has(id))) {
+    startLevel(room, room.level + 1);
+  }
 }
 
 function handle(client, m) {
@@ -120,7 +140,7 @@ function handle(client, m) {
       if (client.room) return;
       if (rooms.size >= MAX_ROOMS) return client.send({ t: 'err', msg: 'Server is full, try again later' });
       const code = makeCode();
-      rooms.set(code, { players: new Map(), collected: new Set(), level: 0, emptySince: 0 });
+      rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'play', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0 });
       enter(client, code, cleanName(m.name));
       break;
     }
@@ -132,7 +152,10 @@ function handle(client, m) {
       break;
     }
     case 's': // player state, relayed to the rest of the room
-      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0 }, client.id);
+      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0 }, client.id);
+      break;
+    case 'fx': // visual-only effects (attacks)
+      if (room) broadcast(room, { t: 'fx', id: client.id, k: m.k | 0, x: +m.x || 0, y: +m.y || 0, f: m.f | 0 }, client.id);
       break;
     case 'col': { // something was collected / defeated: first one wins
       if (!room || (m.l | 0) !== room.level) return;
@@ -142,13 +165,28 @@ function handle(client, m) {
       broadcast(room, { t: 'col', id, l: room.level }, client.id);
       break;
     }
-    case 'next': { // move the whole room to a level
-      if (!room) return;
-      const n = Math.max(0, Math.min(LEVEL_COUNT - 1, m.n | 0));
-      room.level = n; room.collected.clear();
-      broadcast(room, { t: 'level', n });
+    case 'fin': // reached the smoke spot
+      if (!room || room.phase !== 'play' || (m.l | 0) !== room.level) return;
+      room.fin.add(client.id);
+      broadcast(room, { t: 'fin', id: client.id, n: room.fin.size, of: room.players.size });
+      checkProgress(room);
       break;
-    }
+    case 'hurry': // someone at the spot calls the crew: 20s countdown for everyone
+      if (!room || room.phase !== 'play' || room.hurried || !room.fin.has(client.id)) return;
+      room.hurried = true;
+      broadcast(room, { t: 'hurry', name: room.players.get(client.id).name });
+      break;
+    case 'timeup': // countdown ran out on a client: end the mission for everyone
+      if (!room || room.phase !== 'play' || !room.hurried) return;
+      room.phase = 'shop';
+      broadcast(room, { t: 'allfin' });
+      break;
+    case 'ready':
+      if (!room || room.phase !== 'shop') return;
+      room.ready.add(client.id);
+      broadcast(room, { t: 'ready', n: room.ready.size, of: room.players.size });
+      checkProgress(room);
+      break;
     case 'emote':
       if (room) broadcast(room, { t: 'emote', id: client.id, e: m.e | 0 }, client.id);
       break;
@@ -160,9 +198,10 @@ function leave(client) {
   const room = rooms.get(client.room);
   client.room = null;
   if (!room) return;
-  room.players.delete(client.id);
+  room.players.delete(client.id); room.fin.delete(client.id); room.ready.delete(client.id);
   broadcast(room, { t: 'pl', id: client.id });
   if (room.players.size === 0) room.emptySince = Date.now(); // kept 2 min so people can reconnect
+  else checkProgress(room);
 }
 
 // keep connections alive through hosting proxies + clean up

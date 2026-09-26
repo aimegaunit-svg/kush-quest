@@ -222,7 +222,7 @@ function startMusic() {
 const K = { left: false, right: false, up: false, down: false, jump: false, run: false, attack: false, enter: false };
 // ---- settings (saved in this browser): volumes, toggles, custom key bindings ----
 const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT' };
-const ACTION_NAMES = { toke: 'HIT A TOKE (SKILL)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT' };
+const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT' };
 let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, bigText: false, reduceFlash: false, colorblind: false, muteHidden: false, holdAttack: false, keys: { ...DEFAULT_KEYS } };
 try { const st = JSON.parse(localStorage.getItem('kq_settings')); if (st) settings = { ...settings, ...st, keys: { ...DEFAULT_KEYS, ...(st.keys || {}) } }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('kq_settings', JSON.stringify(settings)); } catch (e) {} if (master) master.gain.value = settings.sfx; }
@@ -1054,7 +1054,7 @@ const SKILLS = {
   charge: { name: 'CHARGED SWING', desc: 'HOLD SWING, THEN LET GO FOR A HUGE HIT' },
   throw: { name: 'THROWING', desc: 'THROW ROLLING PAPERS + NUG BOMBS (K / RIGHT-CLICK). +10 PAPERS' },
   roll: { name: 'DODGE ROLL', desc: 'HOLD RUN + PRESS JUMP TO ROLL THROUGH ATTACKS' },
-  toke: { name: 'HIT A TOKE', desc: 'PRESS THE TOKE KEY: BLOW A SMOKE SCREEN. BUZZKILLS INSIDE GET CONFUSED. COSTS 20% COOKED' },
+  toke: { name: 'HIT A TOKE', desc: 'TAP THE SMOKE KEY FOR A SMALL CLOUD, HOLD IT FOR A BIG ONE. BUZZKILLS INSIDE GET CONFUSED, HOMIES INSIDE GET HIDDEN' },
   pound: { name: 'GROUND POUND', desc: 'SWING WHILE FALLING TO SLAM THE GROUND AND STUN EVERYONE NEAR' },
   heart1: { name: 'IRON LUNGS', desc: '+1 MAX HEART' },
   hotbox: { name: 'HOTBOX', desc: 'YOUR SMOKE SCREEN IS BIGGER AND HURTS BUZZKILLS INSIDE' },
@@ -1429,13 +1429,19 @@ function selectWeapon(i) {
 const REACH = {}; for (const w of WEAPONS) REACH[w.id] = w.reach;
 // my hit landed on an enemy: the host applies it, everyone else asks the host
 // ---- smoke powers ----
-function hitAToke() {
-  if (!hasSkill('toke')) { popup(me.x - 26, sy(me.z) - 34, 'A MEGA BOSS TEACHES THIS', '#ff8a8a'); return; }
+const CLOUD_CAP_SELF = 2, CLOUD_CAP_CREW = 6;
+function hitAToke(big) {
   if (hasSkill('ultimate') && me.cooked >= 100) return ultimateHigh();
-  if (me.cooked < 20) { popup(me.x - 24, sy(me.z) - 34, 'NEED 20% COOKED', '#ff8a8a'); SFX.bump(); return; }
-  me.cooked -= 20;
-  const c = { x: me.x, z: me.z, r: hasSkill('hotbox') ? 70 : 50, t: 360, heal: hasSkill('puffpass'), hot: hasSkill('hotbox'), by: Net.id };
-  lvl.clouds.push(c); SFX.exhale(); shake = 4;
+  const cost = big ? 25 : 10;
+  if (me.cooked < cost) { popup(me.x - 24, sy(me.z) - 34, 'NEED ' + cost + '% COOKED', '#ff8a8a'); SFX.bump(); return; }
+  // cap smoke clouds so it can't be spammed: 2 per player, 6 for the crew
+  const mine = lvl.clouds.filter(c => c.by === Net.id);
+  if (mine.length >= CLOUD_CAP_SELF) { const oldest = mine.reduce((a, b) => a.t < b.t ? a : b); lvl.clouds.splice(lvl.clouds.indexOf(oldest), 1); }
+  if (lvl.clouds.length >= CLOUD_CAP_CREW) lvl.clouds.shift();
+  me.cooked -= cost;
+  const r = (big ? 55 : 36) + (hasSkill('hotbox') ? 15 : 0) + (lvl.hazardFog ? 10 : 0);
+  const c = { x: me.x, z: me.z, r, t: (big ? 420 : 300) * (lvl.hazardFog ? 2 : 1), heal: hasSkill('puffpass'), hot: hasSkill('hotbox'), by: Net.id, big };
+  lvl.clouds.push(c); SFX.exhale(); shake = big ? 6 : 4;
   Net.send({ t: 'fx', k: 9, x: Math.round(c.x), y: Math.round(c.z), f: (c.heal ? 1 : 0) | (c.hot ? 2 : 0), h: c.r });
   if (hasSkill('bongrip')) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - c.x) < c.r && Math.abs(e.z - c.z) < c.r * 0.6) hitEnemy(e, 2, Math.sign(e.x - c.x) || 1, true, { stun: 70 });
 }
@@ -1631,6 +1637,17 @@ function attack(charged) {
       if (next) { hitEnemy(next.e, d, Math.sign(next.dx) || me.face, true, fx); popup(next.e.x - 16, sy(next.e.z) - 34, 'CHAIN CRIT!', '#9ae8ff'); }
     }
   }
+  // fire touching a smoke cloud ignites it into a HOTBOX burst
+  if (fx.burn > 0) for (const c of lvl.clouds) {
+    if (c.ignited) continue;
+    if (Math.abs(c.x - me.x) < reach + c.r && Math.abs(c.z - me.z) < 30 + c.r * 0.6) {
+      c.ignited = true; c.t = Math.min(c.t, 20); c.hot = true;
+      banner = { t: 70, a: 'HOTBOX!!', b: '' }; shake = Math.max(shake, 10); SFX.power();
+      puff(c.x, sy(c.z) - 10, 20, ['#ff5a6a', '#ff9a3a', '#ffd84a', '#ffffff'], 2);
+      for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - c.x) < c.r && Math.abs(e.z - c.z) < c.r * 0.6) hitEnemy(e, 3, Math.sign(e.x - c.x) || 1, true, { burn: 3, stun: 40 });
+      Net.send({ t: 'fx', k: 11, x: Math.round(c.x), y: Math.round(c.z), h: Math.round(c.r) });
+    }
+  }
   // BONG HAMMER LV3: the stun sends out a shockwave that hits everyone near the target
   if (w.id === 'bong' && lv3 && strong && hits) for (const t of targets) for (const o of lvl.enemies) if (o !== t.e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - t.e.x) < 30 && Math.abs(o.z - t.e.z) < 22) hitEnemy(o, 1, Math.sign(o.x - t.e.x) || 1, false, { stun: 30 });
   if (w.id === 'grinder' && hits) for (const t of targets) t.e.x += Math.sign(me.x - t.e.x) * (lv3 ? 8 : 4); // pulls them in (more at LV3)
@@ -1775,8 +1792,9 @@ function updatePlayer() {
   let nearDown = false;
   if (K.use) for (const [id, r] of remotes) if (r.b & 8 && Math.abs(r.x - me.x) < 18 && Math.abs(r.z - me.z) < 12) {
     nearDown = true;
-    me.reviveT = (me.reviveT || 0) + 1;
-    if (me.reviveT % 10 === 0) puff(r.x, sy(r.z) - 8, 3, ['#c8ffa0', '#ffffff'], .6, -0.03);
+    const inCloud = lvl.clouds.some(c => Math.abs(me.x - c.x) < c.r && Math.abs(me.z - c.z) < c.r * 0.6);
+    me.reviveT = (me.reviveT || 0) + (inCloud ? 2 : 1); // reviving inside a smoke cloud is 2x faster
+    if (me.reviveT % 10 < (inCloud ? 2 : 1)) puff(r.x, sy(r.z) - 8, 3, ['#c8ffa0', '#ffffff'], .6, -0.03);
     if (me.reviveT >= 70) { me.reviveT = 0; Net.send({ t: 'rev', who: id }); addCooked(10); popup(me.x - 20, sy(me.z) - 36, 'PASSED IT! REVIVED', '#c8ffa0'); SFX.power(); }
     break;
   }
@@ -1833,10 +1851,12 @@ function updatePlayer() {
   if (K.attack && hasSkill('charge')) { p.holdT = (p.holdT || 0) + 1; if (p.holdT > 30 && frame % 4 === 0) puff(p.x + p.face * 10, sy(p.z, p.h) - 14, 2, ['#ffd84a', '#ffffff'], .5, -0.03); }
   else { if (p.holdT > 30) attack(true); p.holdT = 0; }
   if (K.toke) { p.tokeT = (p.tokeT || 0) + 1; if (p.tokeT > 25 && hasSkill('breath') && p.cooked > 1) { p.cooked -= 0.3; if (frame % 5 === 0) breathFire(); } }
-  else { if (p.tokeT > 0 && p.tokeT <= 25) hitAToke(); p.tokeT = 0; }
+  else { if (p.tokeT > 0 && p.tokeT <= 25) hitAToke(p.tokeT >= 14); p.tokeT = 0; }
   if (hasSkill('regen') && p.cooked >= 50 && frame % 480 === 0 && p.hp < maxHp()) { p.hp++; popup(p.x - 8, sy(p.z) - 34, '+1 HEART', '#ff9ab8'); }
   if (hasSkill('magnet')) for (const it of lvl.items) if (!it.taken && it.kind === 'coin') { const dx = p.x - it.x, dz = p.z - it.z, d = Math.hypot(dx, dz); if (d < 56 && d > 1) { it.x += dx / d * 2; it.z += dz / d * 2; } }
   for (const c of lvl.clouds) if (c.heal && Math.abs(c.x - p.x) < c.r && Math.abs(c.z - p.z) < c.r * 0.5 && frame % 120 === 0 && p.hp < maxHp()) { p.hp++; popup(p.x - 8, sy(p.z) - 34, 'PUFF PUFF +1', '#c8ffa0'); }
+  // standing in a crewmate's cloud (not your own) gives a slow Cooked regen - the co-op payoff
+  for (const c of lvl.clouds) if (c.by !== Net.id && Math.abs(c.x - p.x) < c.r && Math.abs(c.z - p.z) < c.r * 0.6 && frame % 60 === 0 && p.cooked < 100) { addCooked(1); break; }
   if (p.atkCd > 0) p.atkCd--;
   if (p.throwCd > 0) p.throwCd--;
   if (p.slash && p.slash.t > 0) p.slash.t--;
@@ -2010,10 +2030,17 @@ function hostUpdate() {
       if (--e.t <= 0) { e.alive = false; layBody(e); }
       continue;
     }
-    // target the closest homie
-    let tgt = null, best = 1e9;
-    for (const p of players) { if (!p.ok) continue; const d = Math.abs(p.x - e.x) + Math.abs(p.z - e.z) * 2; if (d < best) { best = d; tgt = p; } }
-    if (!tgt) tgt = players[0];
+    // target the closest homie - a player hidden in a smoke cloud gets skipped unless everyone's hidden
+    let tgt = null, best = 1e9, bestAny = null, bestAnyD = 1e9;
+    for (const p of players) {
+      if (!p.ok) continue;
+      const d = Math.abs(p.x - e.x) + Math.abs(p.z - e.z) * 2;
+      if (d < bestAnyD) { bestAnyD = d; bestAny = p; }
+      const hidden = !e.boss && lvl.clouds.some(c => Math.abs(p.x - c.x) < c.r && Math.abs(p.z - c.z) < c.r * 0.6);
+      if (hidden) continue;
+      if (d < best) { best = d; tgt = p; }
+    }
+    if (!tgt) tgt = bestAny || players[0];
     const dx = tgt.x - e.x, dz = tgt.z - e.z;
     e.vh -= 0.2; e.h = Math.max(0, e.h + e.vh); if (e.h === 0) e.vh = 0;
     if (e.burn > 0 && --e.burnT <= 0) {
@@ -2037,6 +2064,8 @@ function hostUpdate() {
     for (const c of lvl.clouds) if (Math.abs(e.x - c.x) < c.r && Math.abs(e.z - c.z) < c.r * 0.6) { inCloud = c; break; }
     if (inCloud && !e.boss) {
       if (inCloud.hot && frame % 60 === (e.id % 60)) damageEnemy(e, 1, 0, false, inCloud.by);
+      // confused buzzkills can bump into and hurt each other inside the smoke
+      if (frame % 40 === (e.id % 40)) for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.conf && Math.abs(o.x - e.x) < 14 && Math.abs(o.z - e.z) < 10) { damageEnemy(e, 1, Math.sign(e.x - o.x) || 1, false, o.id); popup(e.x - 10, sy(e.z) - 30, 'BONK!', '#ffd84a'); break; }
       e.state = 0; e.dir = Math.sin(frame / 30 + e.id) > 0 ? 1 : -1;
       e.x += e.dir * 0.3; e.z = Math.max(0, Math.min(ZMAX, e.z + Math.cos(frame / 20 + e.id) * 0.3)); e.conf = 1;
       continue;
@@ -3519,6 +3548,14 @@ function drawBrief() {
     lines.forEach((ln, i) => text(ln, 60, 124 + i * 8, i === lines.length - 1 ? '#c8ffa0' : '#ffffff'));
     return;
   }
+  if (lvl.n === 0 && !save.sawSmokeTip) {
+    save.sawSmokeTip = true; persist();
+    R(ctx, '#3a2a58', 34, 112, W - 68, 38);
+    text('TIP: SMOKE (' + KL('toke') + ')', 60, 115, '#c8ffa0');
+    text('TAP TO PUFF A SMALL CLOUD, HOLD TO CHARGE A BIG ONE.', 60, 124, '#ffffff');
+    text('HIDES YOU, CONFUSES BUZZKILLS, AND A FIRE HIT IGNITES IT!', 60, 132, '#ffffff');
+    return;
+  }
   text('WATCH OUT FOR:', 40, 118, '#ffd84a');
   [...new Set(th.enemies)].forEach((e, i) => ctx.drawImage(ENEMY_IMG[e][0], 104 + i * 22, 132 - ENEMY_IMG[e][0].height));
   if (frame % 50 < 36) text(Net.online ? 'STARTING...' : 'PRESS SPACE TO START', W / 2, 140, '#fff6b0', 1, 'center');
@@ -3652,6 +3689,7 @@ function onNet(m) {
       r.atkT = 12;
       if (m.k < 5) r.slash = { t: 12, max: 12, heavy: false, kind: (WEAPONS[m.k] || WEAPONS[0]).id, air: m.h > 6 };
       if (m.k === 9) { lvl.clouds.push({ x: m.x, z: m.y, r: m.h || 50, t: 360, heal: !!(m.f & 1), hot: !!(m.f & 2), by: m.id }); break; }
+      if (m.k === 11) { shake = Math.max(shake, 10); puff(m.x, sy(m.y) - 10, 20, ['#ff5a6a', '#ff9a3a', '#ffd84a', '#ffffff'], 2); for (const c of lvl.clouds) if (Math.abs(c.x - m.x) < 6 && Math.abs(c.z - m.y) < 6) { c.ignited = true; c.hot = true; c.t = Math.min(c.t, 20); } break; }
       if (m.k === 7) shots.push({ mine: false, kind: 7, x: m.x + m.f * 8, z: m.y, h: m.h + 10, vx: m.f * 5, life: 45 });
       if (m.k === 8) shots.push({ mine: false, kind: 8, x: m.x + m.f * 6, z: m.y, h: m.h + 14, vx: m.f * 2.4, vh: 3, life: 200 });
       if (m.k === 10) shots.push({ mine: false, kind: 10, x: m.x + m.f * 6, z: m.y, h: m.h + 14, vx: m.f * 2, vh: 3, life: 200 });

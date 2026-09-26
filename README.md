@@ -35,5 +35,7 @@ At the smoke spot, press **Enter** to call the crew (20 second timer for everyon
 Install Node.js LTS (https://nodejs.org), then double-click **start.bat**.
 
 ## Hosting
+**Live:** https://kush-quest.onrender.com
+
 This repo deploys to Render as-is (`render.yaml`, start command `node server.js`, health check `/health`). Pushing to GitHub redeploys automatically.
 The free plan sleeps after 15 min idle; the first visit after that takes about 30-60 seconds to wake it.

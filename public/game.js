@@ -115,7 +115,7 @@ const K = { left: false, right: false, up: false, down: false, jump: false, run:
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
-  Space: 'jump', KeyK: 'jump',
+  Space: 'jump',
   KeyJ: 'attack', KeyX: 'attack',
   ShiftLeft: 'run', ShiftRight: 'run', Enter: 'enter'
 };
@@ -126,17 +126,25 @@ function press(k, down) {
 addEventListener('keydown', e => {
   if (!running) return;
   const c = e.code;
+  const nav = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down' }[c];
+  if (nav && !e.repeat) K.nav = nav;
+  if (c === 'Escape') K.escPressed = true;
+  if (c === 'KeyH' && state === 'map') { K.shopPressed = true; return; }
+  if ((state === 'map' || state === 'story') && (nav || c === 'Space' || c === 'Enter')) { e.preventDefault(); if (c === 'Space') press('jump', true); if (c === 'Enter') press('enter', true); return; }
+  if (invOpen && (nav || c === 'Space' || c === 'Enter')) { e.preventDefault(); if (c === 'Space') press('jump', true); if (c === 'Enter') press('enter', true); return; }
   if (c === 'ArrowUp' || c === 'KeyW') K.upPressed = true;
   if (c === 'ArrowDown' || c === 'KeyS') K.downPressed = true;
   if (state === 'results' && (c === 'ArrowUp' || c === 'ArrowDown' || c === 'KeyW' || c === 'KeyS' || c === 'Space')) { e.preventDefault(); if (c === 'Space') press('jump', true); return; }
   if (c === 'KeyM') { musicOn = !musicOn; return; }
   if ((c === 'KeyP' || c === 'Escape') && !Net.online && state !== 'results') { paused = !paused; return; }
-  if ((c === 'KeyI' || c === 'Tab') && state !== 'results') { e.preventDefault(); invOpen = !invOpen; for (const k in K) if (typeof K[k] === 'boolean') K[k] = false; return; }
+  if ((c === 'KeyI' || c === 'Tab') && state !== 'results' && state !== 'story') { e.preventDefault(); invOpen = !invOpen; for (const k in K) if (typeof K[k] === 'boolean') K[k] = false; return; }
   if (c === 'Escape' && invOpen) { invOpen = false; return; }
   if (state === 'play') {
 
     if (c === 'KeyQ') { cycleWeapon(1); return; }
     if (c === 'KeyE') { useMunchies(); return; }
+    if (c === 'KeyK' || c === 'KeyL') { K.throwPressed = true; return; }
+    if (c === 'KeyR') { const i = THROWS.findIndex(t => t.id === save.throwSel); save.throwSel = THROWS[(i + 1) % THROWS.length].id; persist(); popup(me.x - 20, sy(me.z) - 34, THROWS.find(t => t.id === save.throwSel).name, '#fff6b0'); return; }
     const em = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[c]; if (em !== undefined) { emote(em); return; }
   }
   const k = KEYMAP[c]; if (!k) return;
@@ -144,8 +152,8 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) press(k, false); });
 addEventListener('blur', () => { for (const k in K) K[k] = false; });
-cv.addEventListener('mousedown', e => { if (!running) return; e.preventDefault(); if (state === 'results') { K.enterPressed = true; return; } if (e.button === 0) press('attack', true); else if (e.button === 2) press('jump', true); });
-addEventListener('mouseup', e => { if (e.button === 0) press('attack', false); else if (e.button === 2) press('jump', false); });
+cv.addEventListener('mousedown', e => { if (!running) return; e.preventDefault(); if (state === 'results') { K.enterPressed = true; return; } if (state === 'map' || state === 'story') { K.enterPressed = true; return; } if (e.button === 0) press('attack', true); else if (e.button === 2) K.throwPressed = true; });
+addEventListener('mouseup', e => { if (e.button === 0) press('attack', false); });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => { if (!running) return; e.preventDefault(); if (state === 'results') { if (e.deltaY < 0) K.upPressed = true; else K.downPressed = true; } else if (state === 'play') cycleWeapon(e.deltaY > 0 ? 1 : -1); }, { passive: false });
 document.querySelectorAll('#touch button').forEach(b => {
@@ -454,11 +462,11 @@ ICONS.joint = sprite(['.........k', 'kkkkkkkkoy', 'kwwwwwwwyr', 'kkkkkkkkoo']);
 ICONS.dab = sprite(['........kk', 'kkkkkkkkEk', 'kEEEEEWWk.', 'kkkkkkkk..'], { ...P, E: '#b8b8d0', W: '#ffffff' });
 // --- weapons, armor, shop ---
 const WEAPONS = [
-  { id: 'puff', name: 'GIANT JOINT', icon: 'joint', dmg: 1, cd: 18, price: 0, desc: 'FREE. SWING A HUGE JOINT. LEAVES SMOKE' },
-  { id: 'lighter', name: 'GIANT LIGHTER', icon: 'lighter', dmg: 2, cd: 14, price: 90, desc: 'FLICK IT FOR A FLAME BURST' },
-  { id: 'bong', name: 'MEGA BONG', icon: 'bong', dmg: 2, cd: 22, price: 160, desc: 'BIG SMASH + BUBBLE SHOT' },
-  { id: 'dab', name: 'DAB TOOL', icon: 'dab', dmg: 2, cd: 10, price: 200, desc: 'LONG FAST STABS' },
-  { id: 'grinder', name: 'GIANT GRINDER', icon: 'grinder', dmg: 3, cd: 36, price: 280, desc: 'SPIN IT ALL AROUND YOU' },
+  { id: 'puff', name: 'GIANT JOINT', icon: 'joint', dmg: 1, cd: 16, price: 0, desc: 'YOUR STARTER SWORD. BALANCED SLASHES THAT LEAVE SMOKE' },
+  { id: 'lighter', name: 'LIGHTER BLADE', icon: 'lighter', dmg: 2, cd: 14, price: 90, desc: 'HOT FLAMING SLASHES' },
+  { id: 'dab', name: 'DAB SABER', icon: 'dab', dmg: 2, cd: 9, price: 200, desc: 'FAST, LONG REACH. STAB STAB STAB' },
+  { id: 'bong', name: 'BONG HAMMER', icon: 'bong', dmg: 3, cd: 26, price: 160, desc: 'SLOW + HEAVY. SMASHES A WHOLE CROWD' },
+  { id: 'grinder', name: 'GRINDER SPIN', icon: 'grinder', dmg: 3, cd: 34, price: 280, desc: 'SPINS ALL AROUND YOU' },
 ];
 const ARMORS = [
   { id: 'hoodie', name: 'COMFY HOODIE', icon: 'hoodie', hp: 1, price: 70, desc: '+1 MAX HEART' },
@@ -473,7 +481,8 @@ const SHOP = [
   { kind: 'use', id: 'munchie', name: 'MUNCHIES', icon: 'munchie', price: 25, desc: 'HEAL 2 HEARTS - PRESS E (MAX 3)' },
   { kind: 'use', id: 'preroll', name: 'PRE-ROLL', icon: 'preroll', price: 40, desc: 'START NEXT MISSION 40% COOKED' },
   { kind: 'use', id: 'gold', name: 'GOLDEN LEAF', icon: 'gold', price: 75, desc: 'START NEXT MISSION INVINCIBLE' },
-  { kind: 'farm', id: 'farm', name: 'THE POT FARM', icon: 'farm', price: FARM_PRICE, desc: 'THE DREAM. REACH ' + SPOTS_TO_FARM + ' SMOKE SPOTS' },
+  { kind: 'ammo', id: 'papers', name: 'ROLLING PAPERS x10', icon: 'papers', price: 30, desc: 'THROWING STARS. PRESS K OR RIGHT-CLICK' },
+  { kind: 'ammo', id: 'bombs', name: 'NUG BOMBS x5', icon: 'bombs', price: 60, desc: 'LOB A SMOKY BOMB INTO A CROWD' },
 ];
 // rare bonus pickups: coins + a special effect
 const EXTRAS = {
@@ -653,6 +662,70 @@ THEMES.city = {
   enemies: ['cop', 'cop', 'mouse', 'karen', 'mouse'],
 };
 const THEME_ORDER = ['park', 'suburb', 'city'];
+// ---- THE BEACH ----
+THEMES.beach = {
+  name: 'THE BEACH',
+  tiles: makeTiles({ top: '#ffe8a8', topLight: '#fff6d8', dirt: '#f0d090', dirtDark: '#d8b070', dirtLight: '#fff0c0', block: '#7ac8ff', blockLight: '#c8ecff', blockDark: '#4a90d8', pipe: '#ff9ab8', pipeLight: '#ffd0e0', pipeDark: '#d06088' }),
+  sky: layer(g => {
+    gradient(g, ['#5ab8ff', '#6ac4ff', '#82d0ff', '#9ad8ff', '#b4e4ff', '#cdeeff', '#e4f6ff', '#f4fbff']);
+    g.fillStyle = '#fff6b0'; for (let y = -14; y <= 14; y++) { const w = Math.floor(Math.sqrt(196 - y * y)); g.fillRect(250 - w, 36 + y, w * 2, 1); }
+  }),
+  clouds: layer(g => { puffCloud(g, 30, 22, 3, '#ffffff', '#e0f0ff'); puffCloud(g, 170, 40, 2, '#ffffff', '#e0f0ff'); }),
+  far: layer(g => { // the ocean
+    R(g, '#3a9ae8', 0, H - 110, W, 110); R(g, '#5ab4f0', 0, H - 110, W, 3);
+    for (let i = 0; i < 40; i++) R(g, '#c8ecff', (i * 53) % W, H - 104 + (i * 17) % 60, 6 + (i % 3) * 3, 1);
+    R(g, '#ffffff', 60, H - 96, 14, 5); R(g, '#ff5a6a', 66, H - 104, 2, 8); // little sailboat
+  }),
+  near: layer(g => { // palm trees + a lifeguard tower
+    for (let i = 0; i < 3; i++) {
+      const x = 40 + i * 110, base = H - 30;
+      for (let y = 0; y < 50; y++) R(g, '#9a6a42', x + Math.round(Math.sin(y / 14) * 4), base - y, 4, 1);
+      g.fillStyle = '#3fae5a';
+      for (const [dx, dy] of [[-16, -2], [12, -2], [-10, -8], [8, -8], [0, -6]]) for (let k = 0; k < 14; k++) R(g, '#3fae5a', x + dx + (dx > 0 ? k : -k) / 2, base - 52 + dy + Math.abs(k - 7) / 2, 6, 2);
+    }
+    R(g, '#ffffff', 200, H - 70, 26, 14); R(g, '#ff5a6a', 200, H - 70, 26, 4); R(g, '#9a6a42', 203, H - 56, 2, 26); R(g, '#9a6a42', 221, H - 56, 2, 26);
+  }),
+  floor: null, floorKey: 'beach',
+  enemies: ['mouse', 'karen', 'squirrel', 'mouse'],
+};
+// ---- MISTY WOODS ----
+THEMES.woods = {
+  name: 'MISTY WOODS',
+  tiles: makeTiles({ top: '#5aa860', topLight: '#8ad890', dirt: '#8a6a4a', dirtDark: '#6a4a30', dirtLight: '#b08a60', block: '#9a6a42', blockLight: '#c89a6a', blockDark: '#6a4428', pipe: '#6a8a5a', pipeLight: '#9ac080', pipeDark: '#4a6a3a' }),
+  sky: layer(g => gradient(g, ['#3a5a7a', '#4a6a88', '#5a7a94', '#6e8ca0', '#86a0b0', '#a0b8c0', '#b8ccc8', '#cad8cc'])),
+  clouds: layer(g => { g.fillStyle = 'rgba(255,255,255,.18)'; for (let i = 0; i < 6; i++) g.fillRect(i * 55, 70 + (i % 3) * 10, 70, 8); }),
+  far: layer(g => { for (let x = 0; x < W; x += 12) { const h = 50 + ((x * 7) % 30); for (let y = 0; y < h; y++) R(g, '#4a6a5a', x + 6 - Math.floor(y / 4 * ((h - y) / h)), H - 30 - y, Math.max(1, Math.floor((h - y) / 4)), 1); R(g, '#4a6a5a', x, H - 30, 12, 30); } }),
+  near: layer(g => {
+    for (let i = 0; i < 7; i++) {
+      const x = i * 48 + 8, h = 60 + (i % 3) * 12, base = H - 20;
+      R(g, '#5a3a24', x + 9, base - 16, 4, 16);
+      for (let y = 0; y < h; y++) { const w = Math.floor((y / h) * 12) + 1; R(g, y % 8 < 1 ? '#1e4a2a' : '#2a6a3a', x + 11 - w, base - 16 - h + y, w * 2, 1); }
+    }
+    for (let i = 0; i < 12; i++) R(g, '#ff9ab8', (i * 29) % W, H - 22 - (i % 3), 2, 2); // little mushrooms/flowers
+  }),
+  floor: null, floorKey: 'woods',
+  enemies: ['squirrel', 'squirrel', 'cop', 'mouse', 'karen'],
+};
+// ---- BUZZKILL CORP HQ ----
+THEMES.hq = {
+  name: 'BUZZKILL HQ',
+  tiles: makeTiles({ top: '#c8c4d8', topLight: '#f0ecf8', dirt: '#8a86a0', dirtDark: '#6a6680', dirtLight: '#b0acc8', block: '#5a5a78', blockLight: '#8a8aa8', blockDark: '#3a3a58', pipe: '#ff5a6a', pipeLight: '#ffa0a8', pipeDark: '#c83048' }),
+  sky: layer(g => { gradient(g, ['#d8d4e8', '#d0cce2', '#c8c4dc', '#c0bcd6', '#b8b4d0', '#b0acca', '#a8a4c4', '#a09cbe']); }),
+  clouds: layer(g => { for (let x = 0; x < W; x += 80) { R(g, '#ffffff', x + 20, 20, 40, 3); R(g, '#e8e4f8', x + 20, 23, 40, 1); } }), // ceiling lights
+  far: layer(g => { // office windows looking out at the city
+    for (let x = 0; x < W; x += 40) { R(g, '#2a1838', x + 4, H - 150, 32, 70); R(g, '#8ecbff', x + 6, H - 148, 28, 66); R(g, '#b8e0ff', x + 6, H - 148, 6, 66); R(g, '#2a1838', x + 19, H - 148, 2, 66); }
+    R(g, '#ff5a6a', 110, H - 170, 100, 14); // BUZZKILL CORP banner
+    for (let i = 0; i < 12; i++) R(g, '#ffffff', 116 + i * 8, H - 166, 5, 6);
+  }),
+  near: layer(g => { // cubicles + sad office plants
+    for (let x = 0; x < W; x += 64) { R(g, '#2a1838', x + 4, H - 44, 50, 26); R(g, '#9a96b8', x + 5, H - 43, 48, 24); R(g, '#b8b4d0', x + 5, H - 43, 48, 2); R(g, '#3a3a58', x + 18, H - 60, 20, 14); R(g, '#7ac8ff', x + 20, H - 58, 16, 10); }
+    for (let x = 40; x < W; x += 128) { R(g, '#c87a3a', x, H - 34, 10, 10); R(g, '#6a8a5a', x - 2, H - 48, 14, 14); }
+  }),
+  floor: null, floorKey: 'hq',
+  enemies: ['cop', 'karen', 'cop', 'karen', 'mouse'],
+};
+THEME_ORDER.length = 0; THEME_ORDER.push('park', 'beach', 'suburb', 'city', 'woods', 'hq');
+
 function drawLayer(img, factor, camX, drift = 0, yOff = 0) {
   const off = ((camX * factor + drift) % W + W) % W;
   ctx.drawImage(img, -Math.floor(off), yOff); ctx.drawImage(img, W - Math.floor(off), yOff);
@@ -664,12 +737,12 @@ const FLOOR_Y = 110, ZMAX = 66;                 // screen y of the back edge of 
 const sy = (z, h = 0) => FLOOR_Y + z - h;        // world (z,h) -> screen y (feet)
 const MISSION_LOOT = ['lighter', 'hoodie', 'dab', 'vest', 'pouch', 'crown', 'bong', 'grinder'];
 function missionName(n) {
-  const th = THEMES[THEME_ORDER[n % 3]];
-  return ['MISSION ' + (n + 1), th.name + (n >= 3 ? ' REMIX' : '')];
+  const th = THEMES[THEME_ORDER[n % THEME_ORDER.length]];
+  return ['WORLD 1-' + (n % THEME_ORDER.length + 1), th.name + (n >= THEME_ORDER.length ? ' REMIX' : '')];
 }
 let LEN = 0;
 function buildLevel(n) {
-  const themeKey = THEME_ORDER[n % 3], theme = THEMES[themeKey];
+  const themeKey = THEME_ORDER[n % THEME_ORDER.length], theme = THEMES[themeKey];
   const diff = Math.min(n, 8);
   let s = 1000 + n * 7919; const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const pick = a => a[Math.floor(rand() * a.length)];
@@ -699,7 +772,7 @@ function buildLevel(n) {
     }
     zones.push({ x0, ids, started: false, cleared: false });
     // stuff inside each fight area
-    prop(rand() < .5 ? 'crate' : 'trash', x0 + 60 + Math.floor(rand() * 180), rz(), [pick(['coin', 'coin', 'munchie', 'nug']), 'coin', 'coin']);
+    prop(rand() < .5 ? 'crate' : 'trash', x0 + 60 + Math.floor(rand() * 180), rz(), [pick(['coin', 'munchie', 'nug', 'papers', 'bombs']), 'coin', 'coin']);
     if (zi === 2) prop('chest', x0 + 150, 20, ['loot']);
     if (zi === 3) prop('crate', x0 + 220, 40, ['gold']);
     // the walk to the next fight: coins, nugs, rings, bonuses
@@ -728,9 +801,10 @@ function buildLevel(n) {
 //  SAVE DATA (each player keeps their own stash + gear)
 // ============================================================
 const SAVE_KEY = 'kq_save_v2';
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 10, bombs: 2 }, throwSel: 'papers', intro: false }; }
 let save = defaultSave();
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && typeof s === 'object') save = { ...defaultSave(), ...s }; } catch (e) {}
+save.throws = { papers: 10, bombs: 2, ...(save.throws || {}) };
 save.weapons = save.weapons.map(w => w === 'boomer' ? 'dab' : w); if (save.weapon === 'boomer') save.weapon = 'dab';
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 const maxHp = () => 5 + ARMORS.reduce((m, a) => save.armor.includes(a.id) ? Math.max(m, a.hp) : m, 0);
@@ -757,9 +831,9 @@ function makePlayer() {
 function startLevel(n) {
   lvl = buildLevel(n);
   me = makePlayer();
-  camX = 0; state = 'play'; particles = []; popups = []; shots = [];
+  camX = 0; state = 'brief'; briefT = Net.online ? 240 : 1200; particles = []; popups = []; shots = [];
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
-  banner = { t: 200, a: lvl.name[0] + ' - ' + lvl.name[1], b: 'BEAT THE BUZZKILLS, GET COOKED, FIND THE SMOKE SPOT' };
+  banner = null;
   if (n === 0 && save.spots === 0) me.tipT = 900;
   if (save.preroll > 0) { save.preroll--; me.cooked = 40; popup(me.x, sy(me.z) - 30, 'PRE-ROLL! 40%', '#c8ffa0'); }
   if (save.gold > 0) { save.gold--; me.star = 720; }
@@ -841,6 +915,7 @@ function pickUp(it) {
     if (me.hp < maxHp()) { me.hp = Math.min(maxHp(), me.hp + 2); popup(x - 12, y - 6, 'MUNCHIES! +2', '#ff9ab8'); }
     else { save.munchie = Math.min(3, save.munchie + 1); popup(x - 12, y - 6, 'SAVED FOR LATER', '#ff9ab8'); }
   }
+  else if (it.kind === 'papers' || it.kind === 'bombs') { const k = it.kind === 'papers' ? 5 : 2; save.throws[it.kind] = (save.throws[it.kind] || 0) + k; SFX.buy(); popup(x - 16, y - 6, '+' + k + (it.kind === 'papers' ? ' PAPERS' : ' NUG BOMBS'), '#fff6b0'); }
   else if (it.kind === 'gold') { me.star = 540; SFX.star(); shake = 6; banner = { t: 150, a: 'GOLDEN LEAF!', b: 'UNSTOPPABLE - RUN INTO ENEMIES' }; }
   else if (it.kind === 'extra') {
     const d = EXTRAS[it.sub];
@@ -886,7 +961,7 @@ function selectWeapon(i) {
 // ============================================================
 //  COMBAT
 // ============================================================
-const REACH = { puff: 30, lighter: 30, bong: 26, dab: 42, grinder: 30 };
+const REACH = { puff: 32, lighter: 30, bong: 30, dab: 44, grinder: 32 };
 // my hit landed on an enemy: the host applies it, everyone else asks the host
 function hitEnemy(e, dmg, dir, strong) {
   if (!e.alive || e.state === 5) return;
@@ -926,8 +1001,16 @@ function attack() {
     return;
   }
   if (K.left !== K.right) me.face = K.right ? 1 : -1;
-  me.chain = me.chainT > 0 ? (me.chain + 1) % 3 : 0;
+  const lunge = K.run && Math.abs(me.vx) > 1.5 && me.h === 0, air = me.h > 6;
+  me.chain = lunge || air ? 2 : me.chainT > 0 ? (me.chain + 1) % 3 : 0;
   const strong = me.chain === 2;
+  if (lunge) { me.vx = me.face * 4.5; me.inv = Math.max(me.inv, 10); }
+  me.slash = { t: 12, max: 12, heavy: strong, kind: w.id, air, lunge };
+  { // aim assist: step into the nearest enemy's lane
+    let best = null, bd = 1e9;
+    for (const e of lvl.enemies) { if (!e.spawned || !e.alive || e.state === 5) continue; const dx = (e.x - me.x) * me.face; if (dx > -8 && dx < (REACH[w.id] || 30) + 16 && Math.abs(e.z - me.z) < 26) { const d = Math.abs(dx) + Math.abs(e.z - me.z) * 2; if (d < bd) { bd = d; best = e; } } }
+    if (best) me.z += Math.max(-8, Math.min(8, best.z - me.z));
+  }
   me.atkCd = Math.round(w.cd * (strong ? 1.3 : 0.75)); me.atkT = 12; me.chainT = me.atkCd + 16;
   SFX.attack(wi);
   const dmg = w.dmg + (ultra() ? 1 : 0) + (me.buffs.power > 0 ? 1 : 0) + (strong ? 1 : 0);
@@ -936,7 +1019,8 @@ function attack() {
     if (!e.spawned || !e.alive || e.state === 5) continue;
     const dx = e.x - me.x, dz = Math.abs(e.z - me.z);
     const inFront = w.id === 'grinder' ? Math.abs(dx) < reach : dx * me.face > -6 && Math.abs(dx) < reach;
-    if (inFront && dz < 10 && Math.abs(e.h - me.h) < 24) hitEnemy(e, dmg, Math.sign(dx) || me.face, strong);
+    const zr = w.id === 'bong' ? 20 : 14;
+    if ((inFront || (air && Math.abs(dx) < reach)) && dz < zr && Math.abs(e.h - me.h) < 30) hitEnemy(e, dmg, Math.sign(dx) || me.face, strong);
   }
   for (const p of lvl.props) {
     if (p.broken) continue;
@@ -945,7 +1029,7 @@ function attack() {
       p.hp--; p.flash = 6; SFX.bump(); if (p.hp <= 0) breakProp(p);
     }
   }
-  if (w.id === 'bong') shots.push({ mine: true, x: me.x + me.face * 12, z: me.z, h: me.h + 10, vx: me.face * 4.2, life: 40, dmg: 1, kind: 6, hit: new Set() });
+  if (w.id === 'bong' && strong) { shake = 6; puff(me.x + me.face * 22, sy(me.z) - 2, 12, ['#bfe8ff', '#ffffff', '#7fe07a'], 1.6); }
   if (w.id === 'lighter') for (let i = 0; i < 8; i++) particles.push({ x: me.x + me.face * (10 + i * 3), y: sy(me.z, me.h) - 12 + (Math.random() - .5) * 8, vx: me.face * (1 + Math.random()), vy: -0.3, life: 14, col: ['#ff5a6a', '#ff9a3a', '#ffd84a'][i % 3], s: 3, g: -0.02 });
   if (w.id === 'puff') puff(me.x + me.face * 26, sy(me.z, me.h) - 16, 5, ['#ffffff', '#e8e4f4'], .6, -0.02);
   Net.send({ t: 'fx', k: wi, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
@@ -953,11 +1037,17 @@ function attack() {
 function updateShots() {
   for (const s of shots) {
     s.x += s.vx; s.life--; if (s.kind === 5) s.vx *= 0.95;
+    if (s.kind === 8) { s.vh -= 0.18; s.h += s.vh; if (s.h <= 0) { s.life = 0; explode(s); } continue; }
     if (!s.mine) continue;
     for (const e of lvl.enemies) {
       if (!e.spawned || !e.alive || e.state === 5 || s.hit.has(e)) continue;
-      if (Math.abs(e.x - s.x) < 12 && Math.abs(e.z - s.z) < 10) { s.hit.add(e); hitEnemy(e, s.dmg + (ultra() ? 1 : 0), Math.sign(s.vx), s.kind === 5); s.life = 0; }
+      if (Math.abs(e.x - s.x) < 12 && Math.abs(e.z - s.z) < 14) {
+        s.hit.add(e); hitEnemy(e, s.dmg + (ultra() ? 1 : 0), Math.sign(s.vx), s.kind === 5);
+        if (s.kind === 7 && --s.pierce > 0) continue;
+        s.life = 0;
+      }
     }
+    if (s.kind === 7) for (const p of lvl.props) if (!p.broken && Math.abs(p.x - s.x) < 10 && Math.abs(p.z - s.z) < 10) { p.hp--; p.flash = 6; if (p.hp <= 0) breakProp(p); s.life = 0; }
   }
   shots = shots.filter(s => s.life > 0);
   // purses thrown by Karens (simulated on every screen, each player checks themselves)
@@ -976,9 +1066,17 @@ function update() {
   if (paused) return;
   frame++;
   if (banner && --banner.t <= 0) banner = null;
+  const clearIn = () => { K.jumpPressed = K.enterPressed = K.attackPressed = K.throwPressed = false; K.nav = null; K.escPressed = false; };
+  if (state === 'story') { updateStory(); clearIn(); return; }
+  if (state === 'map') { if (invOpen) updateInventory(); else updateMap(); clearIn(); return; }
+  if (state === 'brief') {
+    if (--briefT <= 0 || (!Net.online && (K.jumpPressed || K.enterPressed || K.attackPressed))) { state = 'play'; banner = null; }
+    clearIn(); if (isHost()) hostUpdate(); return;
+  }
+  if (invOpen) { updateInventory(); if (!Net.online) { clearIn(); return; } }
   if (hitstop > 0) { hitstop--; return; }
 
-  if (state === 'play' && !(invOpen && !Net.online)) updatePlayer();
+  if (state === 'play' && !invOpen) updatePlayer();
   else if (state === 'sitting') {
     me.vx = me.vz = 0;
     if (frame % 8 === 0) puff(lvl.spot.x + 40, sy(-2) - 14, 1, ['#ffffff', '#e8e4f4', '#d4c8f8'], .3, -0.03);
@@ -986,7 +1084,7 @@ function update() {
     if (Net.online && (K.enterPressed || K.jumpPressed) && !finInfo.hurried) { Net.send({ t: 'hurry' }); finInfo.hurried = true; }
   } else if (state === 'results') updateShop();
   if (hurryT > 0 && --hurryT === 0) Net.send({ t: 'timeup' });
-  K.jumpPressed = false; K.enterPressed = false; K.attackPressed = false;
+  K.jumpPressed = false; K.enterPressed = false; K.attackPressed = false; K.throwPressed = false; K.nav = null; K.escPressed = false;
   if (me.emote && --me.emote.t <= 0) me.emote = null;
 
   if (isHost()) hostUpdate(); else clientEnemies();
@@ -999,6 +1097,7 @@ function update() {
     r.x += (r.tx - r.x) * 0.35; r.z += (r.tz - r.z) * 0.35; r.h += (r.th - r.h) * 0.35;
     if (r.emote && --r.emote.t <= 0) r.emote = null;
     if (r.atkT > 0) r.atkT--;
+    if (r.slash && r.slash.t > 0) r.slash.t--;
   }
   // items that pop out of crates settle onto the ground
   for (const it of lvl.items) if (it.vh !== undefined && (it.h > 0 || it.vh > 0)) { it.vh -= 0.2; it.h = Math.max(0, it.h + it.vh); if (it.h === 0) it.vh = 0; }
@@ -1038,11 +1137,10 @@ function updatePlayer() {
 
   if (K.jumpPressed) p.jumpBuf = 6; else if (p.jumpBuf > 0) p.jumpBuf--;
   if (p.jumpBuf > 0) {
-    if (p.h === 0) { p.vh = 3.7; p.jumpBuf = 0; p.sq = 6; SFX.jump(); }
-    else if (p.flaps < (ultra() ? 99 : 5)) { p.puffed = true; p.flaps++; p.vh = 1.9; p.jumpBuf = 0; SFX.flap(); puff(p.x, sy(p.z, p.h), 3, ['#ffffff', '#e8e4f4'], .6); }
+    if (p.h === 0) { p.vh = 3.4; p.jumpBuf = 0; p.sq = 6; SFX.jump(); }
   }
   if (p.h > 0 || p.vh > 0) {
-    p.vh -= p.puffed ? 0.09 : 0.2;
+    p.vh -= 0.24;
     if (p.puffed) p.vh = Math.max(p.vh, -0.8);
     p.h += p.vh;
     if (p.h <= 0) { p.h = 0; p.vh = 0; p.puffed = false; p.flaps = 0; p.sq = 5; puff(p.x, sy(p.z), 3, ['#ffffff', '#f0e8ff'], .5); }
@@ -1059,6 +1157,9 @@ function updatePlayer() {
 
   if (K.attackPressed) attack();
   if (p.atkCd > 0) p.atkCd--;
+  if (p.throwCd > 0) p.throwCd--;
+  if (p.slash && p.slash.t > 0) p.slash.t--;
+  if (K.throwPressed) throwItem();
   if (p.atkT > 0) p.atkT--;
   if (p.chainT > 0) p.chainT--;
   if (Math.abs(p.vx) + Math.abs(p.vz) > 0.2 && p.h === 0) p.walkT += 1; else p.walkT = 0;
@@ -1078,7 +1179,7 @@ function updatePlayer() {
   for (const it of lvl.items) {
     if (it.taken) continue;
     if (p.buffs.magnet > 0 && it.kind === 'coin') { const dx = p.x - it.x, dz = p.z - it.z, d = Math.hypot(dx, dz); if (d < 90) { it.x += dx / d * 3; it.z += dz / d * 3; } }
-    if (Math.abs(it.x - p.x) < 11 && Math.abs(it.z - p.z) < 8 && Math.abs((it.h || 0) - p.h) < 18) pickUp(it);
+    if (Math.abs(it.x - p.x) < 12 && Math.abs(it.z - p.z) < 12 && Math.abs((it.h || 0) - p.h) < 22) pickUp(it);
   }
   // thieves
   for (const e of lvl.enemies) {
@@ -1173,7 +1274,7 @@ function hostUpdate() {
   for (const e of lvl.enemies) {
     if (!e.spawned || !e.alive) continue;
     if (e.state === 5) { // knocked out, flying back
-      e.vh -= 0.2; e.h = Math.max(0, e.h + e.vh); e.x += e.vx; e.vx *= 0.95;
+      e.vh -= 0.2; e.h = Math.max(0, e.h + e.vh); e.x += e.vx; e.vx *= 0.95; e.x = Math.max(camX + 6, Math.min(camX + W - 6, e.x));
       if (--e.t <= 0) e.alive = false;
       continue;
     }
@@ -1192,7 +1293,7 @@ function hostUpdate() {
       if (e.state === 0) {
         e.dir = Math.sign(dx) || 1;
         const wantX = tgt.x - e.dir * 20;
-        sx = Math.sign(wantX - e.x) * Math.min(0.9, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.6, Math.abs(dz));
+        sx = Math.sign(wantX - e.x) * Math.min(0.9, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.9, Math.abs(dz));
         if (Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = 22; }
       } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
       else if (e.state === 2) { if (--e.t <= 0) { e.state = 3; e.t = 34; } }
@@ -1219,6 +1320,14 @@ function hostUpdate() {
       else { sx = e.hx || 0; sz = e.hz || 0; }
     }
     e.x += sx; e.z = Math.max(0, Math.min(ZMAX, e.z + sz));
+  }
+  // enemies stay inside the fight like you do (thieves running off with coins are the only ones allowed to leave)
+  const zb = lvl.zones[lvl.zi];
+  const L = lvl.locked && zb ? zb.x0 + 8 : camX + 8, Rt = lvl.locked && zb ? zb.x0 + W - 8 : camX + W - 8;
+  for (const e of lvl.enemies) {
+    if (!e.spawned || !e.alive || e.state === 6) continue;
+    if (!e.entered) { if (e.x > L && e.x < Rt) e.entered = true; else continue; }
+    e.x = Math.max(L, Math.min(Rt, e.x));
   }
   // don't let enemies stack into one blob
   const act = lvl.enemies.filter(e => e.spawned && e.alive && e.state !== 5);
@@ -1267,7 +1376,7 @@ function bubble(str, cx, y) {
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, 9);
   drawStr(str, x + 3, y + 2, '#3fae5a', 1);
 }
-function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting, wi = 0, atkT = 0) {
+function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting, wi = 0, atkT = 0, slash = null) {
   if (inv > 0 && Math.floor(inv / 4) % 2) return;
   const img = PLAYER[color][anim];
   if (anim === 4) { // riding a little smoke cloud while floating
@@ -1283,9 +1392,25 @@ function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, si
   } else draw_(img, x - 3, y - 2, face < 0);
   ctx.filter = 'none';
   if (!sitting) drawHeld(x, y, face, wi, atkT, anim);
+  if (slash && !sitting) drawSlash(x, y, face, slash);
   if (sitting && frame % 40 < 30) text('Z', x + 12 - camX, y - 8 - (frame % 40) / 8, '#e4b3ff');
   if (emote) bubble(EMOTES[emote.e], x + 5, y - (name ? 24 : 14));
   if (name) text(name, x + 5 - camX, y - 10, SHIRTS[color], 1, 'center');
+}
+// sword slash: a big white crescent in front of the homie
+const SLASH_COL = { puff: '#ffffff', lighter: '#ffb84a', dab: '#9ae8ff', bong: '#bfe8ff', grinder: '#c8ffa0' };
+function drawSlash(px, pyTop, face, sl) {
+  if (!sl || sl.t <= 0) return;
+  const p = 1 - sl.t / sl.max, reach = (REACH[sl.kind] || 30) * (sl.heavy ? 1.15 : 1);
+  const cx = Math.round(px - camX + 5), cy = Math.round(pyTop + 10);
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(face, 1);
+  const spin = sl.kind === 'grinder' || sl.air;
+  const a0 = spin ? p * Math.PI * 2 - 1 : -1.9 + p * 0.4, a1 = spin ? a0 + 2.4 : a0 + (sl.heavy ? 2.9 : 2.3) * Math.min(1, p * 2.2);
+  ctx.globalAlpha = Math.max(0, 1 - p * 0.9);
+  ctx.strokeStyle = P.k; ctx.lineWidth = sl.heavy ? 7 : 5; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8, a0, a1); ctx.stroke();
+  ctx.strokeStyle = SLASH_COL[sl.kind] || '#fff'; ctx.lineWidth = sl.heavy ? 5 : 3; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8, a0, a1); ctx.stroke();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8 - 1, a0 + 0.2, a1); ctx.stroke();
+  ctx.restore(); ctx.globalAlpha = 1;
 }
 function drawHeld(x, y, face, wi, atkT, anim) {
   const w = WEAPONS[wi] || WEAPONS[0], img = HELD[w.id]; if (!img || anim === 4) return;
@@ -1322,6 +1447,17 @@ function makeFloor(key, tiles) {
     R(g, '#b0a8c8', 0, top + 26, 64, 3); R(g, '#8a80a8', 0, top + 29, 64, 1);
     R(g, '#6a6480', 0, top + 30, 64, c.height); specks(top + 30, c.height, ['#7a7490', '#5a5470'], 50);
     R(g, '#ffffff', 8, top + 58, 22, 2);
+  } else if (key === 'beach') {
+    R(g, '#c89a6a', 0, top, 64, 18); for (let x = 0; x < 64; x += 8) R(g, '#9a6a42', x, top, 1, 18); R(g, '#e0b888', 0, top, 64, 1); R(g, '#9a6a42', 0, top + 17, 64, 2);
+    R(g, '#ffe8a8', 0, top + 19, 64, c.height); specks(top + 19, c.height, ['#f0d090', '#fff6d8', '#e8c888'], 70);
+    R(g, '#ff9ab8', 20, top + 44, 2, 2); R(g, '#ffffff', 50, top + 60, 3, 2);
+  } else if (key === 'woods') {
+    R(g, '#5aa860', 0, top, 64, c.height); specks(top, c.height, ['#4a9050', '#78c070'], 60);
+    for (let x = 0; x < 64; x++) { const w = Math.round(Math.sin(x / 64 * TAU) * 3); R(g, '#8a6a4a', x, top + 18 + w, 1, 34); }
+    specks(top + 20, top + 50, ['#c87a3a', '#e8a060', '#6a4a30'], 30);
+  } else if (key === 'hq') {
+    for (let y = top; y < c.height; y += 16) for (let x = 0; x < 64; x += 16) R(g, ((x + y) / 16) % 2 ? '#c8c4d8' : '#b0acc8', x, y, 16, 16);
+    R(g, '#ff5a6a', 0, top + 30, 64, 3); R(g, '#e8e4f4', 0, top, 64, 1);
   } else {
     R(g, '#4a3a70', 0, top, 64, 22); for (let x = 0; x < 64; x += 16) R(g, '#3a2c5c', x, top, 1, 22); R(g, '#3a2c5c', 0, top + 11, 64, 1);
     R(g, '#8a80b8', 0, top + 22, 64, 2); R(g, '#2e2448', 0, top + 24, 64, c.height); specks(top + 24, c.height, ['#3a3058', '#262040'], 50);
@@ -1331,7 +1467,7 @@ function makeFloor(key, tiles) {
 }
 function shadow(x, z, h, w = 7) {
   const X = Math.round(x - camX), Y = sy(z);
-  ctx.globalAlpha = Math.max(0.12, 0.3 - h / 200); ctx.fillStyle = '#2a1838';
+  ctx.globalAlpha = Math.max(0.2, 0.42 - h / 160); ctx.fillStyle = '#2a1838';
   ctx.fillRect(X - w, Y - 1, w * 2, 3); ctx.fillRect(X - w + 2, Y - 2, w * 2 - 4, 5);
   ctx.globalAlpha = 1;
 }
@@ -1387,10 +1523,14 @@ function drawItem(it) {
   else if (it.kind === 'ring') draw_(RING, it.x - 4, y - 7);
   else if (it.kind === 'munchie') draw_(MUNCHIE, it.x - 4, y - 9);
   else if (it.kind === 'gold') draw_(GOLD_LEAF, it.x - 4, y - 10);
+  else if (it.kind === 'papers' || it.kind === 'bombs') draw_(ICONS[it.kind], it.x - 4, y - 9);
   else if (it.kind === 'extra') { draw_(EXTRAS[it.sub].img, it.x - 4, y - 10); if (frame % 20 === 0) puff(it.x, y - 8, 1, ['#ffffff', '#fff6b0', '#9ae8ff'], .4); }
 }
 
 function draw() {
+  if (state === 'story') { drawStory(); return; }
+  if (state === 'map') { drawMap_(); if (invOpen) drawInventory(); return; }
+  if (state === 'results' && results && results.shopOnly) { drawShop(); return; }
   const th = lvl.theme;
   ctx.save();
   if (shake > 0) { ctx.translate(Math.round((Math.random() - .5) * shake), Math.round((Math.random() - .5) * shake)); shake *= 0.85; if (shake < 0.5) shake = 0; }
@@ -1422,15 +1562,17 @@ function draw() {
   } });
   for (const r of remotes.values()) {
     if (r.tx < -500 || r.l !== lvl.n) continue;
-    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0); } });
+    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash); } });
   }
-  list.push({ z: me.z + 0.01, d: () => { shadow(me.x, me.z, me.h); drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT); } });
+  list.push({ z: me.z + 0.01, d: () => { shadow(me.x, me.z, me.h); { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash); } });
   for (const s of lvl.eshots) list.push({ z: s.z, d: () => {
     shadow(s.x, s.z, 14, 4); const x = Math.round(s.x - camX), y = sy(s.z, 14);
     ctx.save(); ctx.translate(x, y); ctx.rotate(s.spin * 0.3); R(ctx, P.k, -4, -4, 8, 8); R(ctx, '#ff7ac8', -3, -3, 6, 6); R(ctx, '#ffd84a', -1, -5, 2, 2); ctx.restore();
   } });
   for (const s of shots) list.push({ z: s.z, d: () => {
     const x = Math.round(s.x - camX), y = sy(s.z, s.h);
+    if (s.kind === 7) { ctx.save(); ctx.translate(x, y); ctx.rotate(frame * 0.6); ctx.drawImage(ICONS.papers, -3, -3); ctx.restore(); return; }
+    if (s.kind === 8) { shadow(s.x, s.z, s.h, 4); ctx.drawImage(ICONS.bombs, x - 4, y - 4); if (frame % 3 === 0) puff(s.x, y - 4, 1, ['#ffffff', '#c8ffa0'], .3); return; }
     if (s.kind === 6) { ctx.fillStyle = P.k; circle(x, y, 4.5); ctx.fillStyle = '#7ac8ff'; circle(x, y, 3.5); ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y - 3, 2, 2); }
     else { ctx.globalAlpha = Math.min(1, s.life / 8); ctx.fillStyle = P.k; circle(x, y, 8); ctx.fillStyle = '#ffffff'; circle(x, y, 7); ctx.fillStyle = '#e8e4f4'; circle(x + 2, y + 2, 3); ctx.globalAlpha = 1; }
   } });
@@ -1457,9 +1599,10 @@ function draw() {
   if (me.tipT > 0 && state === 'play' && !banner) {
     me.tipT--;
     ctx.fillStyle = 'rgba(42,24,56,.8)'; ctx.fillRect(40, 176, W - 80, 13);
-    text('WASD MOVE  SPACE JUMP  CLICK/J HIT  SHIFT RUN', W / 2, 180, '#fff6b0', 1, 'center');
+    text('WASD MOVE  SPACE JUMP  CLICK HIT  K THROW  TAB BAG', W / 2, 180, '#fff6b0', 1, 'center');
   }
   drawHUD();
+  if (state === 'brief') drawBrief();
   if (invOpen) drawInventory();
   if (state === 'results') drawShop();
 }
@@ -1481,15 +1624,22 @@ function drawHUD() {
   R(ctx, P.k, 146, 2, 14, 14); R(ctx, '#4a3a60', 147, 3, 12, 12); ctx.drawImage(ICONS[w.icon], 148, 4);
   if (me.atkCd > 0) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(147, 3, 12, Math.round(12 * me.atkCd / w.cd)); }
   if (save.munchie > 0) { ctx.drawImage(MUNCHIE, 164, 4); text('x' + save.munchie, 174, 3, '#ff9ab8'); text('E', 176, 10, '#b0a8c0'); }
-  let bx = 212;
+  let bx = 226;
   for (const [k, ex] of [['speed', 'shatter'], ['magnet', 'kief'], ['power', 'hash']]) if (me.buffs[k] > 0 && (me.buffs[k] > 120 || frame % 10 < 6)) { ctx.drawImage(EXTRAS[ex].img, bx, 4); bx += 11; }
-  if (me.star > 0) { ctx.drawImage(GOLD_LEAF, 188, 4); R(ctx, '#ffd84a', 198, 8, Math.ceil(me.star / 540 * 20), 3); }
+  const tw = THROWS.find(t => t.id === save.throwSel) || THROWS[0];
+  ctx.drawImage(ICONS[tw.id], 186, 4); text(save.throws[tw.id] || 0, 196, 3, '#fff6b0'); text('K', 197, 10, '#b0a8c0');
+  if (me.star > 0) { ctx.drawImage(GOLD_LEAF, 212, 4); R(ctx, '#ffd84a', 198, 8, Math.ceil(me.star / 540 * 20), 3); }
   text(lvl.name[0], W - 4, 3, '#ffffff', 1, 'right');
   text(lvl.name[1], W - 4, 10, '#b0a8c0', 1, 'right');
   if (Net.online) { text('ROOM ' + Net.code + '  ' + (remotes.size + 1) + '/4', W - 4, 20, '#e4b3ff', 1, 'right'); }
   else if (Net.reconnecting) text('RECONNECTING...', W - 4, 20, '#ff8a8a', 1, 'right');
   if (!musicOn) text('MUSIC OFF', 4, 20, '#b0a8c0');
 
+  if (me.combo < 3 && state === 'play' && !banner) {
+    const next = lvl.zones.find(z => !z.cleared);
+    const goal = lvl.locked ? 'BEAT THE WAVE!' : me.cooked < 50 ? 'GOAL: GET COOKED (' + Math.round(me.cooked) + '/50%)' : !next ? 'GOAL: REACH THE SMOKE SPOT' : 'GOAL: KEEP MOVING - SMOKE SPOT AHEAD';
+    text(goal, W / 2, 22, lvl.locked ? '#ff8a8a' : '#fff6b0', 1, 'center');
+  }
   if (me.combo >= 3) {
     const col = me.combo >= 10 ? ['#c8ffa0', '#e4b3ff', '#ffd84a', '#ffffff'][Math.floor(frame / 4) % 4] : '#fff';
     text(me.combo + 'x COMBO', W / 2, 22, col, 1, 'center');
@@ -1517,33 +1667,6 @@ function drawHUD() {
   if (paused) { ctx.fillStyle = 'rgba(42,24,56,.6)'; ctx.fillRect(0, 0, W, H); text('PAUSED', W / 2, 80, '#c8ffa0', 3, 'center'); text('P OR ESC TO RESUME', W / 2, 104, '#fff', 1, 'center'); }
 }
 
-function drawInventory() {
-  ctx.fillStyle = '#2a1838'; ctx.fillRect(16, 20, W - 32, H - 34);
-  R(ctx, '#c8ffa0', 16, 20, W - 32, 1);
-  text('INVENTORY', W / 2, 25, '#c8ffa0', 2, 'center');
-  text('WEAPONS  (Q OR MOUSE WHEEL TO SWITCH)', 26, 42, '#ffd84a');
-  WEAPONS.forEach((w, i) => {
-    const has = save.weapons.includes(w.id), sel = save.weapon === w.id, x = 28 + i * 54;
-    R(ctx, sel ? '#c8ffa0' : P.k, x - 2, 51, 16, 16); R(ctx, '#4a3a60', x - 1, 52, 14, 14);
-    ctx.globalAlpha = has ? 1 : .25; ctx.drawImage(ICONS[w.icon], x + 1, 54); ctx.globalAlpha = 1;
-    
-    text(has ? w.name.split(' ').pop() : '???', x + 6, 70, has ? '#fff' : '#6a6080', 1, 'center');
-  });
-  text('ARMOR', 26, 84, '#ffd84a');
-  [...ARMORS, { id: 'pouch', name: 'STASH POUCH', icon: 'pouch' }].forEach((a, i) => {
-    const has = a.id === 'pouch' ? save.pouch : save.armor.includes(a.id), x = 28 + i * 70;
-    ctx.globalAlpha = has ? 1 : .25; ctx.drawImage(ICONS[a.icon], x, 93); ctx.globalAlpha = 1;
-    text(has ? a.name : '???', x + 12, 95, has ? '#fff' : '#6a6080');
-  });
-  text('ITEMS', 26, 112, '#ffd84a');
-  ctx.drawImage(ICONS.munchie, 28, 120); text('MUNCHIES x' + save.munchie + ' (E)', 40, 122, '#fff');
-  ctx.drawImage(ICONS.preroll, 130, 121); text('PRE-ROLL x' + save.preroll, 142, 122, '#fff');
-  ctx.drawImage(ICONS.gold, 212, 119); text('GOLD LEAF x' + save.gold, 224, 122, '#fff');
-  text('FARM FUND  ' + save.coins + ' / ' + FARM_PRICE + '    SMOKE SPOTS ' + Math.min(save.spots, SPOTS_TO_FARM) + ' / ' + SPOTS_TO_FARM, W / 2, 140, '#c8ffa0', 1, 'center');
-  R(ctx, P.k, 40, 150, W - 80, 6); R(ctx, '#ffd84a', 41, 151, Math.round((W - 82) * Math.min(1, save.coins / FARM_PRICE)), 4);
-  text('I - CLOSE', W / 2, 164, '#b0a8c0', 1, 'center');
-}
-
 function drawMap(y) {
   const n = SPOTS_TO_FARM, x0 = 36, dx = (W - 90) / n;
   R(ctx, '#6a6080', x0, y + 5, dx * n, 2);
@@ -1560,18 +1683,19 @@ function drawMap(y) {
 // ============================================================
 //  RESULTS + SHOP (between missions)
 // ============================================================
-function shopEntries() { return [...SHOP, { kind: 'ready', name: Net.online ? 'READY FOR NEXT MISSION' : 'NEXT MISSION', icon: 'puff', price: 0, desc: 'LETS GO' }]; }
+function shopEntries() { return [...SHOP, { kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP' }]; }
 function itemStatus(it) {
   if (it.kind === 'weapon' && save.weapons.includes(it.id)) return 'OWNED';
   if (it.kind === 'armor' && save.armor.includes(it.id)) return 'OWNED';
   if (it.kind === 'item' && save.pouch) return 'OWNED';
   if (it.kind === 'use' && save[it.id] >= 3) return 'MAX 3';
+  if (it.kind === 'ammo' && save.throws[it.id] >= 60) return 'FULL';
   if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (save.spots < SPOTS_TO_FARM) return 'LOCKED'; }
   if (it.kind === 'ready') return readyInfo && readyInfo.me ? 'WAITING ' + readyInfo.n + '/' + readyInfo.of : '';
   return null;
 }
 function updateShop() {
-  if (results.farmScene) { if (K.enterPressed || K.jumpPressed) results.farmScene = false; return; }
+  if (results.farmScene) { if (K.enterPressed || K.jumpPressed) { results.farmScene = false; if (results.shopOnly) openMap(); } return; }
   const list = shopEntries();
   if (K.upPressed) { shopSel = (shopSel - 1 + list.length) % list.length; SFX.tick(); }
   if (K.downPressed) { shopSel = (shopSel + 1) % list.length; SFX.tick(); }
@@ -1579,8 +1703,8 @@ function updateShop() {
   if (!(K.enterPressed || K.jumpPressed || K.attackPressed)) return;
   const it = list[shopSel];
   if (it.kind === 'ready') {
-    if (Net.online) { if (!readyInfo || !readyInfo.me) { Net.send({ t: 'ready' }); readyInfo = { me: true, n: 1, of: remotes.size + 1 }; SFX.cp(); } }
-    else startLevel(results.made ? lvl.n + 1 : lvl.n);
+    if (Net.online && !results.shopOnly) { if (!readyInfo || !readyInfo.me) { Net.send({ t: 'ready' }); readyInfo = { me: true, n: 1, of: remotes.size + 1 }; SFX.cp(); } }
+    else openMap();
     return;
   }
   const st = itemStatus(it);
@@ -1591,6 +1715,7 @@ function updateShop() {
   else if (it.kind === 'armor') save.armor.push(it.id);
   else if (it.kind === 'item') save.pouch = true;
   else if (it.kind === 'use') save[it.id]++;
+  else if (it.kind === 'ammo') save.throws[it.id] = (save.throws[it.id] || 0) + (it.id === 'papers' ? 10 : 5);
   else if (it.kind === 'farm') { save.farm = true; results.farmScene = true; SFX.flag(); }
   persist(); SFX.buy(); results.msg = 'BOUGHT ' + it.name + '!';
 }
@@ -1607,8 +1732,11 @@ function drawShop() {
     return;
   }
   const r = results;
+  if (r.shopOnly) { text('THE HEAD SHOP', W / 2, 6, '#c8ffa0', 2, 'center'); text('SPEND COINS ON GEAR... OR SAVE THEM FOR THE FARM', W / 2, 24, '#ffffff', 1, 'center'); }
+  else {
   text(r.made ? 'SMOKE SPOT ' + (lvl.n + 1) + ' REACHED!' : 'MISSION OVER', W / 2, 4, r.made ? '#c8ffa0' : '#ff8a8a', 2, 'center');
   text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA x2!' : ''), W / 2, 18, '#ffffff', 1, 'center');
+  }
   drawMap(44);
   // shop list
   text('HEAD SHOP', 8, 66, '#ffd84a', 1);
@@ -1644,6 +1772,290 @@ function loop(t) {
   while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
   draw();
   requestAnimationFrame(loop);
+}
+
+// ============================================================
+//  THROWABLES (secondary attack with ammo)
+// ============================================================
+const THROWS = [
+  { id: 'papers', name: 'ROLLING PAPERS', dmg: 1, desc: 'FAST THROWING STARS. PIERCE 2 ENEMIES', pack: 10, price: 30 },
+  { id: 'bombs', name: 'NUG BOMBS', dmg: 3, desc: 'LOB IT. BIG SMOKY BOOM HITS A CROWD', pack: 5, price: 60 },
+];
+ICONS.papers = sprite(['...k...', '..kwk..', '.kwWwk.', 'kwWwWwk', '.kwWwk.', '..kwk..', '...k...']);
+ICONS.bombs = sprite(['....kk...', '...kEEk..', '..kGGGGk.', '.kGLGGGGk', '.kGGpGGGk', '.kGGGGoGk', '..kGGGGk.', '...kkkk..']);
+function throwItem() {
+  if (state !== 'play' || me.throwCd > 0) return;
+  const t = THROWS.find(t => t.id === save.throwSel) || THROWS[0];
+  if (!(save.throws[t.id] > 0)) { popup(me.x - 20, sy(me.z) - 34, 'OUT OF ' + t.name, '#ff8a8a'); SFX.bump(); me.throwCd = 20; return; }
+  save.throws[t.id]--; me.throwCd = t.id === 'bombs' ? 40 : 16; me.atkT = 8;
+  if (t.id === 'papers') shots.push({ mine: true, kind: 7, x: me.x + me.face * 8, z: me.z, h: me.h + 10, vx: me.face * 5, life: 45, dmg: 1 + (me.buffs.power > 0 ? 1 : 0), pierce: 2, hit: new Set() });
+  else shots.push({ mine: true, kind: 8, x: me.x + me.face * 6, z: me.z, h: me.h + 14, vx: me.face * 2.4, vh: 3, life: 200, dmg: 3 + (ultra() ? 1 : 0), hit: new Set() });
+  SFX.jump();
+  Net.send({ t: 'fx', k: t.id === 'papers' ? 7 : 8, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+}
+function explode(s) {
+  shake = 8; hitstop = 3; SFX.stomp(); if (AC) noise(0.4, 0.12, AC.currentTime, 300);
+  puff(s.x, sy(s.z, 4), 30, ['#ffffff', '#e8e4f4', '#c8ffa0', '#7fe07a', '#d4c8f8'], 2.6, -0.03);
+  if (!s.mine) return;
+  for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - s.x) < 30 && Math.abs(e.z - s.z) < 16) hitEnemy(e, s.dmg, Math.sign(e.x - s.x) || 1, true);
+  for (const p of lvl.props) if (!p.broken && Math.abs(p.x - s.x) < 30 && Math.abs(p.z - s.z) < 16) breakProp(p);
+}
+
+// ============================================================
+//  WORLD MAP (pick your mission, Mario style)
+// ============================================================
+// every stop on the map looks like the area you'll play in
+const MAP_NODES = [
+  { kind: 'level', n: 0, x: 34, y: 148 },
+  { kind: 'level', n: 1, x: 78, y: 110 },
+  { kind: 'level', n: 2, x: 124, y: 146 },
+  { kind: 'shop', x: 160, y: 112 },
+  { kind: 'level', n: 3, x: 196, y: 148 },
+  { kind: 'level', n: 4, x: 232, y: 100 },
+  { kind: 'level', n: 5, x: 272, y: 136 },
+  { kind: 'farm', x: 290, y: 62 },
+];
+let mapSel = 0, mapCanvas = null, storyPage = 0, briefT = 0;
+function nodeUnlocked(nd) {
+  if (nd.kind === 'level') return nd.n <= save.spots;
+  if (nd.kind === 'shop') return true;
+  return save.spots >= SPOTS_TO_FARM;
+}
+function buildMapCanvas() {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  // sea + land
+  gradient(g, ['#5ab4f0', '#5ab4f0', '#62baf2', '#6ac0f4', '#72c6f4', '#7acbf6', '#82d0f8', '#8ad4f8']);
+  for (let i = 0; i < 60; i++) R(g, '#c8ecff', (i * 71) % W, (i * 37) % H, 5, 1);
+  const blob = (cx, cy, rx, ry, col) => { g.fillStyle = col; for (let y = -ry; y <= ry; y++) { const w = Math.round(rx * Math.sqrt(1 - (y * y) / (ry * ry))); g.fillRect(cx - w, cy + y, w * 2, 1); } };
+  blob(160, 118, 156, 70, '#2a1838'); blob(160, 118, 154, 68, '#8ad890'); blob(160, 112, 146, 58, '#a0e8a0');
+  // PARK: lollipop trees
+  blob(34, 150, 26, 16, '#7fe07a');
+  for (const [x, y, col] of [[18, 140, '#ff9ab8'], [48, 142, '#98e888'], [26, 160, '#98e888']]) { R(g, '#8a5a3a', x, y, 2, 6); blob(x + 1, y - 2, 4, 4, col); }
+  // BEACH: sand + water edge + palm
+  blob(70, 100, 30, 18, '#ffe8a8'); blob(56, 88, 14, 8, '#5ab4f0');
+  R(g, '#9a6a42', 92, 96, 2, 12); R(g, '#3fae5a', 86, 94, 14, 2); R(g, '#3fae5a', 89, 92, 8, 2);
+  // SUBURBIA: little houses
+  for (let i = 0; i < 3; i++) { const x = 108 + i * 12, y = 150 - (i % 2) * 6; R(g, '#2a1838', x - 1, y - 1, 10, 9); R(g, '#fff6f0', x, y, 8, 7); for (let k = 0; k < 5; k++) R(g, '#d06088', x - 1 + k, y - 1 - k, 10 - k * 2, 1); R(g, '#ffd84a', x + 2, y + 2, 2, 2); }
+  // HEAD SHOP: hut with a leaf sign
+  R(g, '#2a1838', 151, 100, 18, 12); R(g, '#c070ff', 152, 101, 16, 10); for (let k = 0; k < 6; k++) R(g, '#7fe07a', 150 + k, 99 - k, 20 - k * 2, 1); g.drawImage(LEAF_ICON, 157, 103);
+  // DOWNTOWN: towers
+  for (const [x, h] of [[184, 22], [192, 30], [200, 18], [207, 26]]) { R(g, '#2a1838', x - 1, 150 - h - 1, 9, h + 1); R(g, '#4a3a70', x, 150 - h, 7, h); for (let y = 150 - h + 2; y < 148; y += 4) R(g, '#ffd84a', x + 2, y, 1, 1), R(g, '#ffd84a', x + 4, y + 2, 1, 1); }
+  // MISTY WOODS: pines
+  for (const [x, y] of [[218, 98], [228, 90], [238, 96], [248, 88], [224, 108], [244, 106]]) { for (let k = 0; k < 10; k++) R(g, k % 3 ? '#2a6a3a' : '#1e4a2a', x - Math.floor(k / 2), y + k, Math.floor(k / 2) * 2 + 1, 1); R(g, '#5a3a24', x, y + 10, 1, 3); }
+  // BUZZKILL HQ: grey tower with red sign
+  R(g, '#2a1838', 263, 104, 20, 34); R(g, '#9a96b8', 264, 105, 18, 32); for (let y = 108; y < 134; y += 5) for (let x = 266; x < 280; x += 4) R(g, '#8ecbff', x, y, 2, 3); R(g, '#ff5a6a', 262, 100, 22, 5);
+  // THE FARM: fields + barn up on the hill
+  blob(290, 70, 28, 20, '#c8e888'); for (let y = 58; y < 84; y += 4) R(g, '#7fe07a', 268, y, 44, 2);
+  R(g, '#2a1838', 283, 50, 16, 13); R(g, '#e03b3b', 284, 51, 14, 11); for (let k = 0; k < 7; k++) R(g, '#8a2020', 283 + k, 50 - k, 16 - k * 2, 1); R(g, '#ffffff', 289, 56, 4, 6);
+  // the path between stops
+  for (let i = 0; i < MAP_NODES.length - 1; i++) {
+    const a = MAP_NODES[i], b = MAP_NODES[i + 1], steps = Math.round(Math.hypot(b.x - a.x, b.y - a.y) / 5);
+    for (let k = 1; k < steps; k++) { const x = Math.round(a.x + (b.x - a.x) * k / steps), y = Math.round(a.y + (b.y - a.y) * k / steps); R(g, '#2a1838', x - 1, y - 1, 4, 4); R(g, '#fff0c0', x, y, 2, 2); }
+  }
+  return c;
+}
+function nodeLabel(nd) {
+  if (nd.kind === 'shop') return 'HEAD SHOP';
+  if (nd.kind === 'farm') return 'THE POT FARM';
+  return missionName(nd.n)[0] + ' ' + missionName(nd.n)[1];
+}
+function openMap() {
+  state = 'map'; results = null; banner = null; invOpen = false;
+  const next = MAP_NODES.findIndex(nd => nd.kind === 'level' && nd.n === Math.min(save.spots, 5));
+  mapSel = next < 0 ? 0 : next;
+}
+function updateMap() {
+  const canDrive = !Net.online || isHost();
+  if (canDrive) {
+    let dir = 0;
+    if (K.nav) {
+      const cur = MAP_NODES[mapSel], score = i => { const n = MAP_NODES[i]; if (!n) return -1e9; const dx = n.x - cur.x, dy = n.y - cur.y; return K.nav === 'right' ? dx : K.nav === 'left' ? -dx : K.nav === 'up' ? -dy : dy; };
+      const a = score(mapSel - 1), b = score(mapSel + 1);
+      dir = Math.max(a, b) <= 0 ? 0 : a > b ? -1 : 1;
+      if (!dir) SFX.bump();
+    }
+    if (dir) {
+      const to = mapSel + dir;
+      if (to >= 0 && to < MAP_NODES.length && nodeUnlocked(MAP_NODES[to])) { mapSel = to; SFX.tick(); Net.send({ t: 'mapsel', i: mapSel }); }
+      else SFX.bump();
+    }
+    if (K.jumpPressed || K.enterPressed || K.attackPressed) {
+      const nd = MAP_NODES[mapSel];
+      if (nd.kind === 'level') { if (Net.online) Net.send({ t: 'pick', n: nd.n }); else startLevel(nd.n); SFX.cp(); }
+      else if (nd.kind === 'shop') openShop();
+      else if (nd.kind === 'farm') {
+        if (save.farm) { results = { shopOnly: true, farmScene: true }; state = 'results'; }
+        else if (save.coins >= FARM_PRICE) { save.coins -= FARM_PRICE; save.farm = true; persist(); SFX.flag(); results = { shopOnly: true, farmScene: true }; state = 'results'; }
+        else { banner = { t: 120, a: 'NOT ENOUGH HASH COINS', b: 'THE FARM COSTS ' + FARM_PRICE + ' - YOU HAVE ' + save.coins }; SFX.bump(); }
+      }
+    }
+  } else if (Net.mapCursor !== undefined) mapSel = Net.mapCursor;
+  if (K.shopPressed) openShop();
+  K.nav = null; K.shopPressed = false;
+}
+function openShop() { results = { shopOnly: true, made: false }; state = 'results'; shopSel = 0; }
+function drawMap_() {
+  if (!mapCanvas) mapCanvas = buildMapCanvas();
+  ctx.drawImage(mapCanvas, 0, 0);
+  R(ctx, 'rgba(42,24,56,.8)', 0, 0, W, 16);
+  text('WORLD 1 - ROAD TO THE FARM', 6, 5, '#c8ffa0');
+  ctx.drawImage(COIN, W - 70, 3); text(save.coins + ' / ' + FARM_PRICE, W - 4, 5, '#ffd84a', 1, 'right');
+  MAP_NODES.forEach((nd, i) => {
+    const open = nodeUnlocked(nd), done = nd.kind === 'level' && nd.n < save.spots;
+    const col = nd.kind === 'shop' ? '#c070ff' : nd.kind === 'farm' ? (save.farm ? '#7fe07a' : '#ffd84a') : done ? '#7fe07a' : open ? '#ffd84a' : '#8a809a';
+    R(ctx, P.k, nd.x - 5, nd.y - 5, 11, 11); R(ctx, col, nd.x - 4, nd.y - 4, 9, 9); R(ctx, '#ffffff', nd.x - 3, nd.y - 3, 3, 2);
+    if (nd.kind === 'level') text((nd.n + 1) + '', nd.x + 1, nd.y - 2, P.k, 1, 'center');
+    if (!open) { R(ctx, P.k, nd.x - 2, nd.y - 1, 5, 4); }
+    if (done) text('+', nd.x + 7, nd.y - 10, '#c8ffa0');
+  });
+  // the crew stands on the selected stop
+  const nd = MAP_NODES[mapSel], bob = Math.floor(frame / 15) % 2;
+  ctx.drawImage(PLAYER[me.color || 0][bob ? 1 : 0], nd.x - 8, nd.y - 24);
+  let k = 0; for (const r of remotes.values()) { ctx.drawImage(PLAYER[r.color][0], nd.x - 20 - k * 10, nd.y - 22); k++; }
+  // arrows toward the stops you can walk to
+  for (const d of [-1, 1]) { const t = MAP_NODES[mapSel + d]; if (!t || !nodeUnlocked(t)) continue; const ang = Math.atan2(t.y - nd.y, t.x - nd.x), ax = nd.x + Math.cos(ang) * 14, ay = nd.y + Math.sin(ang) * 14; if (frame % 40 < 28) { R(ctx, P.k, Math.round(ax) - 2, Math.round(ay) - 2, 5, 5); R(ctx, '#ffffff', Math.round(ax) - 1, Math.round(ay) - 1, 3, 3); } }
+  // info panel
+  R(ctx, 'rgba(42,24,56,.92)', 0, H - 34, W, 34); R(ctx, '#c8ffa0', 0, H - 34, W, 1);
+  text(nodeLabel(nd), 6, H - 30, '#ffd84a', 1);
+  if (nd.kind === 'level') {
+    const th = THEMES[THEME_ORDER[nd.n % THEME_ORDER.length]];
+    text(nd.n < save.spots ? 'SMOKE SPOT REACHED - REPLAY FOR COINS' : 'GOAL: GET COOKED (50%) + REACH THE SMOKE SPOT', 6, H - 21, '#ffffff');
+    text('WATCH OUT:', 6, H - 12, '#b0a8c0');
+    [...new Set(th.enemies)].forEach((e, i) => { const img = ENEMY_IMG[e][0]; ctx.drawImage(img, 50 + i * 12, H - 2 - Math.round(img.height * 0.5), Math.round(img.width * 0.5), Math.round(img.height * 0.5)); });
+  } else if (nd.kind === 'shop') text('GEAR, AMMO + SNACKS. ANYONE CAN PRESS H ANYTIME ON THE MAP', 6, H - 21, '#ffffff');
+  else text(save.farm ? 'YOU OWN IT. HOME SWEET HOME' : 'COSTS ' + FARM_PRICE + ' HASH COINS. YOU HAVE ' + save.coins, 6, H - 21, '#ffffff');
+  const hint = Net.online && !isHost() ? 'HOST PICKS THE MISSION   H SHOP   TAB BAG' : 'ARROWS MOVE   SPACE GO   H SHOP   TAB BAG';
+  text(hint, W - 4, H - 10, '#c8ffa0', 1, 'right');
+  if (banner) { R(ctx, 'rgba(42,24,56,.85)', 0, 70, W, 30); text(banner.a, W / 2, 74, '#ff8a8a', 2, 'center'); text(banner.b, W / 2, 90, '#fff', 1, 'center'); }
+}
+
+// ============================================================
+//  STORY INTRO
+// ============================================================
+const STORY = [
+  { title: 'THE CREW', text: 'RASTA, SNAPBACK, BUCKET AND AFRO. BEST HOMIES. THEY HAD THE BEST SMOKE SPOT IN TOWN.' },
+  { title: 'THEN IT HAPPENED', text: 'BUZZKILL CORP BULLDOZED IT. NOW COPS, KARENS AND EVEN THE SQUIRRELS ARE OUT TO HARSH EVERYBODYS BUZZ.' },
+  { title: 'A DREAM', text: 'GRANDMA KUSHS OLD POT FARM IS FOR SALE: ' + FARM_PRICE + ' HASH COINS. A PLACE NOBODY CAN EVER TAKE AWAY.' },
+  { title: 'THE PLAN', text: 'CROSS THE LAND. BEAT THE BUZZKILLS. GET COOKED AT EVERY SMOKE SPOT. STACK HASH COINS. BUY THE FARM!' },
+];
+function updateStory() {
+  if (K.jumpPressed || K.enterPressed || K.attackPressed) { storyPage++; SFX.tick(); }
+  if (K.escPressed || storyPage >= STORY.length) { save.intro = true; persist(); openMap(); }
+  K.escPressed = false;
+}
+function drawStory() {
+  const pg = STORY[Math.min(storyPage, STORY.length - 1)], th = THEMES.park;
+  if (storyPage === 0 || storyPage === 1) {
+    ctx.drawImage(th.sky, 0, 0); drawLayer(th.far, 0, 0, 0, -60); drawLayer(th.near, 0, 0, 0, -60);
+    R(ctx, '#ecd0a0', 0, 130, W, 62);
+    if (storyPage === 1) { ctx.fillStyle = 'rgba(255,60,80,.18)'; ctx.fillRect(0, 0, W, H); }
+    // couch + homies
+    const cx = storyPage === 0 ? 110 : 60;
+    R(ctx, P.k, cx, 116, 90, 24); R(ctx, '#c070ff', cx + 1, 117, 88, 22); R(ctx, '#e0a8ff', cx + 1, 117, 88, 3);
+    for (let i = 0; i < 4; i++) ctx.drawImage(PLAYER[i][storyPage === 1 ? 3 : 0], cx + 6 + i * 20, 100 + (storyPage === 1 ? -6 - (i % 2) * 4 : 0));
+    if (storyPage === 0 && frame % 8 === 0) puff(cx + 45, 96, 1, ['#ffffff', '#e8e4f4'], .4, -0.04);
+    if (storyPage === 1) { // bulldozer rolling in + buzzkills
+      const bx = 170 + Math.sin(frame / 10) * 3;
+      R(ctx, P.k, bx, 96, 80, 40); R(ctx, '#ffd84a', bx + 1, 97, 78, 30); R(ctx, P.k, bx + 40, 82, 30, 16); R(ctx, '#8ecbff', bx + 42, 84, 26, 12);
+      R(ctx, P.k, bx - 14, 100, 16, 34); R(ctx, '#9aa0b8', bx - 12, 102, 12, 30);
+      for (let i = 0; i < 4; i++) { R(ctx, P.k, bx + 6 + i * 18, 126, 14, 14); R(ctx, '#5a5a78', bx + 8 + i * 18, 128, 10, 10); }
+      R(ctx, '#ff5a6a', bx + 6, 102, 50, 10); drawStr('BUZZKILL', bx + 12, 105, '#ffffff', 1);
+      ctx.drawImage(ENEMY_IMG.cop[1], 262, 116); ctx.drawImage(ENEMY_IMG.karen[1], 280, 116); ctx.drawImage(ENEMY_IMG.squirrel[0], 24, 128);
+    }
+  } else if (storyPage === 2) {
+    gradient(ctx, ['#9ad8ff', '#aee0ff', '#c2e8ff', '#d6eeff', '#e8f0ff', '#fff6d8', '#fff0c0', '#ffe8a8']);
+    for (let y = 120; y < H; y += 8) { R(ctx, '#7fe07a', 0, y, W, 5); R(ctx, '#5ab860', 0, y + 5, W, 3); }
+    for (let i = 0; i < 12; i++) ctx.drawImage(PLANT, 10 + i * 26, 108 + (i % 2) * 6);
+    R(ctx, P.k, 190, 66, 70, 50); R(ctx, '#e03b3b', 191, 67, 68, 48); for (let k = 0; k < 20; k++) R(ctx, '#8a2020', 188 + k * 1.5, 66 - k, 76 - k * 3, 1);
+    R(ctx, '#ffffff', 216, 90, 18, 26); R(ctx, P.k, 224, 90, 2, 26);
+    R(ctx, P.k, 80, 72, 70, 22); R(ctx, '#ffe0a0', 81, 73, 68, 20); drawStr('FOR SALE', 99, 76, '#6a4428', 1); drawStr(FARM_PRICE + ' COINS', 91, 84, '#6a4428', 1); R(ctx, P.k, 112, 94, 3, 24);
+    ctx.drawImage(LEGENDS[1].img, 160, 100);
+  } else {
+    if (!mapCanvas) mapCanvas = buildMapCanvas();
+    ctx.drawImage(mapCanvas, 0, 0);
+    for (let i = 0; i < 4; i++) ctx.drawImage(PLAYER[i][Math.floor(frame / 12 + i) % 2 ? 1 : 0], 14 + i * 12, 118);
+    ctx.fillStyle = 'rgba(255,216,74,.5)'; ctx.fillRect(282, 44, 18, 2);
+  }
+  R(ctx, 'rgba(42,24,56,.92)', 0, 0, W, 22); text(pg.title, W / 2, 4, '#c8ffa0', 2, 'center');
+  R(ctx, 'rgba(42,24,56,.92)', 0, H - 38, W, 38);
+  wrap(pg.text, 8, H - 33, 76, '#ffffff');
+  text('SPACE: NEXT   ESC: SKIP', W - 4, H - 9, '#b0a8c0', 1, 'right');
+  text((storyPage + 1) + '/' + STORY.length, 6, H - 9, '#b0a8c0');
+}
+
+// ============================================================
+//  MISSION BRIEFING (shows before every mission)
+// ============================================================
+function drawBrief() {
+  const th = lvl.theme;
+  R(ctx, 'rgba(42,24,56,.9)', 30, 34, W - 60, 118); R(ctx, '#c8ffa0', 30, 34, W - 60, 1); R(ctx, '#c8ffa0', 30, 151, W - 60, 1);
+  text(lvl.name[0], W / 2, 40, '#b0a8c0', 1, 'center');
+  text(lvl.name[1], W / 2, 50, '#c8ffa0', 2, 'center');
+  text('1. GET COOKED TO 50% - NUGS, SMOKE RINGS, KNOCKOUTS', 40, 72, '#ffffff');
+  text('2. BEAT EACH WAVE OF BUZZKILLS', 40, 82, '#ffffff');
+  text('3. CHILL AT THE SMOKE SPOT AT THE END', 40, 92, '#ffffff');
+  text('BONUS: 100% ULTRA COOKED = DOUBLE COINS', 40, 104, '#e4b3ff');
+  text('WATCH OUT FOR:', 40, 118, '#ffd84a');
+  [...new Set(th.enemies)].forEach((e, i) => ctx.drawImage(ENEMY_IMG[e][0], 104 + i * 22, 132 - ENEMY_IMG[e][0].height));
+  if (frame % 50 < 36) text(Net.online ? 'STARTING...' : 'PRESS SPACE TO START', W / 2, 140, '#fff6b0', 1, 'center');
+}
+
+// ============================================================
+//  INVENTORY (the bag)
+// ============================================================
+let invRow = 0, invCol = 0;
+const INV_ROWS = () => [
+  { label: 'MELEE', items: WEAPONS.map(w => ({ kind: 'weapon', def: w, icon: ICONS[w.icon], has: save.weapons.includes(w.id), on: save.weapon === w.id })) },
+  { label: 'THROW', items: THROWS.map(t => ({ kind: 'throw', def: t, icon: ICONS[t.id], has: save.throws[t.id] > 0, on: save.throwSel === t.id, count: save.throws[t.id] || 0 })) },
+  { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'MICE + SQUIRRELS CANT STEAL' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
+  { label: 'ITEMS', items: [
+    { kind: 'munchie', def: { name: 'MUNCHIES', desc: 'SELECT TO EAT: HEAL 2 HEARTS (OR PRESS E)' }, icon: ICONS.munchie, has: save.munchie > 0, count: save.munchie },
+    { kind: 'info', def: { name: 'PRE-ROLL', desc: 'USED AUTOMATICALLY AT THE START OF YOUR NEXT MISSION' }, icon: ICONS.preroll, has: save.preroll > 0, count: save.preroll },
+    { kind: 'info', def: { name: 'GOLDEN LEAF', desc: 'USED AUTOMATICALLY AT THE START OF YOUR NEXT MISSION' }, icon: ICONS.gold, has: save.gold > 0, count: save.gold },
+  ] },
+];
+function updateInventory() {
+  const rows = INV_ROWS();
+  if (K.nav === 'up') invRow = (invRow + rows.length - 1) % rows.length;
+  if (K.nav === 'down') invRow = (invRow + 1) % rows.length;
+  if (K.nav === 'left') invCol--; if (K.nav === 'right') invCol++;
+  if (K.nav) SFX.tick();
+  const row = rows[invRow]; invCol = (invCol + row.items.length) % row.items.length;
+  if (K.jumpPressed || K.enterPressed || K.attackPressed) {
+    const it = row.items[invCol];
+    if (!it.has) SFX.bump();
+    else if (it.kind === 'weapon') { save.weapon = it.def.id; persist(); SFX.buy(); }
+    else if (it.kind === 'throw') { save.throwSel = it.def.id; persist(); SFX.buy(); }
+    else if (it.kind === 'munchie') useMunchies();
+  }
+  K.nav = null;
+}
+function drawInventory() {
+  R(ctx, '#2a1838', 8, 18, W - 16, H - 24); R(ctx, '#c8ffa0', 8, 18, W - 16, 1);
+  text('YOUR BAG', 16, 23, '#c8ffa0', 2);
+  text('ARROWS PICK   SPACE EQUIP   TAB CLOSE', W - 16, 26, '#b0a8c0', 1, 'right');
+  const rows = INV_ROWS();
+  rows.forEach((row, r) => {
+    const y = 44 + r * 26;
+    text(row.label, 16, y + 5, r === invRow ? '#ffd84a' : '#b0a8c0');
+    row.items.forEach((it, c) => {
+      const x = 56 + c * 22, sel = r === invRow && c === invCol;
+      R(ctx, sel ? '#ffd84a' : it.on ? '#7fe07a' : P.k, x - 1, y - 1, 20, 20); R(ctx, '#4a3a60', x, y, 18, 18);
+      ctx.globalAlpha = it.has ? 1 : .2; ctx.drawImage(it.icon, x + 9 - Math.min(8, it.icon.width / 2), y + 9 - Math.min(8, it.icon.height / 2), Math.min(16, it.icon.width), Math.min(16, it.icon.height)); ctx.globalAlpha = 1;
+      if (it.count !== undefined) text(it.count, x + 17, y + 12, '#ffffff', 1, 'right');
+    });
+  });
+  const it = rows[invRow].items[invCol];
+  R(ctx, '#4a3a60', 172, 42, W - 188, 98);
+  text(it.has ? it.def.name : '??? LOCKED', 178, 48, it.has ? '#ffd84a' : '#8a809a');
+  wrap(it.has ? it.def.desc : 'FIND IT IN A CHEST OR BUY IT AT THE HEAD SHOP', 178, 60, 30, '#ffffff');
+  if (it.kind === 'weapon' && it.has) { text('DAMAGE ' + it.def.dmg, 178, 96, '#ff9ab8'); text('REACH ' + (REACH[it.def.id] || 30), 178, 106, '#9ae8ff'); }
+  if (it.on) text('EQUIPPED', 178, 126, '#7fe07a');
+  R(ctx, '#4a3a60', 16, 150, W - 32, 30);
+  text('THE GOAL: BUY THE POT FARM', 22, 154, '#c8ffa0');
+  text('SMOKE SPOTS ' + Math.min(save.spots, SPOTS_TO_FARM) + '/' + SPOTS_TO_FARM, W - 22, 154, '#ffffff', 1, 'right');
+  R(ctx, P.k, 22, 166, W - 44, 7); R(ctx, '#ffd84a', 23, 167, Math.round((W - 46) * Math.min(1, save.coins / FARM_PRICE)), 5);
+  text(save.coins + ' / ' + FARM_PRICE + ' HASH COINS', W / 2, 167, '#ffffff', 1, 'center');
 }
 
 // ============================================================
@@ -1703,8 +2115,10 @@ function onNet(m) {
     case 'fx': {
       const r = remotes.get(m.id); if (!r || r.l !== lvl.n) break;
       r.atkT = 12;
+      if (m.k < 5) r.slash = { t: 12, max: 12, heavy: false, kind: (WEAPONS[m.k] || WEAPONS[0]).id, air: m.h > 6 };
+      if (m.k === 7) shots.push({ mine: false, kind: 7, x: m.x + m.f * 8, z: m.y, h: m.h + 10, vx: m.f * 5, life: 45 });
+      if (m.k === 8) shots.push({ mine: false, kind: 8, x: m.x + m.f * 6, z: m.y, h: m.h + 14, vx: m.f * 2.4, vh: 3, life: 200 });
       if (m.k === 5) shots.push({ mine: false, x: m.x + m.f * 10, z: m.y, h: m.h + 8, vx: m.f * 3.6, life: 26, kind: 5 });
-      if (m.k === 2) shots.push({ mine: false, x: m.x + m.f * 12, z: m.y, h: m.h + 10, vx: m.f * 4.2, life: 40, kind: 6 });
       break;
     }
     case 'es': if (!isHost()) applySnapshot(m); break;
@@ -1725,6 +2139,8 @@ function onNet(m) {
     case 'allfin': toResults(); break;
     case 'ready': if (readyInfo) { readyInfo.n = m.n; readyInfo.of = m.of; } else readyInfo = { me: false, n: m.n, of: m.of }; break;
     case 'level': startLevel(m.n); break;
+    case 'map': openMap(); readyInfo = null; break;
+    case 'mapsel': Net.mapCursor = m.i; break;
     case 'emote': { const r = remotes.get(m.id); if (r) r.emote = { e: m.e % EMOTES.length, t: 120 }; break; }
   }
 }
@@ -1748,11 +2164,11 @@ function startGame() {
   $('menu').style.display = 'none';
   document.body.classList.add('playing');
   running = true;
-  startLevel(Net.online ? Net.level : Math.min(save.spots, 99));
-  if (Net.online) {
-    banner = { t: 260, a: 'ROOM CODE: ' + Net.code, b: 'SEND THIS CODE (OR LINK) TO YOUR CREW' };
-    if (Net.phase === 'shop') { results = { made: false, earned: 0, lost: 0, spotBonus: 0, ultraBonus: 0, cooked: 0, kills: 0, best: 0, msg: 'CREW IS SHOPPING - JOIN THEM' }; state = 'results'; }
-  }
+  if (Net.online && Net.phase === 'play') startLevel(Net.level);
+  else if (Net.online && Net.phase === 'shop') { results = { made: false, earned: 0, lost: 0, spotBonus: 0, ultraBonus: 0, cooked: 0, kills: 0, best: 0, msg: 'CREW IS SHOPPING - JOIN THEM' }; state = 'results'; }
+  else if (!save.intro) { state = 'story'; storyPage = 0; }
+  else openMap();
+  if (Net.online) setTimeout(() => { banner = { t: 300, a: 'ROOM CODE: ' + Net.code, b: 'SEND THIS CODE (OR LINK) TO YOUR CREW' }; }, 50);
   requestAnimationFrame(loop);
 }
 function busy(on) { ['solo', 'create', 'join'].forEach(id => $(id).disabled = on); }
@@ -1762,7 +2178,7 @@ async function goOnline(msg) {
   catch (e) { $('err').textContent = e.message.toUpperCase(); busy(false); }
 }
 $('solo').onclick = () => { Net.name = getName(); startGame(); };
-$('create').onclick = () => { Net.name = getName(); goOnline({ t: 'create', name: Net.name, level: Math.min(save.spots, 99) }); };
+$('create').onclick = () => { Net.name = getName(); goOnline({ t: 'create', name: Net.name, level: 0 }); };
 $('join').onclick = () => {
   const code = $('code').value.trim().toUpperCase();
   if (code.length < 5) { $('err').textContent = 'ENTER THE 5-LETTER ROOM CODE'; return; }
@@ -1774,5 +2190,5 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('err').textContent = 'ENTER YOUR NAME AND PRESS JOIN'; }
 
 lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, K, remotes, Net, startLevel, toResults };
+window.__KQ = { get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, K, remotes, Net, startLevel, toResults };
 })();

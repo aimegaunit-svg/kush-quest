@@ -129,7 +129,8 @@ function checkProgress(room) {
     room.phase = 'shop';
     broadcast(room, { t: 'allfin' });
   } else if (room.phase === 'shop' && [...room.players.keys()].every(id => room.ready.has(id))) {
-    startLevel(room, room.level + 1);
+    room.phase = 'map'; room.ready.clear();
+    broadcast(room, { t: 'map' });
   }
 }
 
@@ -141,7 +142,7 @@ function handle(client, m) {
       if (client.room) return;
       if (rooms.size >= MAX_ROOMS) return client.send({ t: 'err', msg: 'Server is full, try again later' });
       const code = makeCode();
-      rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'play', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0 });
+      rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'map', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0 });
       enter(client, code, cleanName(m.name));
       break;
     }
@@ -197,6 +198,13 @@ function handle(client, m) {
       if (h) h.client.send({ ...m, id: client.id });
       break;
     }
+    case 'pick': // the host picks a level on the world map
+      if (!room || room.phase !== 'map' || client.id !== room.host) return;
+      startLevel(room, m.n);
+      break;
+    case 'mapsel': // host's cursor on the world map, so the crew can watch
+      if (room && client.id === room.host) broadcast(room, { t: 'mapsel', i: m.i | 0 }, client.id);
+      break;
     case 'emote':
       if (room) broadcast(room, { t: 'emote', id: client.id, e: m.e | 0 }, client.id);
       break;

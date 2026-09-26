@@ -34,16 +34,18 @@
       updrafts: [], gusts: [], gulls: [], pelicans: [], coinsArr: [], caught: null
     };
 
+    let seed = T.newSeed(), R = T.rng(seed);
+    function reseed(sd) { seed = sd; R = T.rng(sd); st.updrafts = []; st.gusts = []; st.gulls = []; st.pelicans = []; st.coinsArr = []; seedWorld(); }
     function seedWorld() {
       let p = 200;
       while (p < st.finishDist - 150) {
-        const roll = Math.random();
-        if (roll < 0.3) st.updrafts.push({ p, y: 40 + Math.random() * 100, w: 60 });
-        else if (roll < 0.5) st.gusts.push({ p, dir: Math.random() < 0.5 ? 1 : -1, w: 50 });
-        else if (roll < 0.7) st.gulls.push({ p, y: 30 + Math.random() * 120 });
-        else if (roll < 0.82) st.pelicans.push({ p, y: 40 + Math.random() * 100 });
-        else st.coinsArr.push({ p, y: 30 + Math.random() * 130, got: false });
-        p += 90 + Math.random() * 120;
+        const roll = R();
+        if (roll < 0.3) st.updrafts.push({ p, y: 40 + R() * 100, w: 60 });
+        else if (roll < 0.5) st.gusts.push({ p, dir: R() < 0.5 ? 1 : -1, w: 50 });
+        else if (roll < 0.7) st.gulls.push({ p, y: 30 + R() * 120 });
+        else if (roll < 0.82) st.pelicans.push({ p, y: 40 + R() * 100 });
+        else st.coinsArr.push({ p, y: 30 + R() * 130, got: false });
+        p += 90 + R() * 120;
       }
     }
     seedWorld();
@@ -81,7 +83,16 @@
       if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
+      if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
     };
+    const sendInput = T.inputSender(net);
+    function freeing() { return keys.has('e') || mouseDown; }
+    // any crewmate can tap to free a pelican-grabbed plane
+    function anyFreeing() {
+      if (freeing()) return true;
+      for (const v of remoteInputs.values()) if (v.free) return true;
+      return false;
+    }
 
     function combinedLean() {
       if (soloMode) return 0;
@@ -119,7 +130,7 @@
 
     let running = false;
     const intro = T.makeStartGate(ctx, {
-      save, gameKey: 'pp', seenKey: 'seenPaperPlane', canvas, net, title: 'PAPER PLANE',
+      save, gameKey: 'pp', seenKey: 'seenPaperPlane', canvas, net, seed, onSeed: reseed, title: 'PAPER PLANE',
       lines: soloMode
         ? ['Hold SPACE/click to DIVE (gain speed).', 'Release to PULL UP (gain height).', 'Ride updrafts, dodge gulls & pelicans!']
         : ['Pilot: hold to dive, release to climb.', 'Others: A/D to lean & grab coins —', "don't all lean the same way!"]
@@ -144,11 +155,27 @@
       drawHud();
       if (isHost && net) {
         st._bT = (st._bT || 0) + dt;
-        if (st._bT > 0.1) { st._bT = 0; net.send({ type: 'state', y: st.y, vy: st.vy, dist: st.dist, wet: st.wet, coins: st.coins }); }
-      } else if (net) net.send({ type: 'input', dive: diving(), lean: leanInput() });
+        if (st._bT > 0.1) { st._bT = 0; net.send(snapshot()); }
+      } else if (net) sendInput({ type: 'input', dive: diving(), lean: leanInput(), free: freeing() });
     }
 
-    function applyRemoteState(p) { st.y = p.y; st.vy = p.vy; st.dist = p.dist; st.wet = p.wet; st.coins = p.coins; }
+    function snapshot() {
+      return { type: 'state', y: st.y, vy: st.vy, vx: st.vx, dist: st.dist, wet: st.wet, coins: st.coins, caught: !!st.caught,
+        gl: T.flagIdx(st.gulls, 'hit'), pe: T.flagIdx(st.pelicans, 'hit'), co: T.flagIdx(st.coinsArr, 'got'),
+        np: st.pelicans.length, nu: st.updrafts.length };
+    }
+    function applyRemoteState(p) {
+      st.y = p.y; st.vy = p.vy; st.vx = p.vx; st.dist = p.dist; st.wet = p.wet; st.coins = p.coins;
+      st.caught = p.caught ? (st.caught || { t: 0 }) : null;
+      while (p.np && st.pelicans.length < p.np) st.pelicans.push({ p: st.dist + 110, y: st.y });
+      while (p.nu && st.updrafts.length < p.nu) st.updrafts.push({ p: st.dist + 90, y: st.y, w: 70 });
+      T.applyFlags(st.gulls, 'hit', p.gl); T.applyFlags(st.pelicans, 'hit', p.pe); T.applyFlags(st.coinsArr, 'got', p.co);
+    }
+    function applyEnd(p) {
+      if (st.ended) return;
+      applyRemoteState(p.state || {});
+      st.dunked = !!p.dunked; st.coins = p.coins; st.score = p.score; st.wonAwards = p.awards || []; st.ended = true;
+    }
 
     function step(dt) {
       const dive = pilotDive();
@@ -175,7 +202,7 @@
 
       for (const g of st.gulls) if (!g.hit && Math.abs(g.p - st.dist) < 8 && Math.abs(g.y - st.y) < 8) { g.hit = true; st.vy += 30; st.wonAwardsHit = true; T.noise(0.1, 0.15); }
       for (const p of st.pelicans) if (!p.hit && !st.caught && Math.abs(p.p - st.dist) < 8 && Math.abs(p.y - st.y) < 10) { p.hit = true; st.caught = { t: 0 }; T.tone(180, 0.3, 'square', 0.2); }
-      if (st.caught) { st.caught.t += dt; st.y -= 10 * dt; if (keys.has('e') || mouseDown) st.caught.freeT = (st.caught.freeT || 0) + dt; if ((st.caught.freeT || 0) > 0.6 || st.caught.t > 2.5) st.caught = null; }
+      if (st.caught) { st.caught.t += dt; st.y -= 10 * dt; if (anyFreeing()) st.caught.freeT = (st.caught.freeT || 0) + dt; if ((st.caught.freeT || 0) > 0.6 || st.caught.t > 2.5) st.caught = null; }
 
       for (const c of st.coinsArr) if (!c.got && Math.abs(c.p - st.dist) < 8 && Math.abs(c.y - st.y) < 10) { c.got = true; st.coins += 2; T.tone(900, 0.06, 'square', 0.08); }
 
@@ -196,6 +223,7 @@
       if (st.wet < 0.2) st.wonAwards.push('BONE DRY — stayed high & dry');
       if (st.coins >= 10) st.wonAwards.push('COIN GLIDER');
       st.score += st.coins * 2;
+      if (net && isHost) net.send({ type: 'end', dunked, coins: st.coins, score: st.score, awards: st.wonAwards, state: snapshot() });
     }
 
     function drawSky() {

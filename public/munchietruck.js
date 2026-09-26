@@ -33,12 +33,14 @@
       ended: false, wonAwards: [], customers: [], carts: [], selSnack: SNACKS[0], throwCooldown: 0
     };
 
+    let seed = T.newSeed(), R = T.rng(seed);
+    function reseed(sd) { seed = sd; R = T.rng(sd); st.customers = []; st.carts = []; seedRoute(); }
     function seedRoute() {
       let p = 200;
       while (p < st.finishDist - 150) {
-        if (Math.random() < 0.75) st.customers.push({ p, side: Math.random() < 0.5 ? -1 : 1, snack: SNACKS[(Math.random() * SNACKS.length) | 0], served: false });
-        else st.carts.push({ p, side: Math.random() < 0.5 ? -1 : 1, hit: false });
-        p += 60 + Math.random() * 90;
+        if (R() < 0.75) st.customers.push({ p, side: R() < 0.5 ? -1 : 1, snack: SNACKS[(R() * SNACKS.length) | 0], served: false });
+        else st.carts.push({ p, side: R() < 0.5 ? -1 : 1, hit: false });
+        p += 60 + R() * 90;
       }
     }
     seedRoute();
@@ -49,7 +51,7 @@
     function onKeyDown(e) { keys.add(e.key.toLowerCase()); if (e.key >= '1' && e.key <= '4') st.selSnack = SNACKS[+e.key - 1]; }
     function onKeyUp(e) { keys.delete(e.key.toLowerCase()); }
     function onMouseMove(e) { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (W / r.width); mouse.y = (e.clientY - r.top) * (H / r.height); }
-    function onMouseDown() { mouse.down = true; }
+    function onMouseDown() { mouse.down = true; mouse.clicked = true; }
     function onMouseUp() { mouse.down = false; }
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -100,7 +102,16 @@
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'throw' && isHost) doThrow(payload.side, payload.snack);
+      if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
     };
+    const sendInput = T.inputSender(net);
+    // Online: the driver is whoever sits in seat 0 (swap events move it). The host simulates with that
+    // player's relayed input; everyone else in the truck is a thrower.
+    function iAmDriver() { return soloMode || !net || T.seatIsMine(seats[0], net); }
+    function seatDriverInput() {
+      if (!net || T.seatIsMine(seats[0], net)) return driverInput();
+      return remoteInputs.get(seats[0].player && seats[0].player.id) || {};
+    }
 
     const swap = T.makeSwapRunner();
     let nextSwapAt = 900 + Math.random() * 700;
@@ -119,7 +130,7 @@
 
     let running = false;
     const intro = T.makeStartGate(ctx, {
-      save, gameKey: 'mt', seenKey: 'seenMunchieTruck', canvas, net, title: 'MUNCHIE TRUCK',
+      save, gameKey: 'mt', seenKey: 'seenMunchieTruck', canvas, net, seed, onSeed: reseed, title: 'MUNCHIE TRUCK',
       lines: soloMode
         ? ['WASD/arrows to drive, SHIFT/SPACE', 'to handbrake-drift corners.', '1-4 pick snack, click to throw', 'at matching-color customers!']
         : ['Driver: WASD + SHIFT to drift.', 'Throwers: aim with MOUSE, click', 'to throw matching-color snacks.']
@@ -145,16 +156,28 @@
       drawHud();
       if (isHost && net) {
         st._bT = (st._bT || 0) + dt;
-        if (st._bT > 0.1) { st._bT = 0; net.send({ type: 'state', x: st.x, y: st.y, ang: st.ang, dist: st.dist, coins: st.coins, combo: st.combo }); }
+        if (st._bT > 0.1) { st._bT = 0; net.send(snapshot()); }
       } else if (net) {
-        net.send({ type: 'input', ...driverInput() });
+        sendInput({ type: 'input', ...driverInput() });
       }
     }
 
-    function applyRemoteState(p) { st.x = p.x; st.y = p.y; st.ang = p.ang; st.dist = p.dist; st.coins = p.coins; st.combo = p.combo; }
+    function snapshot() {
+      return { type: 'state', x: st.x, y: st.y, ang: st.ang, dist: st.dist, coins: st.coins, combo: st.combo, angry: st.angry, speed: st.speed,
+        cu: T.flagIdx(st.customers, 'served'), ca: T.flagIdx(st.carts, 'hit') };
+    }
+    function applyRemoteState(p) {
+      st.x = p.x; st.y = p.y; st.ang = p.ang; st.dist = p.dist; st.coins = p.coins; st.combo = p.combo; st.angry = p.angry; st.speed = p.speed;
+      T.applyFlags(st.customers, 'served', p.cu); T.applyFlags(st.carts, 'hit', p.ca);
+    }
+    function applyEnd(p) {
+      if (st.ended) return;
+      applyRemoteState(p.state || {});
+      st.coins = p.coins; st.score = p.score; st.bestCombo = p.bestCombo; st.wonAwards = p.awards || []; st.ended = true;
+    }
 
     function step(dt) {
-      const inp = driverInput();
+      const inp = seatDriverInput();
       const ACC = 60, TURN = 2.4;
       if (inp.throttle) st.speed += ACC * dt;
       if (inp.brake) st.speed -= ACC * dt * 1.4;
@@ -186,14 +209,17 @@
 
     function handleLocalThrow(dt) {
       // solo: auto-throw confirm when near a customer (press E/click)
-      const wantThrow = mouse.down;
+      // a quick click can go down+up between two frames, so a click is latched until it's used
+      const wantThrow = mouse.down || mouse.clicked;
       if (!wantThrow || st.throwCooldown > 0) return;
+      mouse.clicked = false;
       if (soloMode) {
         const near = st.customers.find(c => !c.served && Math.abs(c.p - st.dist) < 16);
         if (near) { doThrow(near.side, st.selSnack); st.throwCooldown = 0.25; }
         return;
       }
-      // multi: any non-driver seat throws toward mouse/touch aim position
+      // multi: only non-driver seats throw (toward mouse/touch aim position)
+      if (net && iAmDriver()) return;
       const side = mouse.x < W / 2 ? -1 : 1;
       if (isHost) doThrow(side, st.selSnack);
       else if (net) net.send({ type: 'throw', side, snack: st.selSnack });
@@ -220,6 +246,7 @@
       if (st.angry === 0) st.wonAwards.push('CUSTOMER SERVICE — zero angry');
       if (st.bestCombo >= 6) st.wonAwards.push('COMBO KING x' + st.bestCombo);
       st.score += st.coins * 2;
+      if (net && isHost) net.send({ type: 'end', coins: st.coins, score: st.score, bestCombo: st.bestCombo, awards: st.wonAwards, state: snapshot() });
     }
 
     function drawStreet() {
@@ -275,7 +302,8 @@
       cleanup();
       if (skipped) { opts.onDone && opts.onDone({ coins: 0, score: 0, awards: [], skipped: true, combo: 0, angry: 0, swaps: [], from: opts.from, to: opts.to }); return; }
       T.markDone(save, 'mt');
-      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards: st.wonAwards.slice(), combo: st.bestCombo, angry: st.angry, swaps: deck.history.slice(), from: opts.from, to: opts.to });
+      // carry-over (Step 4.4): leftover stock — a 5+ delivery combo lets the crew keep 1 Munchies
+      opts.onDone && opts.onDone({ coins: st.coins, munchies: st.bestCombo >= 5 ? 1 : 0, score: st.score, awards: st.wonAwards.slice(), combo: st.bestCombo, angry: st.angry, swaps: deck.history.slice(), from: opts.from, to: opts.to });
     }
     function cleanup() {
       cancelAnimationFrame(raf);

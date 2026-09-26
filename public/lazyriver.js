@@ -40,15 +40,18 @@
       shakeT: 0, ended: false, wonAwards: []
     };
 
+    // Seeded so every online client builds the same river (the host's seed rides in the start gate).
+    let seed = T.newSeed(), R = T.rng(seed);
+    function reseed(sd) { seed = sd; R = T.rng(sd); st.rocks = []; st.swans = []; st.whirlpools = []; st.snacks = []; seedHazards(); }
     function seedHazards() {
       let p = 300;
       while (p < st.finishAt - 200) {
-        const roll = Math.random();
-        if (roll < 0.4) st.rocks.push({ p, x: RIVER_L + 20 + Math.random() * (RIVER_R - RIVER_L - 40), r: 8 });
-        else if (roll < 0.65) st.swans.push({ p, x: RIVER_L + 20 + Math.random() * (RIVER_R - RIVER_L - 40), dir: Math.random() < 0.5 ? 1 : -1, r: 7 });
-        else if (roll < 0.8) st.whirlpools.push({ p, x: RIVER_L + 30 + Math.random() * (RIVER_R - RIVER_L - 60), r: 14 });
-        else st.snacks.push({ p, x: RIVER_L + 20 + Math.random() * (RIVER_R - RIVER_L - 40), got: false });
-        p += 120 + Math.random() * 140;
+        const roll = R();
+        if (roll < 0.4) st.rocks.push({ p, x: RIVER_L + 20 + R() * (RIVER_R - RIVER_L - 40), r: 8 });
+        else if (roll < 0.65) st.swans.push({ p, x: RIVER_L + 20 + R() * (RIVER_R - RIVER_L - 40), dir: R() < 0.5 ? 1 : -1, r: 7 });
+        else if (roll < 0.8) st.whirlpools.push({ p, x: RIVER_L + 30 + R() * (RIVER_R - RIVER_L - 60), r: 14 });
+        else st.snacks.push({ p, x: RIVER_L + 20 + R() * (RIVER_R - RIVER_L - 40), got: false });
+        p += 120 + R() * 140;
       }
     }
     seedHazards();
@@ -86,7 +89,7 @@
       // 2p online each seat sends its own single paddle; here we still read both for solo.
       const left = keys.has('a') || keys.has('arrowleft') || touch.left;
       const right = keys.has('d') || keys.has('arrowright') || touch.right;
-      const fend = keys.has(' ') || keys.has('f') || touch.fend;
+      const fend = keys.has(' ') || keys.has('f') || keys.has('w') || keys.has('arrowup') || touch.fend;
       return { left, right, fend };
     }
 
@@ -97,7 +100,9 @@
       if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
+      if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
     };
+    const sendInput = T.inputSender(net);
 
     function combinedPaddles() {
       if (soloMode) { const i = myInputs(); return st.mirrorT > 0 ? { left: i.right, right: i.left } : { left: i.left, right: i.right }; }
@@ -126,7 +131,7 @@
       { id: 'spin', banner: 'SPIN CYCLE!', reseat: 'reverse', sfx: [260, 'triangle'],
         fx: () => { st.angVel += (Math.random() < 0.5 ? -1 : 1) * 0.25; } },
       { id: 'swan', banner: 'SWAN ATTACK!', reseat: 'shuffle', sfx: [520, 'square'],
-        fx: () => { st.swans.push({ p: st.progress + 140, x: RIVER_L + 20 + Math.random() * (RIVER_R - RIVER_L - 40), dir: 1, r: 7 }); } },
+        fx: () => { st.swans.push({ p: st.progress + 140, x: st.x, dir: 1, r: 7 }); } },
       { id: 'butter', banner: 'BUTTERFINGERS!', reseat: 'swap01', sfx: [180, 'square'],
         fx: () => { st.mirrorT = 4; } }, // paddles swapped hands: left/right reversed for 4s
       { id: 'rapids', banner: 'RAPIDS!', reseat: 'rotate2', sfx: [90, 'sawtooth'],
@@ -136,7 +141,7 @@
     // ---- results / instructions ----
     let running = false;
     const intro = T.makeStartGate(ctx, {
-      save, gameKey: 'lr', seenKey: 'seenLazyRiver', canvas, net,
+      save, gameKey: 'lr', seenKey: 'seenLazyRiver', canvas, net, seed, onSeed: reseed,
       title: 'LAZY RIVER',
       lines: soloMode
         ? ['A = left paddle  D = right paddle', 'Left paddle turns you RIGHT,', 'right paddle turns you LEFT.', 'Both together = straight & fast!']
@@ -168,13 +173,30 @@
 
       if (isHost && net) {
         st._bcastT = (st._bcastT || 0) + dt;
-        if (st._bcastT > 0.1) { st._bcastT = 0; net.send({ type: 'state', x: st.x, angle: st.angle, progress: st.progress, hits: st.hits }); }
+        if (st._bcastT > 0.1) { st._bcastT = 0; net.send(snapshot()); }
       } else if (net) {
-        net.send({ type: 'input', ...myInputs() });
+        sendInput({ type: 'input', ...myInputs() });
       }
     }
 
-    function applyRemoteState(p) { st.x = p.x; st.angle = p.angle; st.progress = p.progress; st.hits = p.hits; }
+    function snapshot() {
+      return { type: 'state', x: st.x, angle: st.angle, progress: st.progress, hits: st.hits, coins: st.coins, speed: st.speed,
+        sx: st.swans.map(w => Math.round(w.x)), rk: T.flagIdx(st.rocks, 'hit'), sw: T.flagIdx(st.swans, 'hit'), sn: T.flagIdx(st.snacks, 'got'),
+        rkx: st.rocks.map(r => Math.round(r.x)), extra: st.swans.length };
+    }
+    function applyRemoteState(p) {
+      st.x = p.x; st.angle = p.angle; st.progress = p.progress; st.hits = p.hits; st.coins = p.coins; st.speed = p.speed;
+      // swap events can spawn extra swans on the host; mirror count before applying positions
+      while (p.extra && st.swans.length < p.extra) st.swans.push({ p: st.progress + 140, x: st.x, dir: 1, r: 7 });
+      if (p.sx) p.sx.forEach((x, i) => { if (st.swans[i]) st.swans[i].x = x; });
+      if (p.rkx) p.rkx.forEach((x, i) => { if (st.rocks[i]) st.rocks[i].x = x; });
+      T.applyFlags(st.rocks, 'hit', p.rk); T.applyFlags(st.swans, 'hit', p.sw); T.applyFlags(st.snacks, 'got', p.sn);
+    }
+    function applyEnd(p) {
+      if (st.ended) return;
+      applyRemoteState(p.state || {});
+      st.popped = !!p.popped; st.coins = p.coins; st.score = p.score; st.wonAwards = p.awards || []; st.snacksGot = p.snacksGot || 0; st.ended = true;
+    }
 
     function simVisualsOnly(dt) { st.progress += 20 * dt; }
 
@@ -207,7 +229,18 @@
       for (const r of st.rocks) if (!r.hit && Math.abs(r.p - st.progress) < 10 && Math.hypot(r.x - st.x, 0) < r.r + 6) hitHazard(r);
       for (const s of st.swans) { s.x += Math.sin(st.progress * 0.01 + s.p) * s.dir * dt * 8; if (!s.hit && Math.abs(s.p - st.progress) < 10 && Math.hypot(s.x - st.x, 0) < s.r + 6) hitHazard(s); }
       for (const w of st.whirlpools) if (Math.abs(w.p - st.progress) < 16 && Math.hypot(w.x - st.x, 0) < w.r) st.angVel += (Math.random() - 0.5) * 0.15;
-      for (const sn of st.snacks) if (!sn.got && Math.abs(sn.p - st.progress) < 8 && Math.hypot(sn.x - st.x, 0) < 8) { sn.got = true; st.coins += 3; T.tone(880, 0.08, 'square', 0.08); }
+      for (const sn of st.snacks) if (!sn.got && Math.abs(sn.p - st.progress) < 8 && Math.hypot(sn.x - st.x, 0) < 8) { sn.got = true; st.coins += 3; st.snacksGot = (st.snacksGot || 0) + 1; T.tone(880, 0.08, 'square', 0.08); }
+      // Lookout / fend-off seats (3rd-4th player; in solo SPACE/W also works): pole-shove the nearest
+      // rock or swan ahead out of the tube's path, or hook a floating snack from up to 40px away.
+      st.fendCd = Math.max(0, (st.fendCd || 0) - dt);
+      if (st.fendCd <= 0 && fendPressed()) {
+        st.fendCd = 0.8; st.fendFx = 0.25;
+        const ahead = st.rocks.concat(st.swans).filter(h => !h.hit && h.p - st.progress > 0 && h.p - st.progress < 70 && Math.abs(h.x - st.x) < 24);
+        ahead.sort((a, b) => a.p - b.p);
+        if (ahead[0]) { const h = ahead[0]; h.x += (h.x >= st.x ? 1 : -1) * 30; h.x = Math.max(RIVER_L + 6, Math.min(RIVER_R - 6, h.x)); T.tone(200, 0.08, 'triangle', 0.1); }
+        const sn = st.snacks.find(q => !q.got && Math.abs(q.p - st.progress) < 40 && Math.abs(q.x - st.x) < 40);
+        if (sn) { sn.got = true; st.coins += 3; st.snacksGot = (st.snacksGot || 0) + 1; T.tone(880, 0.08, 'square', 0.08); }
+      }
 
       if (Math.abs(st.angle) < 0.15 && !hazardNear()) st.lastCalm = st.progress;
 
@@ -221,6 +254,16 @@
       if (st.progress >= st.finishAt) endRun(false);
     }
 
+    function fendPressed() {
+      if (soloMode) return myInputs().fend;
+      let any = false;
+      seats.forEach((s, idx) => {
+        if (idx < 2) return; // seats 0-1 paddle
+        const inp = T.seatIsMine(s, net) ? myInputs() : (remoteInputs.get(s.player && s.player.id) || {});
+        if (inp.fend) any = true;
+      });
+      return any;
+    }
     function hazardNear() {
       return st.rocks.some(r => Math.abs(r.p - st.progress) < 20) || st.swans.some(s => Math.abs(s.p - st.progress) < 20);
     }
@@ -238,6 +281,7 @@
       if (st.hits === 0) st.wonAwards.push('DRY & CHILL — no hits!');
       if (st.coins >= 15) st.wonAwards.push('SNACK RUN — big haul');
       st.score += st.coins * 2;
+      if (net && isHost) net.send({ type: 'end', popped, coins: st.coins, score: st.score, awards: st.wonAwards, snacksGot: st.snacksGot || 0, state: snapshot() });
     }
 
     function drawRiver() {
@@ -291,7 +335,9 @@
       if (skipped) { opts.onDone && opts.onDone({ coins: 0, score: 0, awards: [], skipped: true, popped: false, hazardsHit: 0, swaps: [], from: opts.from, to: opts.to }); return; }
       T.markDone(save, 'lr');
       const awards = st.wonAwards.slice();
-      opts.onDone && opts.onDone({ coins: st.coins, score: st.score, awards, popped: st.popped, hazardsHit: st.hits, swaps: deck.history.slice(), from: opts.from, to: opts.to });
+      // carry-over (Step 4.4): every 3 floating snacks grabbed = 1 Munchies (game.js caps the bag at 3)
+      const munchies = Math.min(2, Math.floor((st.snacksGot || 0) / 3));
+      opts.onDone && opts.onDone({ coins: st.coins, munchies, score: st.score, awards, popped: st.popped, hazardsHit: st.hits, swaps: deck.history.slice(), from: opts.from, to: opts.to });
     }
 
     function cleanup() {

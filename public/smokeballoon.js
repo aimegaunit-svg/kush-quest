@@ -36,29 +36,45 @@
       choppers: [], wires: [], towers: [], birds: []
     };
 
+    let seed = T.newSeed(), R = T.rng(seed);
+    function reseed(sd) { seed = sd; R = T.rng(sd); st.notes = []; st.choppers = []; st.wires = []; st.towers = []; st.birds = []; seedNotes(); seedHazards(); }
     function seedNotes() {
       let t = 60; // beat time in "distance units"
       while (t < st.finishDist - 100) {
-        st.notes.push({ t, lane: (Math.random() * nLanes) | 0, hit: false, missed: false });
-        t += 26 + Math.random() * 10;
+        st.notes.push({ t, lane: (R() * nLanes) | 0, hit: false, missed: false });
+        t += 26 + R() * 10;
       }
     }
     function seedHazards() {
       let p = 250;
       while (p < st.finishDist - 150) {
-        const roll = Math.random();
-        if (roll < 0.3) st.choppers.push({ p, y: 30 + Math.random() * 60 });
-        else if (roll < 0.55) st.wires.push({ p, y: 60 + Math.random() * 90 });
-        else if (roll < 0.8) st.towers.push({ p, h: 60 + Math.random() * 60 });
-        else st.birds.push({ p, y: 30 + Math.random() * 100 });
-        p += 100 + Math.random() * 120;
+        const roll = R();
+        if (roll < 0.3) st.choppers.push({ p, y: 30 + R() * 60 });
+        else if (roll < 0.55) st.wires.push({ p, y: 60 + R() * 90 });
+        else if (roll < 0.8) st.towers.push({ p, h: 60 + R() * 60 });
+        else st.birds.push({ p, y: 30 + R() * 100 });
+        p += 100 + R() * 120;
       }
     }
     seedNotes(); seedHazards();
 
     const keys = new Set();
     let touchTaps = new Set(); // lanes tapped this frame via touch
-    function onKeyDown(e) { keys.add(e.key.toLowerCase()); }
+    const TAP_KEYS = [' ', '1', '2', '3', '4', 'j', 'k', 'l', ';'];
+    function onKeyDown(e) {
+      const k = e.key.toLowerCase();
+      if (net && !e.repeat && running && !st.ended) {
+        if (TAP_KEYS.includes(k)) { if (isHost) localTapT = performance.now(); else net.send({ type: 'tap', lane: myLane() }); }
+        if (k === 'b' || k === 'shift') { if (isHost) pendingBag = true; else net.send({ type: 'bag' }); }
+      }
+      keys.add(k);
+    }
+    // Online: each player owns ONE lane = their seat index (swap events move people between lanes).
+    // Any tap key / touch taps your own lane. The host judges every tap (remote ones arrive as
+    // {type:'tap'} and count for 150ms), so there's one source of truth for hits and the lung meter.
+    let localTapT = 0, pendingBag = false;
+    const remoteTapT = [0, 0, 0, 0];
+    function myLane() { const i = seats.findIndex(x => T.seatIsMine(x, net)); return Math.max(0, Math.min(nLanes - 1, i)); }
     function onKeyUp(e) { keys.delete(e.key.toLowerCase()); }
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -83,11 +99,16 @@
     // key 1..4 -> lanes; also J/K/L/; as alt; solo just uses SPACE for lane0
     const LANE_KEYS = [['1', 'j'], ['2', 'k'], ['3', 'l'], ['4', ';']];
     function laneTapped(lane) {
+      if (net) {
+        const now = performance.now();
+        if (lane === myLane() && (now - localTapT < 150 || touchTaps.size > 0)) return true;
+        return now - remoteTapT[lane] < 150;
+      }
       if (touchTaps.has(lane)) return true;
       if (nLanes === 1) return keys.has(' ') || LANE_KEYS[0].some(k => keys.has(k));
       return LANE_KEYS[lane] ? LANE_KEYS[lane].some(k => keys.has(k)) : false;
     }
-    function sandbagPressed() { return keys.has('b') || keys.has('shift') || touchSandbag; }
+    function sandbagPressed() { if (net) { const b = pendingBag || touchSandbag; pendingBag = false; return b; } return keys.has('b') || keys.has('shift') || touchSandbag; }
 
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
@@ -95,6 +116,9 @@
       if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
+      if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
+      if (payload && payload.type === 'tap' && isHost && payload.lane >= 0 && payload.lane < 4) remoteTapT[payload.lane] = performance.now();
+      if (payload && payload.type === 'bag' && isHost) pendingBag = true;
     };
 
     const swap = T.makeSwapRunner();
@@ -116,7 +140,7 @@
 
     let running = false;
     const intro = T.makeStartGate(ctx, {
-      save, gameKey: 'sb', seenKey: 'seenSmokeBalloon', canvas, net, title: 'SMOKE BALLOON',
+      save, gameKey: 'sb', seenKey: 'seenSmokeBalloon', canvas, net, seed, onSeed: reseed, title: 'SMOKE BALLOON',
       lines: [
         'Tap your lane key on the beat!',
         '(1/2/3/4 or SPACE solo)', 'Good timing = lift, miss = cough.',
@@ -146,13 +170,26 @@
       touchTaps.clear();
       if (isHost && net) {
         st._bT = (st._bT || 0) + dt;
-        if (st._bT > 0.1) { st._bT = 0; net.send({ type: 'state', y: st.y, dist: st.dist, lung: st.lung, heat: st.heat, coins: st.coins }); }
-      } else if (net) {
-        for (let i = 0; i < nLanes; i++) if (laneTapped(i)) net.send({ type: 'input', tap: i });
-      }
+        if (st._bT > 0.1) { st._bT = 0; net.send(snapshot()); }
+      } else if (net && touchTaps.size > 0 && !st._touchSent) { st._touchSent = true; net.send({ type: 'tap', lane: myLane() }); }
+      if (touchTaps.size === 0) st._touchSent = false;
     }
 
-    function applyRemoteState(p) { st.y = p.y; st.dist = p.dist; st.lung = p.lung; st.heat = p.heat; st.coins = p.coins; }
+    function snapshot() {
+      return { type: 'state', y: st.y, dist: st.dist, lung: st.lung, heat: st.heat, coins: st.coins, combo: st.combo, bags: st.sandbags,
+        nh: T.flagIdx(st.notes, 'hit'), ln: st.notes.map(n => n.lane).join(''), wi: T.flagIdx(st.wires, 'hit'), to: T.flagIdx(st.towers, 'hit') };
+    }
+    function applyRemoteState(p) {
+      st.y = p.y; st.dist = p.dist; st.lung = p.lung; st.heat = p.heat; st.coins = p.coins; st.combo = p.combo; st.sandbags = p.bags;
+      if (p.ln) for (let i = 0; i < st.notes.length && i < p.ln.length; i++) st.notes[i].lane = +p.ln[i];
+      T.applyFlags(st.notes, 'hit', p.nh); T.applyFlags(st.wires, 'hit', p.wi); T.applyFlags(st.towers, 'hit', p.to);
+      for (const n of st.notes) if (!n.hit && n.t < st.dist - 8) n.missed = true;
+    }
+    function applyEnd(p) {
+      if (st.ended) return;
+      applyRemoteState(p.state || {});
+      st.coins = p.coins; st.score = p.score; st.forcedDescents = p.forcedDescents; st.wonAwards = p.awards || []; st.ended = true;
+    }
 
     function step(dt) {
       st.dist += 34 * dt;
@@ -160,7 +197,7 @@
       for (const n of st.notes) {
         if (n.hit || n.missed) continue;
         if (laneTapped(n.lane) && Math.abs(n.t - st.dist) < 7) {
-          n.hit = true; st.combo++; st.bestCombo = Math.max(st.bestCombo, st.combo);
+          n.hit = true; remoteTapT[n.lane] = 0; if (n.lane === myLane()) localTapT = 0; st.combo++; st.bestCombo = Math.max(st.bestCombo, st.combo);
           const lift = 0.06 + Math.min(0.12, st.combo * 0.01);
           st.lung = Math.min(1, st.lung + lift);
           st.coins += 1;
@@ -210,6 +247,7 @@
       if (st.forcedDescents === 0) st.wonAwards.push('COOL AS ICE — no heat descents');
       if (st.bestCombo >= 8) st.wonAwards.push('IN THE POCKET x' + st.bestCombo);
       st.score += st.coins * 2;
+      if (net && isHost) net.send({ type: 'end', coins: st.coins, score: st.score, forcedDescents: st.forcedDescents, awards: st.wonAwards, state: snapshot() });
     }
 
     function drawSky() {

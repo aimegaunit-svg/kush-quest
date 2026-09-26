@@ -40,14 +40,16 @@
       bullets: []
     };
 
+    let seed = T.newSeed(), R = T.rng(seed);
+    function reseed(sd) { seed = sd; R = T.rng(sd); st.drones = []; st.sats = []; st.bubbles = []; seedWave(); }
     function seedWave() {
       let p = 200;
       while (p < st.finishDist - 400) {
-        const roll = Math.random();
-        if (roll < 0.4) st.drones.push({ p, x: 30 + Math.random() * (W - 60), hp: 1 });
-        else if (roll < 0.65) st.sats.push({ p, x: 30 + Math.random() * (W - 60), hp: 2 });
-        else st.bubbles.push({ p, x: 30 + Math.random() * (W - 60), got: false });
-        p += 70 + Math.random() * 90;
+        const roll = R();
+        if (roll < 0.4) st.drones.push({ p, x: 30 + R() * (W - 60), hp: 1 });
+        else if (roll < 0.65) st.sats.push({ p, x: 30 + R() * (W - 60), hp: 2 });
+        else st.bubbles.push({ p, x: 30 + R() * (W - 60), got: false });
+        p += 70 + R() * 90;
       }
       st.boss = { p: st.finishDist - 250, hp: 8, x: W / 2, defeated: false };
     }
@@ -102,7 +104,16 @@
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'fire' && isHost) doFire(payload.turret, payload.angle);
+      if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
     };
+    const sendInput = T.inputSender(net);
+    // Online: seat 0 is the pilot (swap events move it); the host simulates with the pilot's relayed axes.
+    function iAmPilot() { return soloMode || !net || T.seatIsMine(seats[0], net); }
+    function seatPilotAxes() {
+      if (!net || T.seatIsMine(seats[0], net)) return pilotAxes();
+      const r = remoteInputs.get(seats[0].player && seats[0].player.id) || {};
+      return { dx: r.dx || 0, dy: r.dy || 0, boost: !!r.boost };
+    }
 
     const swap = T.makeSwapRunner();
     let nextSwapAt = 900 + Math.random() * 700;
@@ -121,7 +132,7 @@
 
     let running = false;
     const intro = T.makeStartGate(ctx, {
-      save, gameKey: 'br', seenKey: 'seenBongRocket', canvas, net, title: 'BONG ROCKET',
+      save, gameKey: 'br', seenKey: 'seenBongRocket', canvas, net, seed, onSeed: reseed, title: 'BONG ROCKET',
       lines: soloMode
         ? ['WASD/arrows to fly freely, hold', 'SHIFT/SPACE to boost (burns fuel).', 'Auto-gun fires — press to fire manually.', 'Collect fuel bubbles, dodge drones!']
         : ['Pilot: free 8-way flight + boost.', 'Gunners: aim turret with MOUSE,', 'click to fire at drones & satellites.']
@@ -146,16 +157,32 @@
       drawHud();
       if (isHost && net) {
         st._bT = (st._bT || 0) + dt;
-        if (st._bT > 0.1) { st._bT = 0; net.send({ type: 'state', x: st.x, y: st.y, dist: st.dist, fuel: st.fuel, coins: st.coins, hits: st.hits }); }
+        if (st._bT > 0.1) { st._bT = 0; net.send(snapshot()); }
       } else if (net) {
-        net.send({ type: 'input', ...pilotAxes() });
+        sendInput({ type: 'input', ...pilotAxes() });
       }
     }
 
-    function applyRemoteState(p) { st.x = p.x; st.y = p.y; st.dist = p.dist; st.fuel = p.fuel; st.coins = p.coins; st.hits = p.hits; }
+    function snapshot() {
+      return { type: 'state', x: st.x, y: st.y, dist: st.dist, fuel: st.fuel, coins: st.coins, hits: st.hits,
+        dr: T.flagIdx(st.drones, 'dead'), sa: T.flagIdx(st.sats, 'dead'), bu: T.flagIdx(st.bubbles, 'got'),
+        bh: st.boss ? st.boss.hp : 0, bd: !!(st.boss && st.boss.defeated),
+        b: st.bullets.map(b => [Math.round(b.x), Math.round(b.y)]) };
+    }
+    function applyRemoteState(p) {
+      st.x = p.x; st.y = p.y; st.dist = p.dist; st.fuel = p.fuel; st.coins = p.coins; st.hits = p.hits;
+      T.applyFlags(st.drones, 'dead', p.dr); T.applyFlags(st.sats, 'dead', p.sa); T.applyFlags(st.bubbles, 'got', p.bu);
+      if (st.boss) { st.boss.hp = p.bh; st.boss.defeated = p.bd; }
+      if (p.b) st.bullets = p.b.map(([x, y]) => ({ x, y, vx: 0, vy: 0, life: 0.15 }));
+    }
+    function applyEnd(p) {
+      if (st.ended) return;
+      applyRemoteState(p.state || {});
+      st.coins = p.coins; st.score = p.score; st.wonAwards = p.awards || []; st.ended = true;
+    }
 
     function step(dt) {
-      let { dx, dy, boost } = pilotAxes();
+      let { dx, dy, boost } = seatPilotAxes();
       if (st.invertT > 0) { st.invertT -= dt; dx = -dx; dy = -dy; }
       const ACC = 90;
       st.vx += dx * ACC * dt * (boost ? 1.6 : 1);
@@ -173,9 +200,10 @@
       for (const b of st.bullets) { b.y -= b.vy * dt; b.x += (b.vx || 0) * dt; b.life -= dt; }
       st.bullets = st.bullets.filter(b => b.life > 0);
 
-      for (const d of st.drones) if (!d.dead && Math.abs(d.p - st.dist) < 10 && Math.hypot(d.x - st.x, 0) < 10) hitPlayer();
-      for (const s of st.sats) if (!s.dead && Math.abs(s.p - st.dist) < 10 && Math.hypot(s.x - st.x, 0) < 12) hitPlayer();
-      for (const b of st.bubbles) if (!b.got && Math.abs(b.p - st.dist) < 10 && Math.hypot(b.x - st.x, 0) < 10) { b.got = true; st.fuel = Math.min(1, st.fuel + 0.25); st.coins += 2; T.tone(900, 0.06, 'square', 0.08); }
+      // ram damage: an enemy that touches the ship is destroyed (so one collision = one hit, not one per frame)
+      for (const d of st.drones) if (!d.dead && Math.abs(enemyY(d.p) - st.y) < 9 && Math.abs(d.x - st.x) < 9) { d.dead = true; hitPlayer(); }
+      for (const s of st.sats) if (!s.dead && Math.abs(enemyY(s.p) - st.y) < 9 && Math.abs(s.x - st.x) < 11) { s.dead = true; hitPlayer(); }
+      for (const b of st.bubbles) if (!b.got && Math.abs(enemyY(b.p) - st.y) < 10 && Math.abs(b.x - st.x) < 10) { b.got = true; st.fuel = Math.min(1, st.fuel + 0.25); st.coins += 2; T.tone(900, 0.06, 'square', 0.08); }
 
       checkBulletHits();
 
@@ -203,30 +231,42 @@
       // non-pilot seats fire on click toward mouse aim; handled by DOM click handler below in draw() input loop
     }
     canvas.addEventListener('click', (e) => {
-      if (soloMode) return;
+      if (soloMode || !running || st.ended) return;
+      if (net && iAmPilot()) return; // online the pilot flies; gunners shoot
       const angle = Math.atan2(mouse.y - st.y, mouse.x - st.x);
-      if (isHost) doFire('gunL', angle);
-      else if (net) net.send({ type: 'fire', turret: 'gunL', angle });
+      const mine = net ? seats.find(x => T.seatIsMine(x, net)) : null;
+      const turret = mine ? mine.role : 'gunL';
+      if (isHost) doFire(turret, angle);
+      else if (net) net.send({ type: 'fire', turret, angle });
     });
 
+    const enemyY = p => H * 0.75 - (p - st.dist);
     function angleToNearest() {
+      // solo auto-aim: nearest living enemy that's on screen above-ish the ship
       let best = null, bd = 1e9;
       const all = st.drones.concat(st.sats).filter(e => !e.dead);
-      for (const e of all) { const d = Math.abs(e.p - st.dist); if (d < bd) { bd = d; best = e; } }
+      for (const e of all) { const ey = enemyY(e.p); if (ey < -10 || ey > H) continue; const d = Math.hypot(e.x - st.x, ey - st.y); if (d < bd) { bd = d; best = e; } }
       if (!best) return -Math.PI / 2;
-      return Math.atan2(0 - 0, best.x - st.x) - Math.PI / 2;
+      return Math.atan2(enemyY(best.p) - st.y, best.x - st.x);
     }
 
     function doFire(turret, angle) {
-      st.bullets.push({ x: st.x, y: st.y, vy: 220, vx: Math.sin(angle) * 40, life: 1.2 });
+      if (typeof angle !== 'number' || !isFinite(angle)) angle = -Math.PI / 2;
+      st.fireCd = st.fireCd || {};
+      const now = performance.now();
+      if (now - (st.fireCd[turret] || 0) < 120) return; // per-turret rate limit
+      st.fireCd[turret] = now;
+      // bullets move with b.y -= b.vy*dt, so vy is the upward component
+      st.bullets.push({ x: st.x, y: st.y, vx: Math.cos(angle) * 220, vy: -Math.sin(angle) * 220, life: 1.2 });
       T.tone(500, 0.04, 'square', 0.05);
     }
 
     function checkBulletHits() {
       for (const b of st.bullets) {
-        for (const d of st.drones) if (!d.dead && Math.abs(d.p - st.dist - 6) < 8 && Math.abs(d.x - b.x) < 8) { d.dead = true; d.hp = 0; st.coins += 1; b.life = 0; }
-        for (const s of st.sats) if (!s.dead && Math.abs(s.p - st.dist - 6) < 8 && Math.abs(s.x - b.x) < 8) { s.hp--; if (s.hp <= 0) { s.dead = true; st.coins += 2; } b.life = 0; }
-        if (st.boss && !st.boss.defeated && Math.abs(st.boss.p - st.dist - 6) < 10 && Math.abs(st.boss.x - b.x) < 16) { st.boss.hp--; b.life = 0; }
+        if (b.life <= 0) continue;
+        for (const d of st.drones) if (!d.dead && b.life > 0 && Math.abs(enemyY(d.p) - b.y) < 7 && Math.abs(d.x - b.x) < 7) { d.dead = true; d.hp = 0; st.coins += 1; b.life = 0; }
+        for (const s of st.sats) if (!s.dead && b.life > 0 && Math.abs(enemyY(s.p) - b.y) < 6 && Math.abs(s.x - b.x) < 8) { s.hp--; if (s.hp <= 0) { s.dead = true; st.coins += 2; } b.life = 0; }
+        if (st.boss && !st.boss.defeated && b.life > 0 && Math.abs(enemyY(st.boss.p) - b.y) < 12 && Math.abs(st.boss.x - b.x) < 22) { st.boss.hp--; b.life = 0; }
       }
     }
 
@@ -237,6 +277,7 @@
       if (st.hits === 0) st.wonAwards.push('CLEAN DOCKING — no hits');
       if (st.fuel > 0.5) st.wonAwards.push('FUEL EFFICIENT');
       st.score += st.coins * 2;
+      if (net && isHost) net.send({ type: 'end', coins: st.coins, score: st.score, awards: st.wonAwards, state: snapshot() });
     }
 
     function drawSpace() {

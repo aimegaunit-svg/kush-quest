@@ -316,10 +316,46 @@ SKIP by click → 4-seat crew: seat order changed on every one of 5 swaps → 2-
 Test pages now have **Mark done (test replay SKIP)** / **Reset save** buttons, and each `start()`
 returns a `_debug` handle (`st`, `seats`, `deck`, `fireSwap()`, `running()`) for tests.
 
-**Not done yet:** 4.1 live online test with 2–4 real tabs (waiting for Step 2 push); 4.4 carry-over
-check against Step 2's `onDone` handling (none of the 5 return `cooked`/`munchies` yet — to decide once
-Step 2 lands); known online gap to fix then: non-host clients never see `ended`/results because the
-state snapshot doesn't carry it. Astral Bong Rocket: waiting for Step 7.
+**4.1 Online — works, tested live with 2, 3 and 4 real browser tabs** against a local `server.js`, all
+5 games, launched through the host's real map click (gate node) so Step 2's `transit-start` / `case 'd'`
+routing is exercised end to end. Per game, every check passed at 2/3/4 tabs: every tab launches; every
+tab gets the same seat order and the same hazard layout; a swap fired by the host shows the same banner
+on every tab and leaves identical seats; a **non-host** player in seat 0 steers the host's simulation
+(paddles / dive / drive / pilot); the extra seats work remotely (Lazy River fend-off, Munchie thrower hits
+a customer, Bong Rocket gunner fires, Smoke Balloon taps from every tab register as note hits and sync back);
+progress stays within ~5 units across tabs; the host's finish shows results on every tab; everyone
+returns to the map with the **same coins added**; the replay shows PLAY/SKIP on the host and "waiting" on
+the others, and the host's SKIP sends every tab back to the map.
+What changed to get there (my files only):
+- `transit.js`: `assignSeats` sorts the crew by player id (game.js puts each client first, so seat 0
+  used to be different on every tab); `rng/newSeed` (the host's seed travels in the gate message and
+  non-hosts rebuild their layout from it); `inputSender` (held input at most every 50ms, since the
+  server drops >120 msgs/sec); `flagIdx/applyFlags/seatIsMine`.
+- Every game: state snapshots now carry collected/destroyed item flags; the host broadcasts
+  `{type:'end', ...}` so non-hosts reach results with the host's final coins/awards.
+- Munchie Truck / Bong Rocket: seat 0's relayed input actually drives now (before, only the host's own
+  keys did); only non-driver/non-pilot seats throw/fire online; quick clicks are latched (a fast click
+  used to be missed between frames).
+- Smoke Balloon: each player owns one lane (= seat index, moves with swaps); taps go to the host.
+- Lazy River: the fend-off seats finally do something (pole-shove the next rock/swan, hook a snack).
+- Bong Rocket: bullets fly where you aim and hit by position (they used to hit anything at a fixed
+  distance regardless of height); ramming an enemy = one hit, not one per frame.
+
+**4.4 Carry-over:** coins apply correctly (checked on every tab above). Lazy River now returns
+`munchies` (1 per 3 floating snacks grabbed, max 2) and Munchie Truck returns `munchies: 1` for a 5+
+delivery combo; both match game.js's `r.munchies` handling. None of the 5 returns `cooked` on purpose:
+game.js *sets* `me.cooked = r.cooked`, and these games aren't given the player's current Cooked, so
+returning one would overwrite it. No `buff` either.
+
+**For the main session (game.js, not my file):** non-host tabs crash in `drawMap_` (game.js ~4049,
+`MAP_NODES[mapSel]` undefined) after a world-gate ride. Seen after Paper Plane and Munchie Truck:
+the non-host ended on world 0 (9 nodes) with `mapSel` = 9 relayed from the host. The non-host's world
+doesn't follow the host's after `advance()`, and the relayed cursor isn't range-checked.
+
+**Known online gaps left:** the room host always simulates, and `net.isHost` is fixed at launch, so if
+the host leaves mid-ride the ride stalls for everyone else (no handoff yet). Non-hosts are ~0.5s behind
+the host at the start (they wait for the gate/seed message). Paper Plane's "free the pelican" and dive
+use held input, so a very quick tap from a non-host can be missed. Astral Bong Rocket: waiting for Step 7.
 
 
 **Scope:** Part B3 of brief v1.1 — 5 transit mini-games + shared framework.

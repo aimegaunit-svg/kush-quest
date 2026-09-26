@@ -48,7 +48,10 @@
   // with unused roles left off. First entry is always the "authority" seat.
   // ---------------------------------------------------------------------
   function assignSeats(crew, roles) {
-    const list = Array.isArray(crew) ? crew : new Array(crew || 1).fill(null).map((_, i) => ({ id: 'p' + i }));
+    let list = Array.isArray(crew) ? crew.slice() : new Array(crew || 1).fill(null).map((_, i) => ({ id: 'p' + i }));
+    // Online, every client builds its crew list with ITSELF first (game.js launchTransit), so sort by
+    // player id to get the identical seat order on every client. Local test crews (p0..p3) keep order.
+    if (Array.isArray(crew)) list.sort((a, b) => String(a && a.id).localeCompare(String(b && b.id), 'en', { numeric: true }));
     const n = Math.max(1, Math.min(4, list.length));
     const out = [];
     for (let i = 0; i < n; i++) out.push({ role: roles[Math.min(i, roles.length - 1)], player: list[i], seat: i });
@@ -301,7 +304,7 @@
       if (decision !== null) return;
       decision = skip;
       unbind();
-      if (net && isHost) net.send({ type: 'gate', skip });
+      if (net && isHost) net.send({ type: 'gate', skip, seed: o.seed });
       if (skip) { phase = 'done'; onSkip(); return; }
       phase = 'intro';
       intro = showInstructionCard(ctx, { save: o.save, seenKey: o.seenKey, canvas: o.canvas, title: o.title, lines: o.lines }, () => { phase = 'done'; onPlay(); });
@@ -358,8 +361,8 @@
       },
       handle(fromId, p) {
         if (!p) return false;
-        if (p.type === 'gate?') { if (isHost && decision !== null) net.send({ type: 'gate', skip: decision }, fromId); return true; }
-        if (p.type === 'gate') { if (!isHost) begin(!!p.skip); return true; }
+        if (p.type === 'gate?') { if (isHost && decision !== null) net.send({ type: 'gate', skip: decision, seed: o.seed }, fromId); return true; }
+        if (p.type === 'gate') { if (!isHost && decision === null) { if (p.seed != null && o.onSeed) o.onSeed(p.seed); begin(!!p.skip); } return true; }
         return false;
       },
       cleanup: unbind
@@ -439,6 +442,33 @@
     };
   }
 
+  // ---------------------------------------------------------------------
+  // Online helpers (Step 4.1).
+  // rng(seed): deterministic PRNG (mulberry32). The host picks the seed; it rides along in the
+  // start-gate message so every client builds the same hazard layout.
+  // inputSender(net): sends held-input snapshots at most every 50ms (the server drops anything over
+  // 120 msgs/sec per player), plus immediately whenever the input changes.
+  // flagIdx(arr, key): indices of items with a truthy flag, for syncing collected/destroyed things.
+  // ---------------------------------------------------------------------
+  function rng(seed) {
+    let a = (seed >>> 0) || 1;
+    return function () { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  function newSeed() { return (Math.random() * 2147483647) | 0; }
+  function inputSender(net) {
+    let last = '', lastT = 0;
+    return function (payload) {
+      if (!net) return;
+      const s = JSON.stringify(payload), now = performance.now();
+      if (s === last && now - lastT < 50) return;
+      if (s !== last || now - lastT >= 50) { last = s; lastT = now; net.send(payload); }
+    };
+  }
+  function flagIdx(arr, key) { const o = []; for (let i = 0; i < arr.length; i++) if (arr[i][key]) o.push(i); return o; }
+  function applyFlags(arr, key, idx) { if (!idx) return; for (const i of idx) if (arr[i]) arr[i][key] = true; }
+  // seat helpers: is this seat mine? what is its current input?
+  function seatIsMine(seat, net) { return !net || (seat && seat.player && seat.player.id === net.id); }
+
   window.Transit = {
     BASE_W, BASE_H,
     makeCanvas, autoScale,
@@ -451,6 +481,7 @@
     makeNet,
     isTouchDevice, drawTouchZones,
     hasDone, markDone, needsPlay, makeStartGate,
-    reorder, makeSwapDeck
+    reorder, makeSwapDeck,
+    rng, newSeed, inputSender, flagIdx, applyFlags, seatIsMine
   };
 })();

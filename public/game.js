@@ -756,6 +756,24 @@ const WEAPONS = [
   { id: 'grinder', name: 'GRINDER SPIN', icon: 'grinder', dmg: 2, cd: 28, reach: 30, zr: 16, spin: 1, bleed: 2, price: 260, desc: 'SPIKY SPIN ALL AROUND YOU. MAKES THEM BLEED' },
   { id: 'blunt', name: 'BLUNT BAT', icon: 'blunt', dmg: 2, cd: 22, reach: 34, zr: 12, kb: 3, homer: 1, price: 220, desc: 'HOME RUN! LAUNCHES THEM INTO THEIR BUDDIES' },
 ];
+// v1.2 fix (Step 5): Brief v1.1 A2's 10-level Core tables group into 6 NAMED FORMS (levels 1-2, 3-4, 5-6,
+// 7-8, 9, 10) - the form name, sprite tint and swing effects all change together at each tier boundary.
+// Only the 4 real Cores (puff=Joint, lighter=Lighter, bong=Bong, grinder=Grinder) have a table; dab/blunt
+// keep their old fixed name (they're not one of the brief's 4 Cores - see AGENT_NOTES for the flagged
+// "Dab Saber's fate is undefined in v1.1" decision, unchanged by this step).
+function coreTier(lv) { return lv <= 2 ? 0 : lv <= 4 ? 1 : lv <= 6 ? 2 : lv <= 8 ? 3 : lv === 9 ? 4 : 5; }
+const CORE_FORMS = {
+  puff: ['PINNER', 'JOINT', 'FATTY', 'BLUNT', 'CANNON', 'LEGENDARY DOOBIE'],
+  lighter: ['BIC', 'ZIPPO', 'TORCH LIGHTER', 'JET FLAME', 'BLOWTORCH', "DRAGON'S BREATH"],
+  bong: ['MINI BONG', 'GLASS BONG', 'DOUBLE CHAMBER', 'PERCOLATOR', 'GRAVITY BEAST', 'THE MOTHERSHIP'],
+  grinder: ['POCKET GRINDER', '2-PIECE', '4-PIECE', 'ELECTRIC', 'INDUSTRIAL', 'KIEF CYCLONE'],
+};
+// tier-tinted glow color, used for the growing weapon aura + swing trail (see drawHeld/drawSlash) - the
+// brief calls for a new sprite per form; a full hand-drawn set for 4 weapons x 6 forms is out of scope for
+// this pass, so the "clearly visible" growth is carried instead by a per-tier glow color/size/particle
+// count ramp applied uniformly to every Core (flagging this scope trim, same as prior steps).
+const CORE_TIER_GLOW = ['', '#fff6b0', '#ffd84a', '#ff9a3a', '#ff5a6a', '#e4b3ff'];
+function formName(wid, lv) { const f = CORE_FORMS[wid]; return f ? f[coreTier(lv)] : (WEAPONS.find(w => w.id === wid) || {}).name || ''; }
 // environmental "Wild" weapons: temporary pickups that replace your weapon while held.
 // v1.1 A3 (real pass): the brief's exact 12 named Wild weapons, each with real distinct stats built from
 // the same {id,dmg,cd,reach,zr,kb,...} shape + special-case flags attack() already branches on
@@ -1835,7 +1853,7 @@ function hitEnemy(e, dmg, dir, strong, fx = {}) {
   SFX.hit();
   if (fx.burn) puff(e.x, sy(e.z, e.h) - 10, 4, ['#ff9a3a', '#ffd84a', '#ff5a6a'], .8, -0.03);
   if (isHost()) damageEnemy(e, dmg, dir, strong, Net.id, fx);
-  else Net.send({ t: 'hit', i: e.id, d: dmg, dir, s: strong ? 1 : 0, l: lvl.n, b: fx.burn || 0, sp: fx.sp || 0, st: fx.stun || 0, bl: fx.bleed || 0, kb: fx.kb || 1, hr: fx.hr || 0, a: fx.air ? 1 : 0 });
+  else Net.send({ t: 'hit', i: e.id, d: dmg, dir, s: strong ? 1 : 0, l: lvl.n, b: fx.burn || 0, sp: fx.sp || 0, st: fx.stun || 0, bl: fx.bleed || 0, kb: fx.kb || 1, hr: fx.hr || 0, a: fx.air ? 1 : 0, dr: fx.dragon ? 1 : 0 });
 }
 function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (!e.alive || e.state === 5) return;
@@ -1852,6 +1870,7 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   e.lastHitBy = by; e.lastHitT = frame;
   e.hp -= dmg + teamBonus; e.flash = 8;
   if (fx.burn) { e.burn = Math.max(e.burn || 0, fx.burn); e.burnBy = by; e.burnT = e.burnT || 36; e.spread = Math.max(e.spread || 0, fx.sp || 0); }
+  if (fx.dragon) e.dragonBurn = true; // LIGHTER "DRAGON'S BREATH" (tier5/Lv10): marks this enemy to explode on death, see below
   if (fx.bleed) { e.bleedN = Math.max(e.bleedN || 0, fx.bleed); e.bleedBy = by; e.bleedT = e.bleedT || 44; }
   // HOTBOX: burning + stunned at once detonates a smoke burst that hits everything nearby
   if ((e.burn > 0 || fx.burn) && (e.stunned > 0 || fx.stun) && !(e.hotboxCd > 0)) { e.hotboxCd = 90; hotboxBlast(e, by); }
@@ -1863,6 +1882,13 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
     if (explodeMouse) {
       SFX.boom(); shake = Math.max(shake, 6); puff(e.x, sy(e.z, e.h) - 6, 10, ['#ff5a6a', '#ffd84a', '#ffffff'], 1.4);
       if (Math.abs(e.x - me.x) < 22 && Math.abs(e.z - me.z) < 14) hurt(1, 3, e.x);
+    }
+    // LIGHTER "DRAGON'S BREATH" (tier5/Lv10): "burning enemies explode on death" - a small fiery burst
+    // that also singes anything else standing right next to the body.
+    if (e.dragonBurn && (e.burn > 0 || fx.burn)) {
+      SFX.boom(); shake = Math.max(shake, 8); puff(e.x, sy(e.z, e.h) - 8, 12, ['#ff5a6a', '#ff9a3a', '#ffd84a', '#ffffff'], 1.6);
+      for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - e.x) < 26 && Math.abs(o.z - e.z) < 18) damageEnemy(o, 2, Math.sign(o.x - e.x) || 1, false, by, { burn: 2 });
+      if (Math.abs(e.x - me.x) < 26 && Math.abs(e.z - me.z) < 18) hurt(1, 2, e.x);
     }
     Net.send({ t: 'kill', i: e.id, by, st: e.stolen, l: lvl.n, ex: explodeMouse ? 1 : 0, exx: Math.round(e.x), exz: Math.round(e.z) });
     onKill(e, by);
@@ -1936,10 +1962,12 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   if (e.boss && (e.mega || e.mini)) {
     const w = worldOf(lvl.n), newCap = e.mega ? 5 + w : 4 + w;
     save.coreCap = Math.max(save.coreCap || 3, Math.min(10, newCap));
-    // Seeds: "dropped only by bosses" - scoped to the world boss (mega) fight, not every level's captain
-    // fight or mini-boss, and only for whoever gets kill credit (see gainResin()'s comment on this same
-    // simplification - no new net sync for a per-player-in-co-op seed grant).
-    if (e.mega && by === Net.id) save.seeds = (save.seeds || 0) + 1;
+    // v1.2 fix (Step 5.6): "Seeds for every player in co-op on a boss kill (synced), not only the player
+    // who landed the killing hit." onKill() itself already runs identically on EVERY client (it's called
+    // from the same `case 'kill':` network event everyone receives - see onNet()), so this needs no new
+    // network message at all: dropping the old `by === Net.id` gate means every player's own local onKill
+    // call awards their own local save.seeds, all from the same synchronized e.mega/lvl.n/frame state.
+    if (e.mega) save.seeds = (save.seeds || 0) + 1;
   }
   puff(e.x, sy(e.z) - 10, 8, ['#ffffff', '#e8e4f4', '#c8ffa0'], 1.4); bleed(e.x, e.z, e.h, 8, e.vx > 0 ? 1 : -1);
   const zn = lvl.zones[lvl.zi];
@@ -1972,8 +2000,12 @@ function attack(charged) {
   }
   const lunge = K.run && Math.abs(me.vx) > 1.5 && me.h === 0, air = me.h > 6;
   if (air && me.vh < 0.5 && hasSkill('pound') && !charged) { me.pound = true; me.vh = -5; me.slash = { t: 12, max: 12, heavy: true, kind: w.id, air: true }; SFX.flap(); return; }
-  me.chain = lunge || air || charged ? 2 : me.chainT > 0 ? (me.chain + 1) % 3 : 0;
-  const strong = me.chain === 2;
+  // v1.2 fix (Step 5): tier = the brief's 6 named-form brackets for the 4 real Cores (see coreTier()),
+  // computed up front now since the combo length itself changes at a tier (JOINT's 4-hit combo below).
+  const lv0 = wlv(w.id), tier0 = coreTier(lv0);
+  const comboMax = (w.id === 'puff' && tier0 >= 3) ? 4 : 3; // JOINT "BLUNT" form (tier3/Lv7+): a 4th hit joins the combo
+  me.chain = lunge || air || charged ? comboMax - 1 : me.chainT > 0 ? (me.chain + 1) % comboMax : 0;
+  const strong = me.chain === comboMax - 1;
   if (charged) { shake = 8; popup(me.x - 18, sy(me.z) - 40, 'CHARGED!', '#ffd84a'); SFX.power(); }
   if (lunge) { me.vx = me.face * 4.5; me.inv = Math.max(me.inv, 10); }
   me.slash = { t: 12, max: 12, heavy: strong, kind: w.id, air, lunge };
@@ -1984,12 +2016,47 @@ function attack(charged) {
   }
   me.atkCd = Math.round(w.cd * (strong ? 1.3 : 0.75) * (me.buffs.soda > 0 ? 0.6 : 1)); me.atkT = 12; me.chainT = me.atkCd + 16;
   SFX.attack(Math.min(wi, 4));
-  const lv = wlv(w.id), lv3 = lv >= 3;
+  const lv = lv0, lv3 = lv >= 3, tier = tier0;
   let dmg = w.dmg + (lv - 1) + (ultra() ? (hasSkill('rage') ? 3 : 1) : 0) + (me.buffs.rage > 0 ? 2 : 0) + (strong ? 1 : 0);
   if (charged) dmg = dmg * 2 + 2;
-  const reach = w.reach + (charged ? 12 : 0) + (lv3 && w.id === 'grinder' ? 10 : 0);
+  if (charged && w.id === 'bong' && tier >= 4 && (me.holdT || 0) > 70) { dmg += 3; popup(me.x - 20, sy(me.z) - 44, '2ND STAGE!', '#e4b3ff'); } // GRAVITY BEAST+ (tier4/Lv9+): a longer hold triggers a bigger 2nd-stage blast
+  // v1.2 fix (Step 5.2): GRINDER is now a thrown, returning disc (see updateShots' `kind === 12` handling)
+  // instead of a melee spin - it never reaches the melee target loop below at all. Range grows with tier;
+  // 4-Piece+ (tier2/Lv5+) pierces; Electric+ (tier3/Lv7+) throws 2 discs; Industrial+ (tier4/Lv9+) can also
+  // hit on the way back; Kief Cyclone (tier5/Lv10) leaves a slowing cloud where it's caught.
+  if (w.id === 'grinder' && !wildActive) {
+    const range = 60 + tier * 16, speed = 4.2, nDiscs = tier >= 3 ? 2 : 1, pierce = tier >= 2 ? 999 : 0, returnHits = tier >= 4, kief = tier >= 5;
+    for (let i = 0; i < nDiscs; i++) shots.push({ mine: true, kind: 12, x: me.x + me.face * 10, z: me.z + (nDiscs > 1 ? (i === 0 ? -9 : 9) : 0), h: me.h + 8, vx: me.face * speed, life: 240, dmg, hit: new Set(), pierce, range, dist: 0, returning: false, returnHits, kief });
+    Net.send({ t: 'fx', k: 12, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+    return;
+  }
+  // v1.2 fix (Step 5.3): BONG tap vs hold. A plain tap falls through to the melee smash below unchanged;
+  // holding the attack button (see updatePlayer's holdT gate, extended to allow Bong's charge regardless
+  // of the `charge` skill) fires this mid-range smoke blast instead. Percolator+ (tier3/Lv7+) leaves a
+  // smoke cloud where it lands; The Mothership (tier5/Lv10) lets the blast pierce through the whole line.
+  if (w.id === 'bong' && charged && !wildActive) {
+    const range = 70 + tier * 10, pierce = tier >= 5 ? 999 : 1;
+    shots.push({ mine: true, kind: 13, x: me.x + me.face * 14, z: me.z, h: me.h + 6, vx: me.face * 3.6, life: 90, dmg, hit: new Set(), pierce, kb: 2 + tier * 0.3, hr: tier >= 2 ? 1 : 0 });
+    shake = 8; SFX.power();
+    if (tier >= 3) lvl.clouds.push({ x: me.x + me.face * (range * 0.6), z: me.z, r: 18, t: 130, by: Net.id }); // PERCOLATOR+: the blast leaves a smoke cloud
+    Net.send({ t: 'fx', k: 13, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+    return;
+  }
+  // v1.2 fix (Step 5): LIGHTER BLOWTORCH+ (tier4/Lv9+) - a held attack fires a short flamethrower stream
+  // instead of the normal jab; DRAGON'S BREATH (tier5/Lv10) widens it into a whole cone (3 -> 5 jets) and
+  // marks anything it burns to explode when it dies (see the `dr` field on 'hit'/damageEnemy below).
+  if (w.id === 'lighter' && charged && tier >= 4 && !wildActive) {
+    const jets = tier >= 5 ? 5 : 3, range = 34 + tier * 4;
+    for (let i = 0; i < jets; i++) { const dz = (i - (jets - 1) / 2) * 7;
+      shots.push({ mine: true, kind: 14, x: me.x + me.face * 8, z: me.z + dz, h: me.h + 8, vx: me.face * 3, life: Math.round(range / 3), dmg, hit: new Set(), dragon: tier >= 5 }); }
+    shake = 6; SFX.exhale();
+    Net.send({ t: 'fx', k: 14, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+    return;
+  }
+  const reach = w.reach + (charged ? 12 : 0) + (w.id === 'bong' ? tier * 3 : 0); // GLASS BONG+ (tier1/Lv3+): the smash radius grows too
   const baseBurn = w.id === 'puff' ? (hasSkill('cherry') ? w.burn : 0) : (w.burn || 0);
-  const fx = { burn: Math.max(baseBurn ? (baseBurn + (lv - 1)) * (lv3 && w.id === 'puff' ? 2 : 1) + (farmHas('fire') ? 1 : 0) : 0, hasSkill('embers') ? 1 : 0), sp: w.spread ? (lv3 && w.id === 'lighter' ? 2 : 1) : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0, hrLv3: lv3 && w.id === 'blunt' && strong, air };
+  const spreadOn = w.spread || (w.id === 'puff' && tier >= 2); // JOINT FATTY+ (tier2/Lv5+): burn spreads to a neighbor too
+  const fx = { burn: Math.max(baseBurn ? (baseBurn + (lv - 1)) * (tier >= 1 && w.id === 'puff' ? 2 : 1) + (farmHas('fire') ? 1 : 0) : 0, hasSkill('embers') ? 1 : 0), sp: spreadOn ? (tier >= 1 && w.id === 'lighter' ? 2 : 1) : 0, stun: w.stun ? w.stun + (lv - 1) * 15 : 0, bleed: w.bleed ? w.bleed + (lv - 1) : 0, kb: (w.kb || 1) * (strong ? 1.3 : 1) * (charged ? 1.8 : 1), hr: (w.homer || hasSkill('finisher') || charged) && strong ? 1 : 0, hrLv3: lv3 && w.id === 'blunt' && strong, air };
   let hits = 0;
   const targets = lvl.enemies.filter(e => e.spawned && e.alive && e.state !== 5).map(e => ({ e, dx: e.x - me.x, dz: Math.abs(e.z - me.z) }))
     .filter(t => { const r = reach + (t.e.boss ? 14 : 0); return (w.spin || air ? Math.abs(t.dx) < r : t.dx * me.face > -6 && Math.abs(t.dx) < r) && t.dz < w.zr + (air ? 6 : 0) + (t.e.boss ? 10 : 0) && Math.abs(t.e.h - me.h) < 30; })
@@ -2020,21 +2087,24 @@ function attack(charged) {
       Net.send({ t: 'fx', k: 11, x: Math.round(c.x), y: Math.round(c.z), h: Math.round(c.r) });
     }
   }
-  // BONG HAMMER LV3: the stun sends out a shockwave that hits everyone near the target
-  if (w.id === 'bong' && lv3 && strong && hits) for (const t of targets) for (const o of lvl.enemies) if (o !== t.e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - t.e.x) < 30 && Math.abs(o.z - t.e.z) < 22) hitEnemy(o, 1, Math.sign(o.x - t.e.x) || 1, false, { stun: 30 });
-  if (w.id === 'grinder' && hits) for (const t of targets) t.e.x += Math.sign(me.x - t.e.x) * (lv3 ? 8 : 4); // pulls them in (more at LV3)
+  // BONG "THE MOTHERSHIP" (tier5/Lv10 only, per the brief - earlier forms just have the smash/blast split
+  // above): the stun sends out a shockwave that hits everyone near the target.
+  if (w.id === 'bong' && tier >= 5 && strong && hits) for (const t of targets) for (const o of lvl.enemies) if (o !== t.e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - t.e.x) < 30 && Math.abs(o.z - t.e.z) < 22) hitEnemy(o, 1, Math.sign(o.x - t.e.x) || 1, false, { stun: 30 });
   for (const p of lvl.props) {
     if (p.broken) continue;
     const dx = p.x - me.x;
-    if ((w.id === 'grinder' ? Math.abs(dx) < reach : dx * me.face > -6 && Math.abs(dx) < reach) && Math.abs(p.z - me.z) < 12) {
-      p.hp--; p.flash = 6; SFX.bump(); if (p.hp <= 0) breakProp(p);
-    }
+    if (dx * me.face > -6 && Math.abs(dx) < reach && Math.abs(p.z - me.z) < 12) { p.hp--; p.flash = 6; SFX.bump(); if (p.hp <= 0) breakProp(p); }
   }
-  if (w.id === 'bong' && strong) { shake = 6; puff(me.x + me.face * 22, sy(me.z) - 2, 12, ['#bfe8ff', '#ffffff', '#7fe07a'], 1.6); }
+  if (w.id === 'bong' && strong) { shake = 6; puff(me.x + me.face * (22 + tier * 3), sy(me.z) - 2, 12 + tier * 2, ['#bfe8ff', '#ffffff', '#7fe07a'], 1.6); }
   if (w.id === 'blunt' && strong && hits) popup(me.x + me.face * 20, sy(me.z) - 40, 'HOME RUN!', '#ffd84a');
-  if (w.id === 'lighter') for (let i = 0; i < 8; i++) particles.push({ x: me.x + me.face * (10 + i * 3), y: sy(me.z, me.h) - 12 + (Math.random() - .5) * 8, vx: me.face * (1 + Math.random()), vy: -0.3, life: 14, col: ['#ff5a6a', '#ff9a3a', '#ffd84a'][i % 3], s: 3, g: -0.02 });
-  if (w.id === 'lighter' && lv3 && hits) lvl.clouds.push({ x: me.x + me.face * 20, z: me.z, r: 16, t: 150, hot: true, by: Net.id }); // LIGHTER LV3: leaves a burning fire patch
-  if (w.id === 'puff') puff(me.x + me.face * 26, sy(me.z, me.h) - 16, 5, ['#ffffff', '#e8e4f4'], .6, -0.02);
+  if (w.id === 'lighter') for (let i = 0; i < 8 + tier * 3; i++) particles.push({ x: me.x + me.face * (10 + i * 3), y: sy(me.z, me.h) - 12 + (Math.random() - .5) * 8, vx: me.face * (1 + Math.random()), vy: -0.3, life: 14, col: ['#ff5a6a', '#ff9a3a', '#ffd84a'][i % 3], s: 3 + tier * 0.5, g: -0.02 });
+  if (w.id === 'lighter' && tier >= 1 && hits) lvl.clouds.push({ x: me.x + me.face * 20, z: me.z, r: 16 + tier * 3, t: 150, hot: true, by: Net.id }); // ZIPPO+ (tier1/Lv3+): leaves a burning fire patch
+  // LIGHTER JET FLAME+ (tier3/Lv7+): the combo finisher lets out an extra burst of flame around the target
+  if (w.id === 'lighter' && tier >= 3 && strong && hits) { shake = Math.max(shake, 6); for (const t of targets) for (const o of lvl.enemies) if (o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - t.e.x) < 26 && Math.abs(o.z - t.e.z) < 16) hitEnemy(o, 1, Math.sign(o.x - t.e.x) || 1, false, { burn: 2 }); }
+  if (w.id === 'puff') puff(me.x + me.face * 26, sy(me.z, me.h) - 16, 5 + tier * 2, tier >= 5 ? ['#ff9ab8', '#c070ff', '#7ac8ff', '#ffd84a'] : ['#ffffff', '#e8e4f4'], .6, -0.02);
+  // JOINT CANNON+ (tier4/Lv9+): the finisher leaves a patch of burning ground; LEGENDARY DOOBIE (tier5/
+  // Lv10) makes that patch bigger and rainbow-tinted (drawn via the cloud's own draw code, see c.hot).
+  if (w.id === 'puff' && tier >= 4 && strong && hits) lvl.clouds.push({ x: me.x + me.face * 22, z: me.z, r: tier >= 5 ? 22 : 16, t: 160, hot: true, by: Net.id });
   Net.send({ t: 'fx', k: wi, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
   // v1.1 A3: drain the Wild weapon's Resin charge on every swing that actually attacked (the click-check
   // above already bailed out before this point if there wasn't enough charge), never below 0. It stays
@@ -2043,6 +2113,26 @@ function attack(charged) {
 }
 function updateShots() {
   for (const s of shots) {
+    // v1.2 fix (Step 5.2): GRINDER's disc (kind 12) is its own little state machine - fly out to s.range,
+    // flip around, and home back toward the PLAYER'S CURRENT position (not a fixed point) until caught,
+    // instead of just flying off in one straight line like every other shot kind here.
+    if (s.kind === 12 && s.mine) {
+      if (!s.returning) {
+        s.dist = (s.dist || 0) + Math.abs(s.vx);
+        if (s.dist >= s.range) { s.returning = true; if (s.returnHits) s.hit = new Set(); s.legHit = false; } // INDUSTRIAL+ (tier4/Lv9+): fresh hits allowed on the way back too
+      } else {
+        const dx = me.x - s.x; s.vx = Math.abs(s.vx) * (dx >= 0 ? 1 : -1);
+        if (Math.abs(dx) < 12 && Math.abs(s.z - me.z) < 16) { if (s.kief) lvl.clouds.push({ x: s.x, z: s.z, r: 18, t: 220, slow: true, by: Net.id }); s.life = 0; continue; } // KIEF CYCLONE (tier5/Lv10): a slowing cloud where it's caught
+      }
+      s.x += s.vx; s.life--;
+      // 4-PIECE+ (tier2/Lv5+, s.pierce > 0) can hit every enemy it passes; below that it only lands its
+      // first hit per leg (`s.legHit`), then keeps flying/returning without hitting anything else that leg.
+      if (s.mine && (s.pierce > 0 || !s.legHit)) for (const e of lvl.enemies) {
+        if (!e.spawned || !e.alive || e.state === 5 || s.hit.has(e)) continue;
+        if (Math.abs(e.x - s.x) < 12 && Math.abs(e.z - s.z) < 14) { s.hit.add(e); s.legHit = true; hitEnemy(e, s.dmg + (ultra() ? 1 : 0), Math.sign(s.vx) || 1, false); if (s.pierce <= 0) break; }
+      }
+      continue;
+    }
     s.x += s.vx; s.life--; if (s.kind === 5) s.vx *= 0.95;
     if (s.kind === 8) { s.vh -= 0.18; s.h += s.vh; if (s.h <= 0) { s.life = 0; explode(s); } continue; }
     if (s.kind === 10) { s.vh -= 0.18; s.h += s.vh; if (s.h <= 0) { s.life = 0; landSmoke(s); } continue; }
@@ -2050,8 +2140,8 @@ function updateShots() {
     for (const e of lvl.enemies) {
       if (!e.spawned || !e.alive || e.state === 5 || s.hit.has(e)) continue;
       if (Math.abs(e.x - s.x) < 12 && Math.abs(e.z - s.z) < 14) {
-        s.hit.add(e); hitEnemy(e, s.dmg + (ultra() ? 1 : 0), Math.sign(s.vx), s.kind === 5);
-        if (s.kind === 7 && --s.pierce > 0) continue;
+        s.hit.add(e); hitEnemy(e, s.dmg + (ultra() ? 1 : 0), Math.sign(s.vx), s.kind === 5, { kb: s.kb, hr: s.hr, dragon: s.dragon });
+        if ((s.kind === 7 || s.kind === 13) && --s.pierce > 0) continue;
         s.life = 0;
       }
     }
@@ -2170,7 +2260,9 @@ function update() {
   if (lvl.locked && z) camX = Math.max(z.x0 + (ZW - W) / 2 - 40, Math.min(camX, z.x0 + 40));
 
   if (Net.online && frame % 3 === 0 && (state === 'play' || state === 'sitting')) {
-    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked), hp: me.hp, mh: maxHp() });
+    // v1.2 fix (Step 5): `cl` (Core level) rides along on the same snapshot so remotes' held-weapon visuals
+    // can scale by tier too (see drawHeld/drawSlash), not just the local player's own.
+    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked), hp: me.hp, mh: maxHp(), cl: coreLevel() });
   }
 }
 function animFrame(p) {
@@ -2255,10 +2347,14 @@ function updatePlayer() {
     if (next && next.started && p.x > next.x0 + ZW - 8) p.x = next.x0 + ZW - 8;
   }
 
+  // v1.2 fix (Step 5.3): BONG tap vs hold is its OWN input rule, not gated behind the `charge` skill -
+  // every Bong player gets tap=smash/hold=blast, regardless of whether they've learned Charged Swings.
+  const usingBong = weaponDef().id === 'bong' && !(p.envWeapon && p.wildOn);
+  const canCharge = hasSkill('charge') || usingBong;
   if (me.stunT > 0) { /* BEACH taser / DOWNTOWN camera-flash: stunned, can't swing */ }
   else if (K.attackPressed) attack();
-  else if (settings.holdAttack && K.attack && !hasSkill('charge') && p.atkCd <= 0) attack();
-  if (K.attack && hasSkill('charge')) { p.holdT = (p.holdT || 0) + 1; if (p.holdT > 30 && frame % 4 === 0) puff(p.x + p.face * 10, sy(p.z, p.h) - 14, 2, ['#ffd84a', '#ffffff'], .5, -0.03); }
+  else if (settings.holdAttack && K.attack && !canCharge && p.atkCd <= 0) attack();
+  if (K.attack && canCharge) { p.holdT = (p.holdT || 0) + 1; if (p.holdT > 30 && frame % 4 === 0) puff(p.x + p.face * 10, sy(p.z, p.h) - 14, 2, ['#ffd84a', '#ffffff'], .5, -0.03); }
   else { if (p.holdT > 30) attack(true); p.holdT = 0; }
   if (K.toke) { p.tokeT = (p.tokeT || 0) + 1; if (p.tokeT > 25 && hasSkill('breath') && p.cooked > 1) { p.cooked -= 0.3; if (frame % 5 === 0) breathFire(); } }
   else { if (p.tokeT > 0 && p.tokeT <= 25) hitAToke(p.tokeT >= 14); p.tokeT = 0; }
@@ -2497,7 +2593,11 @@ function hostUpdate() {
     let sx = 0, sz = 0;
     // smoke screens: confused buzzkills wander and can't attack; hotbox smoke burns them
     let inCloud = null;
-    for (const c of lvl.clouds) if (Math.abs(e.x - c.x) < c.r && Math.abs(e.z - c.z) < c.r * 0.6) { inCloud = c; break; }
+    for (const c of lvl.clouds) if (!c.slow && Math.abs(e.x - c.x) < c.r && Math.abs(e.z - c.z) < c.r * 0.6) { inCloud = c; break; }
+    // v1.2 fix (Step 5.2): GRINDER's Lv10 "Kief Cyclone" leaves a cloud that slows enemies - a gentler
+    // effect than the full wandering-confusion above (that's `!c.slow` clouds only), so it's checked
+    // separately and just cuts movement speed rather than taking over the enemy's AI state.
+    const slowed = lvl.clouds.some(c => c.slow && Math.abs(e.x - c.x) < c.r && Math.abs(e.z - c.z) < c.r * 0.6);
     if (inCloud && !e.boss) {
       if (inCloud.hot && frame % 60 === (e.id % 60)) damageEnemy(e, 1, 0, false, inCloud.by);
       // confused buzzkills can bump into and hurt each other inside the smoke
@@ -2608,6 +2708,7 @@ function hostUpdate() {
         }
       }
     }
+    if (slowed) { sx *= 0.45; sz *= 0.45; }
     e.x += sx; e.z = Math.max(0, Math.min(ZMAX, e.z + sz));
   }
   // SUBURBIA: mousetraps on the ground root anyone who walks into them (telegraphed - they're visible on the street before triggering)
@@ -2677,7 +2778,7 @@ function bubble(str, cx, y) {
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, 9);
   drawStr(str, x + 3, y + 2, '#3fae5a', 1);
 }
-function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting, wi = 0, atkT = 0, slash = null, down = 0) {
+function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting, wi = 0, atkT = 0, slash = null, down = 0, coreLv = 1) {
   if (down) {
     const img = PLAYER[color][0], X = Math.round(x - camX + 5), Y = Math.round(y + 14);
     ctx.save(); ctx.translate(X, Y); ctx.rotate(Math.PI / 2 * (face > 0 ? -1 : 1)); ctx.drawImage(img, -8, -10); ctx.restore();
@@ -2700,8 +2801,8 @@ function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, si
   } else if (drawPlayer.roll) { const X = Math.round(x - camX + 5), Y = Math.round(y + 9); ctx.save(); ctx.translate(X, Y); ctx.rotate(drawPlayer.roll * 0.6 * face); ctx.drawImage(img, -8, -9); ctx.restore(); drawPlayer.roll = 0; }
   else draw_(img, x - 3, y - 2, face < 0);
   ctx.filter = 'none';
-  if (!sitting) drawHeld(x, y, face, wi, atkT, anim);
-  if (slash && !sitting) drawSlash(x, y, face, slash);
+  if (!sitting) drawHeld(x, y, face, wi, atkT, anim, coreLv);
+  if (slash && !sitting) drawSlash(x, y, face, slash, coreLv);
   if (sitting && frame % 40 < 30) text('Z', x + 12 - camX, y - 8 - (frame % 40) / 8, '#e4b3ff');
   if (emote) bubble(EMOTES[emote.e], x + 5, y - (name ? 24 : 14));
   if (drawPlayer.say) { const m = drawPlayer.say, w = Math.min(46, m.length) * 4 + 6, bx = Math.round(x + 5 - camX - w / 2), by = Math.round(y - (name ? 34 : 24)); R(ctx, P.k, bx - 1, by - 1, w + 2, 11); R(ctx, '#ffffff', bx, by, w, 9); text(m.slice(0, 46), bx + 3, by + 2, '#2a1838'); drawPlayer.say = null; }
@@ -2709,24 +2810,32 @@ function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, si
 }
 // sword slash: a big white crescent in front of the homie
 const SLASH_COL = { puff: '#ffffff', lighter: '#ffb84a', dab: '#9ae8ff', bong: '#bfe8ff', grinder: '#c8ffa0', blunt: '#ffd84a' };
-function drawSlash(px, pyTop, face, sl) {
+function drawSlash(px, pyTop, face, sl, coreLv = 1) {
   if (!sl || sl.t <= 0) return;
-  const p = 1 - sl.t / sl.max, reach = (REACH[sl.kind] || 30) * (sl.heavy ? 1.15 : 1);
+  // v1.2 fix (Step 5): the swing trail grows with the Core's tier (see coreTier()) - a bigger, brighter
+  // arc at each named form, since this game has no room for 24 hand-drawn sprites (4 Cores x 6 forms).
+  const tier = CORE_FORMS[sl.kind] ? coreTier(coreLv) : 0;
+  const p = 1 - sl.t / sl.max, reach = (REACH[sl.kind] || 30) * (sl.heavy ? 1.15 : 1) * (1 + tier * 0.05);
   const cx = Math.round(px - camX + 5), cy = Math.round(pyTop + 10);
   ctx.save(); ctx.translate(cx, cy); ctx.scale(face, 1);
   const spin = sl.kind === 'grinder' || sl.air;
   const a0 = spin ? p * Math.PI * 2 - 1 : -1.9 + p * 0.4, a1 = spin ? a0 + 2.4 : a0 + (sl.heavy ? 2.9 : 2.3) * Math.min(1, p * 2.2);
   ctx.globalAlpha = Math.max(0, 1 - p * 0.9);
-  ctx.strokeStyle = P.k; ctx.lineWidth = sl.heavy ? 7 : 5; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8, a0, a1); ctx.stroke();
-  ctx.strokeStyle = SLASH_COL[sl.kind] || '#fff'; ctx.lineWidth = sl.heavy ? 5 : 3; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8, a0, a1); ctx.stroke();
+  ctx.strokeStyle = P.k; ctx.lineWidth = (sl.heavy ? 7 : 5) + tier; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8, a0, a1); ctx.stroke();
+  ctx.strokeStyle = tier >= 2 ? (CORE_TIER_GLOW[tier] || SLASH_COL[sl.kind] || '#fff') : (SLASH_COL[sl.kind] || '#fff'); ctx.lineWidth = (sl.heavy ? 5 : 3) + tier; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8, a0, a1); ctx.stroke();
   ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, reach * 0.8 - 1, a0 + 0.2, a1); ctx.stroke();
   ctx.restore(); ctx.globalAlpha = 1;
 }
-function drawHeld(x, y, face, wi, atkT, anim) {
+function drawHeld(x, y, face, wi, atkT, anim, coreLv = 1) {
   const w = WEAPONS[wi] || WEAPONS[0], img = HELD[w.id]; if (!img || anim === 4) return;
+  // v1.2 fix (Step 5): a growing glow aura + a slightly bigger weapon at each higher tier - the "clearly
+  // visible" growth the brief asks for, carried by color/size instead of 24 unique hand-drawn sprites
+  // (see CORE_FORMS/CORE_TIER_GLOW's own comment for that scope call).
+  const tier = CORE_FORMS[w.id] ? coreTier(coreLv) : 0, scale = 1 + tier * 0.07;
   const hx = Math.round(x - camX + 5 + face * 5), hy = Math.round(y + 11);
   const p = atkT > 0 ? 1 - atkT / 12 : 0; // swing progress
-  ctx.save(); ctx.translate(hx, hy); ctx.scale(face, 1);
+  if (tier >= 2 && frame % 5 === 0) puff(x + 5 + face * 5, y + 6, 1, [CORE_TIER_GLOW[tier]], .4, -0.02); // a growing glow aura behind the held weapon
+  ctx.save(); ctx.translate(hx, hy); ctx.scale(face * scale, scale);
   if (w.id === 'puff' || w.id === 'bong' || w.id === 'blunt') ctx.rotate(atkT > 0 ? -1.6 + p * 2.4 : -0.5);
   else if (w.id === 'dab') ctx.translate(atkT > 0 ? Math.sin(p * Math.PI) * 10 : 0, 0), ctx.rotate(atkT > 0 ? 0 : -0.25);
   else if (w.id === 'grinder') ctx.rotate(atkT > 0 ? p * 12 : 0);
@@ -3111,7 +3220,7 @@ function drawScene() {
   for (const c of lvl.clouds) {
     const a = Math.min(1, c.t / 60) * 0.55, X = Math.round(c.x - camX), Y = sy(c.z) - 10;
     ctx.globalAlpha = a;
-    for (let k = 0; k < 9; k++) { const ang = k / 9 * TAU + frame / 90, rx = Math.cos(ang) * c.r * 0.7, rz = Math.sin(ang) * c.r * 0.25; ctx.fillStyle = c.poison ? (k % 2 ? '#a0e070' : '#e8ffc8') : c.hot ? (k % 2 ? '#ffd0b0' : '#ffffff') : c.heal ? (k % 2 ? '#d8ffd0' : '#ffffff') : (k % 2 ? '#e8e4f4' : '#ffffff'); circle(X + rx, Y + rz, c.r * 0.38); }
+    for (let k = 0; k < 9; k++) { const ang = k / 9 * TAU + frame / 90, rx = Math.cos(ang) * c.r * 0.7, rz = Math.sin(ang) * c.r * 0.25; ctx.fillStyle = c.poison ? (k % 2 ? '#a0e070' : '#e8ffc8') : c.slow ? (k % 2 ? '#ffd84a' : '#fff6b0') : c.hot ? (k % 2 ? '#ffd0b0' : '#ffffff') : c.heal ? (k % 2 ? '#d8ffd0' : '#ffffff') : (k % 2 ? '#e8e4f4' : '#ffffff'); circle(X + rx, Y + rz, c.r * 0.38); }
     ctx.globalAlpha = 1;
   }
   // blood on the street + the fallen (stays for the whole mission)
@@ -3144,9 +3253,9 @@ function drawScene() {
   } });
   for (const r of remotes.values()) {
     if (r.tx < -500 || r.l !== lvl.n) continue;
-    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer.say = r.say && r.say.msg; drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash, r.b & 8 ? true : 0); } });
+    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer.say = r.say && r.say.msg; drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash, r.b & 8 ? true : 0, r.cl || 1); } });
   }
-  list.push({ z: me.z + 0.01, d: () => { drawPlayer.roll = me.roll > 0 ? 20 - me.roll : 0; if (me.holdT > 30) { ctx.fillStyle = 'rgba(255,216,74,' + (0.25 + Math.sin(frame / 3) * 0.15) + ')'; circle(Math.round(me.x - camX), sy(me.z, me.h) - 9, 12); } shadow(me.x, me.z, me.h); drawPlayer.say = me.say && me.say.msg; { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash, me.down || 0); } });
+  list.push({ z: me.z + 0.01, d: () => { drawPlayer.roll = me.roll > 0 ? 20 - me.roll : 0; if (me.holdT > 30) { ctx.fillStyle = 'rgba(255,216,74,' + (0.25 + Math.sin(frame / 3) * 0.15) + ')'; circle(Math.round(me.x - camX), sy(me.z, me.h) - 9, 12); } shadow(me.x, me.z, me.h); drawPlayer.say = me.say && me.say.msg; { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash, me.down || 0, coreLevel()); } });
   for (const s of lvl.eshots) list.push({ z: s.z, d: () => {
     const h = s.k === 'pinecone' ? (s.h || 0) : 5;
     shadow(s.x, s.z, h, 4); const x = Math.round(s.x - camX), y = sy(s.z, h);
@@ -3163,6 +3272,12 @@ function drawScene() {
     if (s.kind === 8) { shadow(s.x, s.z, s.h, 4); ctx.drawImage(ICONS.bombs, x - 4, y - 4); if (frame % 3 === 0) puff(s.x, y - 4, 1, ['#ffffff', '#c8ffa0'], .3); return; }
     if (s.kind === 10) { shadow(s.x, s.z, s.h, 4); ctx.drawImage(ICONS.smoke, x - 4, y - 4); if (frame % 3 === 0) puff(s.x, y - 4, 1, ['#ffffff', '#e8e4f4'], .3); return; }
     if (s.kind === 6) { ctx.fillStyle = P.k; circle(x, y, 4.5); ctx.fillStyle = '#7ac8ff'; circle(x, y, 3.5); ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y - 3, 2, 2); }
+    // GRINDER's thrown disc - spins in flight, and trails gold sparkle once it's the Kief Cyclone form
+    else if (s.kind === 12) { ctx.save(); ctx.translate(x, y); ctx.rotate(frame * 0.5); ctx.drawImage(ICONS.grinder, -4, -4); ctx.restore(); if (s.kief && frame % 3 === 0) puff(s.x, y - 2, 1, ['#ffd84a', '#fff6b0'], .3); }
+    // BONG's mid-range smoke blast - a bubble of bong water that grows once it can pierce (The Mothership)
+    else if (s.kind === 13) { const r = 6 + (s.pierce > 1 ? 3 : 0); ctx.fillStyle = P.k; circle(x, y, r + 1); ctx.fillStyle = '#bfe8ff'; circle(x, y, r); ctx.fillStyle = '#ffffff'; circle(x - 2, y - 2, 2); }
+    // LIGHTER's Blowtorch/Dragon's Breath jet stream - a fatter, brighter flame once it's the Dragon's Breath form
+    else if (s.kind === 14) { ctx.fillStyle = s.dragon ? '#e4b3ff' : '#ff9a3a'; circle(x, y, s.dragon ? 7 : 5); ctx.fillStyle = '#ffd84a'; circle(x, y, s.dragon ? 4 : 2); }
     else { ctx.globalAlpha = Math.min(1, s.life / 8); ctx.fillStyle = P.k; circle(x, y, 8); ctx.fillStyle = '#ffffff'; circle(x, y, 7); ctx.fillStyle = '#e8e4f4'; circle(x + 2, y + 2, 3); ctx.globalAlpha = 1; }
   } });
   list.sort((a, b) => a.z - b.z).forEach(o => o.d());
@@ -3431,8 +3546,13 @@ function shopConfirm() {
     if (save.resin < it.resinPrice) { SFX.bump(); results.msg = 'NEED ' + (it.resinPrice - save.resin) + ' MORE RESIN'; return; }
     if ((save.seeds || 0) < it.seedPrice) { SFX.bump(); results.msg = 'NEED ' + (it.seedPrice - (save.seeds || 0)) + ' MORE SEED (BOSSES DROP THEM)'; return; }
     save.coins -= it.coinPrice; save.resin -= it.resinPrice; save.seeds -= it.seedPrice;
+    const prevForm = formName(weaponDef().id, coreLevel());
     save.cores[CORE_HOMIE[Net.color || 0]] = coreLevel() + 1;
-    persist(); SFX.buy(); results.msg = weaponDef().name + ' IS NOW LV' + coreLevel() + '!';
+    persist(); SFX.buy();
+    const newForm = formName(weaponDef().id, coreLevel());
+    // v1.2 fix (Step 5.5): call out a form change (not just the level number) whenever the upgrade crosses
+    // into a new named tier, since that's the moment the sprite/swing/particles/sound all change together.
+    results.msg = newForm !== prevForm ? weaponDef().name + ' EVOLVED INTO THE ' + newForm + '! (LV' + coreLevel() + ')' : weaponDef().name + ' IS NOW LV' + coreLevel() + '!';
     return;
   }
   if (save.coins < it.price) { SFX.bump(); results.msg = 'NEED ' + (it.price - save.coins) + ' MORE HASH COINS'; return; }
@@ -3514,7 +3634,8 @@ function drawShop() {
   if (it.kind !== 'ready' && it.kind !== 'quit') ctx.drawImage(ICONS[it.icon], 246, 80, 20, 20);
   wrap(it.desc, 206, 106, 26, '#ffffff');
   if (it.kind === 'coreup') {
-    text('LV ' + coreLevel() + ' -> LV ' + (coreLevel() + 1) + '   +1 DAMAGE', 206, 128, '#7fe07a');
+    { const nf = formName(weaponDef().id, coreLevel() + 1), of = formName(weaponDef().id, coreLevel());
+      text('LV ' + coreLevel() + ' -> LV ' + (coreLevel() + 1) + (nf !== of ? '   BECOMES THE ' + nf + '!' : '   +1 DAMAGE'), 206, 128, '#7fe07a'); }
     if (!it.capReached && coreLevel() < 10) text('COST: ' + it.coinPrice + ' COINS + ' + it.resinPrice + ' RESIN' + (it.seedPrice ? ' + ' + it.seedPrice + ' SEED' : ''), 206, 136, '#c8ffa0');
   } else if (it.kind === 'armor') {
     const curHp = ARMORS.filter(a => save.armor.includes(a.id)).reduce((m, a) => Math.max(m, a.hp), 0), hd = it.hp - curHp;
@@ -4254,7 +4375,7 @@ let invRow = 0, invCol = 0;
 // one fixed CORE weapon per homie (display-only - it's always equipped, nothing to pick) and the one WILD
 // weapon currently held, if any (confirming toggles it active/inactive, same as pressing Q).
 const INV_ROWS = () => [
-  { label: 'CORE', items: [(() => { const w = weaponDef(), lv = coreLevel(); return { kind: 'core', def: { name: w.name + ' - LV ' + lv, desc: w.desc, dmg: w.dmg + lv - 1, reach: w.reach }, icon: ICONS[w.icon], has: true, on: !(me.envWeapon && me.wildOn) }; })()] },
+  { label: 'CORE', items: [(() => { const w = weaponDef(), lv = coreLevel(); return { kind: 'core', def: { name: formName(w.id, lv) + ' - LV ' + lv, desc: w.desc, dmg: w.dmg + lv - 1, reach: w.reach }, icon: ICONS[w.icon], has: true, on: !(me.envWeapon && me.wildOn) }; })()] },
   { label: 'WILD', items: [me.envWeapon ? { kind: 'wild', def: { ...ENV_WEAPONS[me.envWeapon.id], desc: ENV_WEAPONS[me.envWeapon.id].desc + ' - CHARGE ' + Math.round(me.envWeapon.charge) + '/' + ENV_WEAPONS[me.envWeapon.id].charge }, icon: ICONS[WILD_ICON_ID[me.envWeapon.id]] || ICONS.joint, has: true, on: !!me.wildOn } : { kind: 'wild', def: { name: 'NONE HELD', desc: 'PICK ONE UP OFF THE GROUND THIS MISSION, THEN PRESS ' + KL('weapon') + ' TO SWITCH TO IT' }, icon: ICONS.joint, has: false, on: false }] },
   { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'HALVES THEFT AMOUNT (THIEF GETS +1 BONUS COIN)' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
   { label: 'ITEMS', items: Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, def: { name: d.name, desc: d.desc + '. SPACE: USE NOW. ' + KL('quick') + ': QUICK-USE' + (save.quick === id ? ' (SET)' : '') }, icon: ICONS[d.icon], has: save[id] > 0, count: save[id] || 0, on: save.quick === id })) },
@@ -4372,10 +4493,10 @@ const Net = {
     setTimeout(attempt, 1000);
   }
 };
-function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null, hp: 5, mh: 5 }); }
+function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null, hp: 5, mh: 5, cl: 1 }); }
 function onNet(m) {
   switch (m.t) {
-    case 's': { const r = remotes.get(m.id); if (!r) return; if (r.tx < -500 || r.l !== m.l) { r.x = m.x; r.z = m.y; r.h = m.h; } Object.assign(r, { tx: m.x, tz: m.y, th: m.h, f: m.f, a: m.a, b: m.b, l: m.l, w: m.w, c: m.c, hp: m.hp, mh: m.mh }); break; }
+    case 's': { const r = remotes.get(m.id); if (!r) return; if (r.tx < -500 || r.l !== m.l) { r.x = m.x; r.z = m.y; r.h = m.h; } Object.assign(r, { tx: m.x, tz: m.y, th: m.h, f: m.f, a: m.a, b: m.b, l: m.l, w: m.w, c: m.c, hp: m.hp, mh: m.mh, cl: m.cl || 1 }); break; }
     case 'fx': {
       const r = remotes.get(m.id); if (!r || r.l !== lvl.n) break;
       r.atkT = 12;
@@ -4386,10 +4507,16 @@ function onNet(m) {
       if (m.k === 8) shots.push({ mine: false, kind: 8, x: m.x + m.f * 6, z: m.y, h: m.h + 14, vx: m.f * 2.4, vh: 3, life: 200 });
       if (m.k === 10) shots.push({ mine: false, kind: 10, x: m.x + m.f * 6, z: m.y, h: m.h + 14, vx: m.f * 2, vh: 3, life: 200 });
       if (m.k === 5) shots.push({ mine: false, x: m.x + m.f * 10, z: m.y, h: m.h + 8, vx: m.f * 3.6, life: 26, kind: 5 });
+      // v1.2 fix (Step 5): cosmetic-only echoes of the new ranged Core attacks for every OTHER client -
+      // `mine: false` means updateShots() never runs hit-detection on these (see its `if (!s.mine) continue`
+      // right after the kind-12 branch), so no `range`/`pierce`/etc. fields are needed, just something to draw.
+      if (m.k === 12) shots.push({ mine: false, kind: 12, x: m.x + m.f * 10, z: m.y, h: m.h + 8, vx: m.f * 4.2, life: 40 });
+      if (m.k === 13) shots.push({ mine: false, kind: 13, x: m.x + m.f * 14, z: m.y, h: m.h + 6, vx: m.f * 3.6, life: 30, pierce: 1 });
+      if (m.k === 14) shots.push({ mine: false, kind: 14, x: m.x + m.f * 8, z: m.y, h: m.h + 8, vx: m.f * 3, life: 14 });
       break;
     }
     case 'es': if (!isHost()) applySnapshot(m); break;
-    case 'hit': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e && e.spawned) damageEnemy(e, m.d, m.dir, !!m.s, m.id, { burn: m.b, sp: m.sp, stun: m.st, bleed: m.bl, kb: m.kb || 1, hr: m.hr, air: !!m.a }); } break;
+    case 'hit': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e && e.spawned) damageEnemy(e, m.d, m.dir, !!m.s, m.id, { burn: m.b, sp: m.sp, stun: m.st, bleed: m.bl, kb: m.kb || 1, hr: m.hr, air: !!m.a, dragon: !!m.dr }); } break;
     case 'kill': if (m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) { e.stolen = m.st || 0; onKill(e, m.by); } if (m.ex && Math.abs(m.exx - me.x) < 22 && Math.abs(m.exz - me.z) < 14) { hurt(1, 3, m.exx); SFX.boom(); } } break;
     case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0, k: m.k, h: m.h, vh: m.vh }); break;
     // v1.1 A6: WOODS essential-oil diffuser - the cloud itself isn't tied to a player id, so it gets its own message
@@ -4558,5 +4685,9 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, get shopSel() { return shopSel; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost,
   // v1.2 fix (Step 1) debug hooks: crew-lives visibility + the real restart-out-of-lives path, for the
   // automated 2-browser tests that verify the host/non-host crewLives-sync fix.
-  get crewLives() { return crewLives; }, restartLevelOutOfLives, cycleWeapon, progressLabel };
+  get crewLives() { return crewLives; }, restartLevelOutOfLives, cycleWeapon, progressLabel,
+  // v1.2 fix (Step 5) debug hooks: set the current homie's Core straight to a level (bypassing coreCap and
+  // the coins/Resin/Seed cost) for the "screenshot every form" check, plus the tier/form-name helpers.
+  setCoreLevel: lv => { save.cores[CORE_HOMIE[Net.color || 0]] = Math.max(1, Math.min(10, lv | 0)); save.coreCap = Math.max(save.coreCap || 3, lv | 0); },
+  coreTier, formName, weaponDef, CORE_FORMS, attack, get shots() { return shots; }, coreLevel, WEAPONS };
 })();

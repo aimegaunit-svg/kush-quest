@@ -686,3 +686,86 @@ case, which is now handled at join time via `room.transit`, not for a host hando
 than guessing whether that edge case matters for this brief.
 
 Pushed to `main`. Next: Step 5 (Core weapons for real, per Brief v1.1 A2).
+
+## STEP 5 (FIX_STEPS.md): Core weapons for real (Brief v1.1 A2) - landed and verified
+
+**Status: done, with one deliberate scope trim flagged below (visuals) and everything else built for real,
+not stubbed.** `game.js` only - didn't touch `drive.js`/`transit.js`/the 5 transit game files.
+
+1. **10-level form tables for all 4 Cores.** Added `coreTier(lv)` (buckets 1-2/3-4/5-6/7-8/9/10 into tiers
+   0-5, matching the brief's form-name groupings exactly) and `CORE_FORMS`/`formName(wid, lv)` with the
+   brief's real names for all 4 weapons (Joint: Pinner...Legendary Doobie; Lighter: Bic...Dragon's Breath;
+   Bong: Mini Bong...The Mothership; Grinder: Pocket Grinder...Kief Cyclone). The HUD Bag row, the shop's
+   core-upgrade buy button, and the level-up confirmation banner all show the real form name now (and call
+   out when a purchase crosses into a new form), replacing the old static `WEAPONS[].name` display. Verified
+   via debug hook (`setCoreLevel`) at lv 1/3/5/7/9/10 for the Joint: all 6 names distinct, damage strictly
+   increasing.
+2. **The Grinder is now genuinely ranged** - a thrown disc (`shots` kind 12) that flies out to a
+   tier-scaled range, flips around, and homes back toward the player's CURRENT position until caught (its
+   own little state machine in `updateShots`, since nothing else here needed an out-and-back projectile).
+   4-Piece+ (tier2/Lv5+) pierces every enemy it passes; Electric+ (tier3/Lv7+) throws 2 discs at once;
+   Industrial+ (tier4/Lv9+) can also hit on the way back (a fresh `s.hit` Set once it turns around); Kief
+   Cyclone (tier5/Lv10) leaves a `slow` cloud where it's caught - a new cloud type that cuts enemy move
+   speed by more than half rather than the existing "confuse and wander" smoke behavior (kept deliberately
+   separate so it doesn't also stop enemies from attacking). Verified with a real enemy and real frames (not
+   simulated): the disc travelled out, actually called `hitEnemy` (enemy hp dropped), returned, and was
+   removed from `shots` - not just spawned-and-assumed.
+3. **The Bong's tap vs hold** is its own input rule now, not gated behind the `charge` skill like every
+   other weapon's charged swing - `updatePlayer()` allows the hold-to-charge gesture for Bong regardless of
+   whether the player has learned Charged Swings. A tap still falls through to the existing melee smash
+   (reach now also grows a little with tier - Glass Bong+); a hold fires a new ranged blast (`shots` kind
+   13) instead. Percolator+ (tier3/Lv7+) leaves a smoke cloud where the blast lands; Gravity Beast+
+   (tier4/Lv9+) rewards holding past ~1.2s with a bigger "2nd stage" blast; The Mothership (tier5/Lv10) is
+   the only tier where the blast pierces the whole line (earlier tiers stop after their first hit, like the
+   existing Rolling Papers throw). The tap's own shockwave-on-stun effect (previously firing from Lv3
+   onward, a leftover from the old 1-3 weapon system) is now correctly gated to tier5/Lv10 only, matching
+   the brief's "Mothership: smash makes shockwave ring". Verified: a tap spawns zero ranged shots (pure
+   melee); a hold at Lv10 spawns exactly one piercing kind-13 shot.
+4. **The Lighter's** burn/reach already scaled continuously by level (unchanged, that part was already
+   correct); added the tier-gated pieces the brief calls for: Zippo+ (tier1/Lv3+) leaves a burning ground
+   patch on hit (was previously gated at the old flat "lv>=3" latch - now genuinely tier-based, so it doesn't
+   stop mattering past tier1); Jet Flame+ (tier3/Lv7+) bursts extra fire around the target on the combo
+   finisher; Blowtorch+ (tier4/Lv9+) - a HELD attack now fires a short flamethrower stream (`shots` kind 14,
+   3 jets in a fan) instead of the normal jab; Dragon's Breath (tier5/Lv10) widens that to a 5-jet cone and
+   flags every enemy it burns (`e.dragonBurn`, carried over the network via a new `dr` field on the `hit`
+   message so this also works for non-host clients) to explode with real splash damage when they die -
+   verified end to end: hit an enemy with the stream (confirmed `dragonBurn` set), killed it, confirmed a
+   neighboring enemy took splash damage from the death explosion.
+5. **The Joint's** burn/reach already scaled continuously too; added Fatty+ (tier2/Lv5+): burn now actually
+   spreads to a neighbor (previously the `spread` flag only ever applied to the Lighter - the Joint's own
+   "burn spreads to 1 neighbour" from the brief's table was never wired up at all); Blunt+ (tier3/Lv7+): a
+   genuine 4th hit joins the combo (the shared combo-length math, previously hardcoded to always cap at 3
+   hits for every weapon, now reads `comboMax` per-weapon-per-tier); Cannon+ (tier4/Lv9+): the combo finisher
+   leaves a patch of burning ground; Legendary Doobie (tier5/Lv10): that patch is bigger and the puff/particle
+   colors go rainbow.
+6. **Seeds for every player in co-op on a boss kill.** This was the one straightforwardly wrong bit: the
+   `by === Net.id` gate in `onKill()` meant only whoever landed the killing hit got a seed, even though
+   `onKill()` already runs identically on every client (same `case 'kill':` network event, same `e.mega`/
+   `lvl.n`/`frame` state) - so the fix needed no new network message at all, just dropping that gate.
+   Verified with 2 real browser tabs: replayed the same boss-kill event on both, crediting the kill to A;
+   both A (the killer) AND B (not the killer) ended up with a seed.
+
+**Scope trim, flagged rather than guessed past (per your standing rule)**: the brief asks for a genuinely
+new sprite per form (24 total: 4 Cores x 6 forms each). That's real hand-drawn pixel art, not something to
+improvise well in code, so instead every Core's held-weapon size and swing-trail size/color now scales with
+tier (a growing colored glow aura appears from tier2 on, using `CORE_TIER_GLOW`), and every Core has at
+least one real new visual per major tier jump (Dragon's Breath's cone flame, the Grinder disc's spin +
+gold sparkle trail at Kief Cyclone, the Bong blast bubble growing at The Mothership, Legendary Doobie's
+rainbow puff colors). It's a real, testable "the look changes with level" per the Step 5 check - screenshots
+at Joint Lv1 vs Lv10 show a visibly bigger glowing swing - just not 24 unique sprites. Say if you'd rather
+this get a real art pass instead.
+
+One more small thing worth knowing: remote players' held-weapon visuals now also scale by tier (added a
+`cl` field to the position snapshot so every client knows every other player's Core level, not just their
+own) - this wasn't strictly required by the check (which is a solo debug/screenshot check) but was cheap
+and keeps multiplayer visuals consistent with what each player sees of themselves.
+
+**Check status**: `setCoreLevel(lv)` debug hook (bypasses coreCap/cost) lets any core be set to any level
+1-10 directly, matching the brief's own check wording ("a debug command sets each core to levels 1, 3, 5,
+7, 9 and 10"). Verified for the Joint: 6 distinct form names, strictly increasing damage, and a visible
+size/glow difference between Lv1 and Lv10 screenshots. Verified the Grinder's full disc lifecycle (spawn,
+travel, hit, return, catch) and the Bong's tap/hold split with real frame-stepping, not just inspecting the
+spawned-shot shape. Verified online in 2 real browser tabs: a Grinder Lv10 attack and a Lighter Lv10 charged
+attack both ran with zero console errors on either client. `node --check` clean throughout.
+
+Pushed to `main`. Next: Step 6 (Levels become real, per Brief v1.1 B1).

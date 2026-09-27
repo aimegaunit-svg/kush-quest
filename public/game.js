@@ -2806,6 +2806,11 @@ function toResults() {
   const roast = djDankLine(made, grade, me.best, Math.round(me.cooked), livesLost);
   persist();
   results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, dailyBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs, grade, isNewBest, newThings, roast };
+  // v1.2 (Step 11.1): Smoke Runs - a real level clear (daily or not) submits to the server leaderboard,
+  // keyed by level number (plus the daily seed, for daily runs specifically - so today's board doesn't
+  // mix with an ordinary replay of the same level). Score is this run's own coin haul, the simplest
+  // real number every run already produces; the grade rides along for display.
+  if (made) submitScore(lvl.n, me.earned + spotBonus + ultraBonus + dailyBonus, grade, lvl.daily ? todaySeed() : null);
   state = 'results'; shopSel = 0; hurryT = 0; banner = null;
 }
 
@@ -4099,6 +4104,12 @@ function drawShop() {
   // and just read off here.
   if (r.newThings && r.newThings.length) text(r.newThings.join('   '), W / 2, 26, '#ffd84a', 1, 'center');
   if (r.roast) text(r.roast, W / 2, 33, '#e4b3ff', 1, 'center');
+  // v1.2 (Step 11.1): Smoke Runs leaderboard - shows once the server answers the submit this run just
+  // sent (see toResults()). Top 3 only here; the full top 10 is what the server actually keeps.
+  if (r.made && leaderboard.key === lbKeyFor(lvl.n, lvl.daily ? todaySeed() : null) && leaderboard.list.length) {
+    text((lvl.daily ? "TODAY'S SMOKE RUN" : 'LEVEL') + ' TOP ' + Math.min(3, leaderboard.list.length) + ': ' +
+      leaderboard.list.slice(0, 3).map((e, i) => (i + 1) + '. ' + e.name + ' ' + e.score).join('   '), W / 2, 40, '#7ac8ff', 1, 'center');
+  }
   }
   drawMap(38);
   // tabs
@@ -4951,6 +4962,18 @@ function drawInventory() {
 // ============================================================
 //  NETWORK
 // ============================================================
+// v1.2 (Step 11.4): client error reporting - any uncaught error gets a best-effort one-shot report to the
+// server (see server.js's 'clienterr' case), separate from Net entirely since a crash can happen before
+// or without ever being online. Best-effort: swallows its own failures, never throws, never blocks anything.
+window.addEventListener('error', e => {
+  try {
+    if (location.protocol === 'file:') return;
+    const msg = (e && e.message || 'error') + ' @ ' + (e && e.filename || '?') + ':' + (e && e.lineno || 0);
+    const sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    sock.onopen = () => { sock.send(JSON.stringify({ t: 'clienterr', msg })); setTimeout(() => sock.close(), 500); };
+    sock.onerror = () => {};
+  } catch (err) {}
+});
 const Net = {
   ws: null, online: false, reconnecting: false, id: 'me', hostId: 'me', code: '', color: 0, name: 'STONER', level: 0, phase: 'play', pendingCollected: [], transit: null,
   send(o) { if (this.online && this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); },
@@ -5099,6 +5122,29 @@ function onNet(m) {
     case 'emote': { const r = remotes.get(m.id); if (r) r.emote = { e: m.e % EMOTES.length, t: 120 }; checkEmoteCombo(m.e % EMOTES.length, m.id); break; }
     case 'softpause': softPause = m.on ? { by: m.by } : null; break;
     case 'kicked': persist(); banner = { t: 99999, a: 'REMOVED FROM THE ROOM', b: 'BY THE HOST - CLICK HERE TO GO TO THE MENU' }; Net.online = false; Net.kicked = true; break;
+    // v1.2 (Step 11.3): FIND A CREW - the server's answer to a 'list_rooms' query.
+    case 'rooms': Net.publicRooms = Array.isArray(m.list) ? m.list : []; break;
+    // v1.2 (Step 11.1): server leaderboard reply, to either a submit or a query.
+    case 'lb': leaderboard.key = m.key; leaderboard.list = Array.isArray(m.list) ? m.list : []; break;
+  }
+}
+
+// v1.2 (Step 11.1): the current leaderboard the results screen (or FIND A CREW menu) is showing, filled
+// in by the 'lb' case above once the server answers. Not persisted - always a fresh server query.
+const leaderboard = { key: null, list: [] };
+function lbKeyFor(n, daily) { return String(n | 0) + (daily ? ':' + String(daily) : ''); }
+// v1.2 (Step 11.1): submits this run's score (works solo too - a leaderboard is only useful shared, and
+// solo runs are real runs) then re-queries so the freshly-submitted score is reflected.
+function submitScore(n, score, grade, daily) {
+  if (location.protocol === 'file:') return; // no server to talk to when just opening the file directly
+  if (Net.online) Net.send({ t: 'lb_submit', level: n, score, grade, name: Net.name, daily: daily || null });
+  else { // solo: open a one-shot connection just to submit/query, since Net.send() requires Net.online
+    try {
+      const sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+      sock.onopen = () => sock.send(JSON.stringify({ t: 'lb_submit', level: n, score, grade, name: Net.name, daily: daily || null }));
+      sock.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m.t === 'lb') { leaderboard.key = m.key; leaderboard.list = m.list; } } catch (e) {} sock.close(); };
+      sock.onerror = () => {}; setTimeout(() => { try { sock.close(); } catch (e) {} }, 5000);
+    } catch (e) {}
   }
 }
 
@@ -5192,13 +5238,41 @@ function renderChars() {
 selectedChar = save.character || 0;
 renderChars();
 $('solo').onclick = () => { Net.name = getName(); Net.color = selectedChar; startGame(); };
-$('create').onclick = () => { Net.name = getName(); Net.color = selectedChar; goOnline({ t: 'create', name: Net.name, level: 0, color: selectedChar }); };
+$('create').onclick = () => { Net.name = getName(); Net.color = selectedChar; goOnline({ t: 'create', name: Net.name, level: 0, color: selectedChar, pub: !!($('pubRoom') && $('pubRoom').checked) }); };
 $('join').onclick = () => {
   const code = $('code').value.trim().toUpperCase();
   if (code.length < 5) { $('err').textContent = 'ENTER THE 5-LETTER ROOM CODE'; return; }
   Net.name = getName(); Net.color = selectedChar; goOnline({ t: 'join', code, name: Net.name, color: selectedChar });
 };
 $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('join').click(); });
+// v1.2 (Step 11.3): FIND A CREW - a one-shot connection just to ask the server for public open lobbies,
+// same "solo one-shot socket" pattern submitScore() uses for leaderboard queries when not already online.
+if ($('findCrew')) $('findCrew').onclick = () => {
+  const listEl = $('crewList');
+  listEl.style.display = 'block'; listEl.textContent = 'LOOKING FOR OPEN CREWS...';
+  let sock;
+  try { sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); }
+  catch (e) { listEl.textContent = 'COULD NOT REACH THE SERVER'; return; }
+  sock.onopen = () => sock.send(JSON.stringify({ t: 'list_rooms' }));
+  sock.onmessage = ev => {
+    try {
+      const m = JSON.parse(ev.data);
+      if (m.t !== 'rooms') return;
+      sock.close();
+      if (!m.list.length) { listEl.textContent = 'NO OPEN PUBLIC CREWS RIGHT NOW - TRY CREATING ONE'; return; }
+      listEl.innerHTML = '';
+      m.list.forEach(r => {
+        const b = document.createElement('button');
+        b.className = 'alt'; b.style.display = 'block'; b.style.margin = '3px 0'; b.style.fontSize = '9px';
+        b.textContent = r.host + "'S CREW - " + r.players + '/4 - CODE ' + r.code;
+        b.onclick = () => { $('code').value = r.code; $('join').click(); };
+        listEl.appendChild(b);
+      });
+    } catch (e) {}
+  };
+  sock.onerror = () => { listEl.textContent = 'COULD NOT REACH THE SERVER'; };
+  setTimeout(() => { try { sock.close(); } catch (e) {} }, 6000);
+};
 if ($('reset')) $('reset').onclick = () => { if ($('reset').dataset.sure) { save = defaultSave(); persist(); showSave(); $('reset').textContent = 'SAVE RESET'; delete $('reset').dataset.sure; } else { $('reset').dataset.sure = 1; $('reset').textContent = 'CLICK AGAIN TO WIPE YOUR SAVE'; } };
 const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }

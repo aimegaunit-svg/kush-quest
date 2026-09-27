@@ -26,6 +26,18 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true, rooms: rooms.size, players, connections: clients.size, uptime: Math.round(process.uptime()) }));
   }
+  if (url === '/stats') {
+    // v1.2 (Step 11.4): a plain-text/JSON analytics-lite report - lifetime-since-restart totals, not a
+    // dashboard. Good enough to answer "is anyone actually playing this" without SSHing in or wiring up
+    // a real analytics service.
+    let players = 0, publicRooms = 0; for (const r of rooms.values()) { players += r.players.size; if (r.pub) publicRooms++; }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true, uptime: Math.round(process.uptime()),
+      now: { rooms: rooms.size, publicRooms, players, connections: clients.size },
+      lifetime: stats,
+    }));
+  }
   if (url === '/') url = '/index.html';
   const file = path.normalize(path.join(PUBLIC, url));
   if (file !== PUBLIC && !file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end(); }
@@ -65,6 +77,7 @@ server.on('upgrade', (req, socket) => {
 
   let buf = Buffer.alloc(0);
   clients.add(client);
+  stats.connectionsTotal++;
   socket.on('data', chunk => {
     client.seen = Date.now();
     buf = Buffer.concat([buf, chunk]);
@@ -97,6 +110,27 @@ server.on('upgrade', (req, socket) => {
 // room: { players: Map(id -> {name,color,client}), collected:Set, level, phase:'play'|'shop', fin:Set, ready:Set, hurried, emptySince }
 const rooms = new Map();
 const MAX_PLAYERS = 4, MAX_ROOMS = 500, MAX_LEVEL = 99;
+
+// v1.2 (Step 11.1/11.4): analytics-lite counters for the /stats endpoint below. Deliberately just a few
+// running totals kept in memory (reset on restart, like everything else here) - not a real analytics
+// pipeline, just enough for "how much is this actually getting played" at a glance.
+const stats = { roomsCreated: 0, connectionsTotal: 0, levelsFinished: 0, clientErrors: 0 };
+
+// v1.2 (Step 11.1): server-side leaderboard, keyed by "<level>" or "<level>:<dailySeed>" for daily runs.
+// Each entry keeps only the top 10 by score, in memory. Real (not localStorage-only), shared across every
+// player who ever submits to this server - the brief's "Smoke Runs" leaderboard ask.
+const LB_MAX = 10;
+const leaderboards = new Map();
+function lbSubmit(key, entry) {
+  key = String(key).slice(0, 40);
+  if (!/^[\w:-]{1,40}$/.test(key)) return null;
+  let list = leaderboards.get(key);
+  if (!list) { list = []; leaderboards.set(key, list); }
+  list.push(entry);
+  list.sort((a, b) => b.score - a.score);
+  if (list.length > LB_MAX) list.length = LB_MAX;
+  return list;
+}
 
 function makeCode() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -161,6 +195,7 @@ function checkProgress(room) {
   if (!total) return;
   if (room.phase === 'play' && room.fin.size > 0 && [...room.players.keys()].every(id => room.fin.has(id))) {
     room.phase = 'shop';
+    stats.levelsFinished++;
     broadcast(room, { t: 'allfin' });
   } else if ((room.phase === 'shop' || room.phase === 'lobby') && [...room.players.keys()].every(id => room.ready.has(id))) {
     room.phase = 'map'; room.ready.clear();
@@ -176,7 +211,10 @@ function handle(client, m) {
       if (client.room) return;
       if (rooms.size >= MAX_ROOMS) return client.send({ t: 'err', msg: 'Server is full, try again later' });
       const code = makeCode();
-      rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'lobby', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0 });
+      // v1.2 (Step 11.3): `pub` marks a room as listed for FIND A CREW (see 'list_rooms' below). Off by
+      // default - a room is only discoverable by strangers if the host explicitly opts in.
+      rooms.set(code, { players: new Map(), collected: new Set(), level: Math.max(0, Math.min(MAX_LEVEL, m.level | 0)), phase: 'lobby', fin: new Set(), ready: new Set(), hurried: false, emptySince: 0, pub: !!m.pub, hostName: cleanName(m.name) });
+      stats.roomsCreated++;
       enter(client, code, cleanName(m.name), m.color | 0);
       break;
     }
@@ -321,6 +359,40 @@ function handle(client, m) {
       const out = { t: 'd', k: String(m.k || '').slice(0, 24), p: m.p, id: client.id };
       if (m.to) { const target = room.players.get(String(m.to)); if (target) target.client.send(out); }
       else broadcast(room, out, client.id);
+      break;
+    }
+    // v1.2 (Step 11.3): FIND A CREW - list open, public, non-full lobbies so a solo player can join a
+    // stranger's crew instead of needing a code. Deliberately only lobby-phase rooms (joining mid-play
+    // already works via the Step 10 drop-in/spectator path, but that's a different, more committal ask).
+    case 'list_rooms': {
+      const list = [];
+      for (const [code, r] of rooms) {
+        if (!r.pub || r.phase !== 'lobby' || r.players.size >= MAX_PLAYERS) continue;
+        list.push({ code, players: r.players.size, level: r.level, host: r.hostName || '?' });
+        if (list.length >= 20) break;
+      }
+      client.send({ t: 'rooms', list });
+      break;
+    }
+    // v1.2 (Step 11.1): server-side leaderboard submit/query. `key` is the level number for a normal run,
+    // or "<level>:<dailySeed>" for a Smoke Run daily - see game.js's startDaily()/todaySeed().
+    case 'lb_submit': {
+      const key = String(m.level | 0) + (m.daily ? ':' + String(m.daily).slice(0, 12) : '');
+      const entry = { name: cleanName(m.name), score: Math.max(0, Math.min(999999, m.score | 0)), grade: String(m.grade || '').slice(0, 2), ts: Date.now() };
+      const list = lbSubmit(key, entry);
+      if (list) client.send({ t: 'lb', key, list });
+      break;
+    }
+    case 'lb_query': {
+      const key = String(m.level | 0) + (m.daily ? ':' + String(m.daily).slice(0, 12) : '');
+      client.send({ t: 'lb', key, list: leaderboards.get(key) || [] });
+      break;
+    }
+    // v1.2 (Step 11.4): client-side error reporting - a crash on someone's machine gets logged here
+    // instead of vanishing silently. Just a server console line + a counter, not a ticketing system.
+    case 'clienterr': {
+      stats.clientErrors++;
+      console.error('[client error]', client.id, String(m.msg || '').slice(0, 300));
       break;
     }
   }

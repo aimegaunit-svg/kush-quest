@@ -1204,3 +1204,36 @@ Smoke Runs (strain picks/modifiers/daily seed), a real leaderboard on the server
 (only armor got a visual this slice — "hats/shirts/weapon skins" in the brief is broader), share card +
 farm snapshot (`canvas.toBlob`), public rooms / FIND A CREW, an animated title screen, the `/stats`
 analytics-lite report, and client error reporting. Continuing with these next in this same step.
+
+## STEP 11 continued: leaderboard, FIND A CREW, /stats, client error reporting
+
+**11.1 Smoke Runs leaderboard:** a real server-side leaderboard (`server.js`'s `leaderboards` Map, keyed by
+level number or `"<level>:<dailySeed>"` for a daily run), top 10 kept per key. `lb_submit`/`lb_query` ws
+message types. The client submits automatically on every real level clear in `toResults()` (score = this
+run's coin haul including bonuses), works whether online (uses the existing socket) or solo (opens a
+one-shot socket just for the submit/query, same pattern as FIND A CREW below) - a leaderboard is only
+useful when solo runs land on it too. The results screen shows the current top 3 for that level once the
+server answers.
+
+**11.3 Public rooms / FIND A CREW:** `create` now takes an optional `pub` flag (via a new "LIST THIS ROOM
+FOR FIND A CREW" checkbox in the menu); the server tracks it on the room and a new `list_rooms` message
+returns up to 20 public, still-in-lobby, not-yet-full rooms (`code, players, level, host`). A new FIND A
+CREW button opens a one-shot socket, lists what comes back as clickable buttons that fill in the room code
+and click JOIN - a real discovery flow, not just a code box, though still text-list-simple rather than a
+polished lobby browser.
+
+**11.4 `/stats` + client error reporting:** a new `/stats` HTTP endpoint (JSON) reports lifetime-since-
+restart counters (`roomsCreated`, `connectionsTotal`, `levelsFinished`, `clientErrors`) plus current
+rooms/players/connections - analytics-lite, not a dashboard, good enough to answer "is anyone actually
+playing this." A `window.addEventListener('error', ...)` in `game.js` best-effort-reports any uncaught
+client exception to a new `clienterr` ws message, logged server-side and counted in `/stats`.
+
+**Testing:** `kq_step11_server_test.js` (2 real tabs + direct socket checks) - a solo level clear really
+lands on the server leaderboard (verified via a fresh `lb_query`); a public room A creates shows up in B's
+FIND A CREW list and B can join it from there; `/stats` reports real, incrementing lifetime counters.
+Re-ran `kq_step10_test.js`, `kq_step10_online.js`, `kq_step10_teamchest.js`, `kq_step11_armor_online.js` -
+all still pass. `node --check` clean on both files.
+
+**Not yet done this step** (down from the earlier list): weapon-skin cosmetics (armor got a real visual;
+weapon skins did not), the share card + farm snapshot (`canvas.toBlob`), and an animated title screen.
+Continuing with these next.

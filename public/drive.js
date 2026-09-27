@@ -495,6 +495,7 @@ function setupDrive() {
   driveCount[S.seats[0]] = (driveCount[S.seats[0]] || 0) + 1;
   if (S.auth && !S.practice) for (let i = 0; i < 6; i++) spawnTraffic(400 + i * 60);
   S.pstep = 0; S.pT = 0;
+  S.driveT0 = S.t;
   engineStart(); musicStep = 0; musicT = 0;
   if (S.car === 'shitbox' && !S.save.shitboxSeen) { S.save.shitboxSeen = true; banner("TAYLOR'S SHITBOX:", 'IT RUNS. MOSTLY.', '#ffd23f', 2.5); }
 }
@@ -848,8 +849,8 @@ function updateDrive(rdt) {
   if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of vsg.props) if (!SOFT[pr.k] && Math.abs(pr.x - S.x) < VHW + 0.12) { crash(null, 'OUCH! STAY ON THE ROAD'); loseCoins(3); S.x *= 0.8; }
   S.nextHaz -= dt;
   if (!S.practice && S.nextHaz <= 0 && segIdx < S.segs.length - 100) {
-    S.nextHaz = 2.5 + Math.random() * 3 / (1 + 0.3 * bakedLevel());
-    const k = ['cone', 'cone', 'pothole', 'oil'][Math.random() * 4 | 0], bi = segIdx + 70 + (Math.random() * 20 | 0);
+    S.nextHaz = 5 + Math.random() * 4;
+    const k = ['pothole', 'pothole', 'oil'][Math.random() * 3 | 0], bi = segIdx + 70 + (Math.random() * 20 | 0);
     if (k === 'cone') { const lx = [-0.6, 0, 0.6][Math.random() * 3 | 0]; for (let q = 0; q < 3; q++) addItem(bi + q * 2, 'cone', lx + (q - 1) * 0.12); }
     else addItem(bi, k, Math.random() * 1.4 - 0.7);
   }
@@ -862,7 +863,7 @@ function updateDrive(rdt) {
     c.rel = c.z - S.pos;
     const dx = Math.abs(c.x - S.x), vr = c.rel - PZ;
     if (vr > -SEG * 0.5 && vr < SEG * 0.5 && dx < VHW * 2 + 0.02) { crash(c, 'CRASH!'); loseCoins(4 + Math.floor(S.coins * 0.15)); }
-    else if (!c.passed && vr < 0 && dx < VHW * 2 + 0.25 && S.speed > S.maxSp * 0.6) { c.passed = true; if ((S.ccCd || 0) <= S.t) { S.ccCd = S.t + 4; S.coins += 1; sfx('sel'); pop('CLOSE CALL +1', '#8ef0b0'); } }
+    
     if (vr < -SEG) c.passed = true;
   }
   S.traffic = S.traffic.filter(c => c.rel > -SEG * 4 && c.rel < SEG * DRAW);
@@ -924,7 +925,7 @@ function updateDrive(rdt) {
 const SOFT = { bush: 1, tuft: 1, flower: 1, rock: 1, post: 1, mile: 1 };
 const HAZ = { block: { w: 0.2 }, cone: { w: 0.03 }, pothole: { w: 0.12 }, oil: { w: 0.13 } };
 // floating text popup above the car
-function pop(txt, col) { S.fx.push({ x: W / 2 + Math.random() * 16 - 8, y: 130, vx: 0, vy: -30, t: 1, col, txt }); if (S.auth && S.net) S.out.push(['pop', txt, col]); }
+function pop(txt, col) { if (txt[0] === '+') { S.coinFlash = 0.25; return; } S.fx.push({ x: W / 2, y: 128, vx: 0, vy: -24, t: 0.9, col, txt }); if (S.auth && S.net) S.out.push(['pop', txt, col]); }
 // lose coins: they spray out of the windows, and about half land on the road ahead so you can win them back
 function loseCoins(n) {
   n = Math.min(Math.floor(S.coins), n); if (n <= 0) return;
@@ -957,23 +958,24 @@ function copAI(c, dt) {
   if (c.blind > 0) {
     c.blind -= dt; tsp = S.speed * 0.7; tx = c.x + Math.sin(c.t * 7) * 0.5; lat = 1.2;
   } else if (vr < -SEG * 0.2 && c.stage !== 'pace' && c.stage !== 'ram') {
-    c.stage = 'tail'; tsp = S.speed + (vr > -SEG * 2 ? SEG * 1.5 : vr > -SEG * 6 ? S.maxSp * 0.12 : chase); tx = S.x + (c.plan === 'side' ? (c.x < S.x ? -0.62 : 0.62) : 0.62);
+    c.stage = 'tail'; tsp = S.speed + (vr > -SEG * 2 ? SEG * 1.5 : vr > -SEG * 6 ? S.maxSp * 0.12 : chase); if (!c.lane) c.lane = c.x < S.x ? -0.62 : 0.62; if (Math.abs(S.x + c.lane) > 1) c.lane = -c.lane; tx = S.x + c.lane; // stay in the lane next to you
     if (!c.called) { c.called = true; banner('COPS COMING UP BEHIND!', 'CHECK YOUR MIRROR', '#ff6b6b', 1.4, true); }
     if (c.x !== tx && Math.abs(c.x - S.x) < 0.3) tx = S.x + 0.62; // don't rear-end the van, go around
   } else if (c.plan === 'side') {
-    const lane = S.x + (c.lane || (c.lane = c.x < S.x ? -0.62 : 0.62));
+    if (!c.lane) c.lane = c.x < S.x ? -0.62 : 0.62; if (Math.abs(S.x + c.lane) > 1.05) c.lane = -c.lane;
+    const lane = S.x + c.lane;
     if (c.stage !== 'ram') {
       if (c.stage !== 'pace') { c.stage = 'pace'; c.t = 0; sfx('horn'); }
       tsp = S.speed - (vr - SEG * 0.7) * 0.9; tx = lane; lat = 0.9; // sit just ahead, in view beside you
       addHeat(dt * 2);
-      if (c.t > (c.rams ? 2.5 : 4) && Math.abs(vr) < SEG * 1.5) { c.stage = 'ram'; c.t = 0; c.rams = (c.rams || 0) + 1; }
+      if (c.t > (c.rams ? 2.5 : 4) && Math.abs(vr) < SEG * 2.5) { c.stage = 'ram'; c.t = 0; c.rams = (c.rams || 0) + 1; }
     } else {
       tsp = S.speed - (vr - SEG * 0.4) * 0.9; tx = S.x; lat = 2.2; // swerve in
       if (Math.abs(c.x - S.x) < VHW * 2 + 0.02 && Math.abs(vr) < SEG * 0.6 && !c.rammed) {
-        c.rammed = true; S.shake = 5; S.damage++; loseCoins(5); addHeat(8); pop('RAMMED!', '#ff3b3b'); sfx('crash');
+        c.rammed = true; S.shake = 5; S.damage++; loseCoins(5); addHeat(8); banner('RAMMED!', '-5 COINS', '#ff3b3b', 0.9); sfx('crash');
         S.x += (S.x > c.x ? 1 : -1) * 0.35; c.x -= (S.x > c.x ? 1 : -1) * 0.2;
       }
-      if (c.t > 1.2) { c.stage = 'pace'; c.t = 0; c.rammed = false; c.lane = -c.lane * (Math.random() < 0.5 ? 1 : -1); }
+      if (c.t > 1.2) { c.stage = 'pace'; c.t = 0; c.rammed = false; }
     }
   } else { // block: get in front of you and brake-check
     if (vr < SEG * 5) { c.stage = 'pass'; tsp = S.speed + S.maxSp * 0.18; c.passLane = c.passLane || (S.x < 0 ? 0.62 : -0.62); tx = c.passLane; }
@@ -985,7 +987,8 @@ function copAI(c, dt) {
       addHeat(dt * 1.5);
     }
   }
-  c.sp += (tsp - c.sp) * Math.min(1, dt * 4); c.sp = Math.max(0, Math.min(S.maxSp * 1.6, c.sp));
+  if (c.stage === 'pace' || c.stage === 'ram') c.sp = Math.max(S.speed - S.maxSp * 0.3, Math.min(S.speed + S.maxSp * 0.3, tsp)); // hold station beside you
+  else c.sp += (tsp - c.sp) * Math.min(1, dt * 4); c.sp = Math.max(0, Math.min(S.maxSp * 1.6, c.sp));
   c.z += c.sp * dt;
   const d = tx - c.x; c.x += Math.sign(d) * Math.min(Math.abs(d), lat * dt);
   c.x = Math.max(-0.95, Math.min(0.95, c.x));
@@ -1219,12 +1222,11 @@ function draw() {
   // cones for the test drive + arrows for cops coming up behind
   for (const c of S.cops) {
     if (c.type === 'cone') { c.sx = W / 2 + 80; c.sy = 176; drawCop(c, c.sx, c.sy, 1); continue; }
-    if (c.stage !== 'spin' && c.z - S.pos < PZ && c.z - S.pos > -900) { const sd = c.x < S.x ? -1 : 1; text(sd < 0 ? '<' : '>', sd < 0 ? 6 : W - 12, 130, Math.floor(S.t * 6) % 2 ? '#ff3b3b' : '#fff', 3); }
   }
   // aim marker: which cop your next throw hits
   if (S.mode === 'drive' && S.cops.length && (S.solo || mySeat() > 0)) {
     const tg = pickTarget(S.solo ? 0 : mySeat(), null);
-    if (tg && tg.sx != null && tg.z - S.pos >= PZ * 0.5) { const tx = tg.sx, ty = tg.sy, sc = Math.max(0.5, Math.min(1.4, PZ / Math.max(1, tg.z - S.pos))), b = Math.floor(S.t * 6) % 2 ? 2 : 0; ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.strokeRect(tx - 30 * sc - b, ty - 52 * sc - b, 60 * sc + b * 2, 52 * sc + b * 2); text('J', tx, ty - 62 * sc, '#ffd23f', 1, 'center'); }
+    if (tg && tg.sx != null && tg.z - S.pos >= PZ * 0.5) { const tx = tg.sx, ty = tg.sy, sc = Math.max(0.5, Math.min(1.4, PZ / Math.max(1, tg.z - S.pos))), b = Math.floor(S.t * 6) % 2 ? 2 : 0; const ay = ty - 58 * sc - b; ctx.fillStyle = '#ffd23f'; for (let i = 0; i < 4; i++) ctx.fillRect(tx - 4 + i, ay + i, 8 - i * 2, 1); }
   }
   // van (blinks while recovering from a crash)
   if (!(S.crashCd > S.t && Math.floor(S.t * 12) % 2)) drawPlayer();
@@ -1254,15 +1256,15 @@ function draw() {
     }
     // sunset / night tint over everything as the drive goes on
     const dusk = S.night ? 0 : Math.max(0, pct - 0.55) / 0.45;
-    if (dusk > 0) { ctx.globalAlpha = dusk * 0.28; ctx.fillStyle = pct > 0.85 ? '#2a1a50' : '#ff8a4a'; ctx.fillRect(0, HZ, W, H); ctx.globalAlpha = 1; }
+    if (dusk > 0) { ctx.globalAlpha = dusk * 0.18; ctx.fillStyle = pct > 0.85 ? '#2a1a50' : '#ff8a4a'; ctx.fillRect(0, HZ, W, H); ctx.globalAlpha = 1; }
   }
   // siren wash
-  if (S.siren > 0.2) { ctx.globalAlpha = 0.12 * S.siren; ctx.fillStyle = Math.floor(S.t * 6) % 2 ? '#f00' : '#03f'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
-  if (lvl >= 2) { ctx.globalAlpha = 0.08 * lvl; ctx.fillStyle = hue(S.t * 50); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  if (S.siren > 0.2) { ctx.globalAlpha = 0.35 * S.siren; const on = Math.floor(S.t * 6) % 2; ctx.fillStyle = on ? '#f00' : '#03f'; ctx.fillRect(0, 0, 4, H); ctx.fillStyle = on ? '#03f' : '#f00'; ctx.fillRect(W - 4, 0, 4, H); ctx.globalAlpha = 1; }
+  if (lvl >= 3) { ctx.globalAlpha = 0.12; ctx.fillStyle = hue(S.t * 50); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   if (S.blur > 0) { ctx.globalAlpha = Math.min(0.7, S.blur * 0.4); ctx.fillStyle = '#ddd'; for (let i = 0; i < 10; i++) { ctx.beginPath(); ctx.arc((i * 47 + S.t * 20) % W, 80 + Math.sin(i + S.t) * 30, 30, 0, 7); ctx.fill(); } ctx.globalAlpha = 1; }
   if (S.splat > 0) { ctx.globalAlpha = Math.min(1, S.splat); ctx.fillStyle = S.event === 'THE PIZZA BOX' ? '#e8b04a' : '#8a3'; ctx.beginPath(); ctx.arc(120, 70, 40, 0, 7); ctx.arc(200, 90, 30, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
   if (S.flash > 0) { ctx.globalAlpha = S.flash; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
-  if (S.sirensSlow > 0 && Math.floor(S.t * 4) % 2) { ctx.globalAlpha = 0.2; ctx.fillStyle = '#f00'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  if (S.sirensSlow > 0 && Math.floor(S.t * 4) % 2) { ctx.globalAlpha = 0.08; ctx.fillStyle = '#f00'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawHUD();
   flushText();
@@ -1290,7 +1292,7 @@ function drawProp(pr, x, y, sc, clip) {
     box(-2, 0, 4, 30, '#555');
     const w = Math.max(40, lbl.length * 6);
     box(-w / 2, 28, w, 16, k === 'fork' ? '#1d6b2c' : '#7a2fc0');
-    if (s > 0.35) { const yy = y - 42 * s; if (yy < clip) text(lbl, x, yy + 3 * s, '#fff', Math.max(1, Math.min(2, s * 1.4)), 'center'); }
+    if (s > 0.7) { const yy = y - 42 * s; if (yy < clip) text(lbl, x, yy + 3 * s, '#fff', Math.max(1, Math.min(2, s * 1.4)), 'center'); }
   }
 }
 function drawItem(it, x, y, sc) {
@@ -1403,72 +1405,110 @@ function bar(x, y, w, h, pct, col, bg = '#1a1026') {
   ctx.fillStyle = bg; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
   ctx.fillStyle = col; ctx.fillRect(x, y, Math.round(w * Math.max(0, Math.min(1, pct))), h);
 }
+// HUD layout (kept to the edges so the road stays clear):
+//   top strip: trip progress (van -> flag, '!' = the mid-drive event)
+//   top-left: coins + how far from breaking even     top-right: WANTED stars
+//   top-centre: rear-view mirror                     centre-top: ONE message slot (banners / countdown)
+//   bottom-left: snacks (J)                          bottom-right: cooked (H)
+function icon(k, x, y) {
+  const r = (ox, oy, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x + ox, y + oy, w, h); };
+  if (k === 'coin') { r(1, 0, 6, 8, '#ffd23f'); r(0, 1, 8, 6, '#ffd23f'); r(3, 2, 2, 4, '#d99a12'); }
+  else if (k === 'snack') { r(0, 1, 8, 7, '#b5651d'); r(0, 0, 8, 2, '#8a4a10'); r(2, 3, 4, 3, '#ffd23f'); }
+  else if (k === 'star') { r(3, 0, 2, 2, '#fff'); r(0, 2, 8, 2, '#fff'); r(1, 4, 6, 2, '#fff'); r(1, 6, 2, 2, '#fff'); r(5, 6, 2, 2, '#fff'); }
+  else if (k === 'leaf') { r(3, 0, 2, 8, '#3fae5a'); r(0, 3, 8, 2, '#3fae5a'); r(1, 1, 2, 2, '#3fae5a'); r(5, 1, 2, 2, '#3fae5a'); }
+}
+function keyTag(k, x, y, on = true) { ctx.fillStyle = on ? '#e8e0ff' : '#555'; ctx.fillRect(x, y, 9, 9); ctx.fillStyle = '#1a1026'; ctx.fillRect(x + 1, y + 1, 7, 7); text(k, x + 5, y + 1, on ? '#fff' : '#777', 1, 'center'); }
 function drawHUD() {
-  // top-left: snacks + coins
-  text('SNACKS ' + S.snacks, 4, 4, '#ffd23f');
-  const netc = Math.floor(S.coins) - (S.gas || 0);
-  text('COINS ' + Math.floor(S.coins) + (S.gas != null ? '  NET ' + (netc >= 0 ? '+' : '') + netc : ''), 4, 12, netc >= 0 || S.gas == null ? '#ffd23f' : '#ff9a6b');
-  const hc = ((S.stats[S.me] || {}).hitCd || 0) - S.t; text('H: HIT ' + (hc > 0 ? Math.ceil(hc) : 'READY'), 4, 20, hc > 0 ? '#888' : '#8ef0b0');
-  // heat
-  text('HEAT', 4, 32, '#ff6b6b'); bar(22, 32, 50, 5, S.heat / 100, S.heat >= 100 ? (Math.floor(S.t * 8) % 2 ? '#f00' : '#fff') : '#ff6b6b');
-  if (S.lockT > 0) text('LOCKED ' + S.lockT.toFixed(1), 4, 40, '#ff3b3b');
-  // cooked
-  const lvl = bakedLevel();
-  text('COOKED', W - 74, 4, '#8ef0b0'); bar(W - 48, 4, 44, 5, avgCooked() / 100, lvl === 3 ? hue(S.t * 90) : '#8ef0b0');
-  if (S.wx && S.wx.k !== 'clear') text(S.wx.k.toUpperCase() + (S.wx.grip < 0.9 ? ' - SLICK' : ''), W - 4, 20, '#9fd8ff', 1, 'right');
-  text(BAKED[lvl] + (lvl ? ' x' + coinMul() : ''), W - 4, 12, lvl === 3 ? hue(S.t * 90) : '#c8ffa0', 1, 'right');
-  // distance bar with ??? swap marker
-  const pct = S.pos / (S.trackLen - SEG * 40);
-  bar(80, H - 7, 160, 3, pct, '#8ef0b0');
-  if (!S.swapped) text('???', 80 + 160 * 0.5, H - 15, '#ffd23f', 1, 'center');
-  if (S.opts.toName) text('TO ' + S.opts.toName, 244, H - 8, '#fff');
-  // rear-view mirror
-  const mx = W / 2 - 30, my = 3;
-  ctx.fillStyle = '#222'; ctx.fillRect(mx - 2, my - 2, 64, 24);
-  ctx.fillStyle = S.theme.road[0]; ctx.fillRect(mx, my, 60, 20);
-  ctx.fillStyle = S.theme.grass[0]; ctx.fillRect(mx, my, 60, 6);
-  for (const c of S.cops) if (c.type !== 'cone' && c.z - S.pos < SEG * 0.6 && c.stage !== 'spin') {
-    const k = Math.max(0.15, Math.min(1, 1 + (c.z - S.pos) / 1500));
-    const cx = mx + 30 + c.x * 20, cy = my + 8 + k * 10;
-    ctx.fillStyle = c.type === 'suv' ? '#222' : '#eee'; ctx.fillRect(cx - 8 * k, cy - 4 * k, 16 * k, 8 * k);
-    ctx.fillStyle = Math.floor(S.t * 8) % 2 ? '#f00' : '#03f'; ctx.fillRect(cx - 3 * k, cy - 6 * k, 6 * k, 2 * k);
-  }
-  // seats
-  const occ = [0, 1, 2, 3].filter(i => S.seats[i] != null);
-  occ.forEach((si, k) => { const id = S.seats[si]; text(SEAT_SHORT[si] + ' ' + nameOf(id) + (id === S.me ? ' <' : ''), 4, H - 10 - (occ.length - 1 - k) * 8, si === 0 ? '#ffd23f' : id === S.me ? '#fff' : '#c8ffa0'); });
-  if (S.mode === 'drive' && mySeat() === 0 && !S.practice && S.dist < SEG * 400) text('A/D STEER  W BOOST  S BRAKE' + (S.solo ? '  J/CLICK THROW' : '') + '  DRIVE THROUGH COINS', W / 2, 50, '#fff', 1, 'center');
-  if (S.youDrive > 0) text("YOU'RE DRIVING NOW!", W / 2, 100, Math.floor(S.t * 6) % 2 ? '#ffd23f' : '#fff', 2, 'center');
-  if (!S.solo && mySeat() > 0 && S.mode === 'drive') text('YOU: ' + SEAT_NAMES[mySeat()] + '  J/CLICK THROW  K GRAB  H HIT', W / 2, H - 22, '#9f8fc0', 1, 'center');
-  // banner
-  if (S.banner) {
-    ctx.globalAlpha = Math.min(1, S.banner.t * 2);
-    ctx.fillStyle = '#1a1026'; ctx.fillRect(0, 60, W, S.banner.sub ? 32 : 20);
-    text(S.banner.txt, W / 2, 64, S.banner.col, 2, 'center');
-    if (S.banner.sub) text(S.banner.sub, W / 2, 80, '#fff', 1, 'center');
+  const driving = S.mode === 'drive';
+  // ---- trip progress strip ----
+  const pct = Math.max(0, Math.min(1, S.pos / (S.trackLen - SEG * 40)));
+  ctx.fillStyle = 'rgba(20,12,30,0.7)'; ctx.fillRect(0, 0, W, 5);
+  ctx.fillStyle = '#8ef0b0'; ctx.fillRect(0, 1, Math.round(W * pct), 3);
+  if (!S.swapped && S.swapAt && !S.practice) { const ex = Math.round(W * (S.swapAt / (S.segs.length - 40))); ctx.fillStyle = '#ffd23f'; ctx.fillRect(ex - 1, 0, 3, 5); }
+  ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(W * pct) - 2, 0, 4, 5);
+  ctx.fillStyle = '#ff3b3b'; ctx.fillRect(W - 4, 0, 4, 5);
+
+  // ---- coins / break-even (top-left) ----
+  const cn = Math.floor(S.coins), gas = S.gas || 0, net = cn - gas;
+  const fl = S.coinFlash > 0; if (fl) S.coinFlash -= 1 / 60;
+  icon('coin', 4, 9); text(cn, 15, 8, fl ? '#fff' : '#ffd23f', 2);
+  if (S.gas != null && !S.practice) text(net < 0 ? 'GAS ' + gas + ' - NEED ' + (-net) + ' MORE' : 'PROFIT +' + net, 4, 21, net < 0 ? '#c8a0a0' : '#8ef0b0');
+
+  // ---- wanted stars (top-right) ----
+  const stars = Math.ceil(S.heat / 20);
+  if (stars > 0 || S.lockT > 0) {
+    text('WANTED', W - 4, 8, '#ff9a9a', 1, 'right');
+    for (let i = 0; i < 5; i++) { ctx.globalAlpha = i < stars ? 1 : 0.25; icon('star', W - 52 + i * 10, 17); }
     ctx.globalAlpha = 1;
+    if (stars >= 5 && S.lockT <= 0 && Math.floor(S.t * 6) % 2) ctx.fillStyle = '#f00';
+    if (S.lockT > 0) text('LOCKED ON ' + Math.ceil(S.lockT), W - 4, 28, Math.floor(S.t * 6) % 2 ? '#ff3b3b' : '#fff', 1, 'right');
   }
+
+  // ---- mirror (top-centre) ----
+  const mx = W / 2 - 24, my = 8;
+  ctx.fillStyle = '#111'; ctx.fillRect(mx - 2, my - 2, 52, 18);
+  ctx.fillStyle = S.theme.road[0]; ctx.fillRect(mx, my, 48, 14);
+  ctx.fillStyle = S.theme.grass[0]; ctx.fillRect(mx, my, 48, 4);
+  for (const c of S.cops) if (c.type !== 'cone' && c.z - S.pos < SEG * 0.6 && c.stage !== 'spin' && c.stage !== 'parked') {
+    const k = Math.max(0.2, Math.min(1, 1 + (c.z - S.pos) / 1500));
+    const cx = mx + 24 + (c.x - S.x) * 16, cy = my + 5 + k * 7;
+    ctx.fillStyle = c.type === 'suv' ? '#222' : '#eee'; ctx.fillRect(cx - 6 * k, cy - 3 * k, 12 * k, 6 * k);
+    ctx.fillStyle = Math.floor(S.t * 8) % 2 ? '#f00' : '#03f'; ctx.fillRect(cx - 2 * k, cy - 5 * k, 4 * k, 2 * k);
+  }
+
+  // ---- snacks (bottom-left) + cooked (bottom-right) ----
+  const throwing = S.solo || mySeat() > 0;
+  if (driving) {
+    icon('snack', 4, H - 12); text('X' + S.snacks, 15, H - 12, '#ffd23f'); if (throwing) keyTag('J', 36, H - 13);
+    const lvl = bakedLevel(), hc = ((S.stats[S.me] || {}).hitCd || 0) - S.t;
+    icon('leaf', W - 70, H - 12); bar(W - 58, H - 10, 40, 4, avgCooked() / 100, lvl === 3 ? hue(S.t * 90) : '#8ef0b0');
+    keyTag('H', W - 13, H - 13, hc <= 0);
+    if (lvl) text(BAKED[lvl] + ' X' + coinMul() + ' COINS', W - 4, H - 22, lvl === 3 ? hue(S.t * 90) : '#c8ffa0', 1, 'right');
+  }
+  // online: who's where (compact, above snacks)
+  if (!S.solo && driving) { const occ = [0, 1, 2, 3].filter(i => S.seats[i] != null); occ.forEach((si, k) => { const id = S.seats[si]; text(SEAT_SHORT[si] + ' ' + nameOf(id), 4, H - 22 - (occ.length - 1 - k) * 8, si === 0 ? '#ffd23f' : id === S.me ? '#fff' : '#9f8fc0'); }); }
+
+  // ---- cops just behind you: small chevrons at the bottom edges ----
+  if (driving) for (const c of S.cops) if (c.type !== 'cone' && c.stage !== 'spin' && c.stage !== 'parked' && c.z - S.pos < PZ && c.z - S.pos > -900) {
+    const sd = c.x < S.x ? -1 : 1, ax = sd < 0 ? 6 : W - 14, on = Math.floor(S.t * 5) % 2;
+    ctx.fillStyle = on ? '#ff3b3b' : '#fff'; for (let i = 0; i < 4; i++) ctx.fillRect(ax + (sd < 0 ? 3 - i : i), 140 + i, 2, 8 - i * 2);
+  }
+
+  // ---- ONE message slot ----
+  const slotY = 34;
+  let eta = -1;
+  if (driving && !S.practice && !S.swapped && S.swapAt) { eta = (S.swapAt * SEG - S.pos) / Math.max(S.speed, MAXSP * 0.3); if (eta > 5) eta = -1; }
+  if (eta > 0) {
+    const n = Math.ceil(eta);
+    msg(S.solo ? 'CONTROLS FLIP IN ' + n : 'SEAT SWAP IN ' + n, S.solo ? 'STRAIGHTEN OUT' : 'GET READY TO MOVE', n <= 2 ? '#ff3b3b' : '#ffd23f', slotY, 1);
+    if (S.warnBeep !== n) { S.warnBeep = n; tone(n <= 2 ? 880 : 660, 0.08, 'square', 0.04); }
+  } else if (S.scramble > 0) {
+    msg('CONTROLS FLIPPED!', 'LEFT IS RIGHT FOR ' + Math.ceil(S.scramble) + 'S', '#ff3b3b', slotY, 1);
+  } else if (S.youDrive > 0) {
+    msg("YOU'RE DRIVING NOW!", '', '#ffd23f', slotY, 1);
+  } else if (S.banner) {
+    msg(S.banner.txt, S.banner.sub, S.banner.col, slotY, Math.min(1, S.banner.t * 3));
+  } else if (driving && !S.practice && S.t - (S.driveT0 || 0) < 7) {
+    msg(mySeat() === 0 ? 'A/D STEER   W BOOST   S BRAKE' : 'J / CLICK THROW   K GRAB   H HIT', mySeat() === 0 ? (S.solo ? 'J OR CLICK THROWS SNACKS AT COPS' : 'YOUR CREW THROWS. YOU DRIVE.') : 'YOU: ' + SEAT_NAMES[mySeat()], '#fff', slotY, 1);
+  }
+
   if (S.practice && S.pstep < PSTEPS.length) {
-    ctx.fillStyle = 'rgba(26,16,38,0.85)'; ctx.fillRect(40, 30, W - 80, 26);
-    text('TEST DRIVE ' + (S.pstep + 1) + '/' + PSTEPS.length + ': ' + PSTEPS[S.pstep][0], W / 2, 33, '#8ef0b0', 1, 'center');
-    text(PSTEPS[S.pstep][1], W / 2, 43, '#fff', 1, 'center');
-    text('TAB: SKIP TEST DRIVE', W - 4, H - 16, '#9f8fc0', 1, 'right');
+    msg('TEST DRIVE ' + (S.pstep + 1) + '/' + PSTEPS.length + ': ' + PSTEPS[S.pstep][0], PSTEPS[S.pstep][1], '#8ef0b0', slotY + 30, 1);
+    text('TAB: SKIP', W - 4, H - 22, '#9f8fc0', 1, 'right');
   }
-  if (S.mode === 'drive' && !S.practice && !S.swapped && S.swapAt) {
-    const eta = (S.swapAt * SEG - S.pos) / Math.max(S.speed, MAXSP * 0.3);
-    if (eta > 0 && eta < 5) {
-      const n = Math.ceil(eta), fl = Math.floor(S.t * 6) % 2;
-      ctx.fillStyle = 'rgba(26,16,38,0.8)'; ctx.fillRect(W / 2 - 90, 96, 180, 30);
-      text(S.solo ? 'SOMETHING IS COMING...' : 'SEAT SWAP INCOMING!', W / 2, 99, fl ? '#ffd23f' : '#fff', 1, 'center');
-      text(String(n), W / 2, 107, n <= 2 ? '#ff3b3b' : '#ffd23f', 2, 'center');
-      if (S.solo) text('GET STRAIGHT. CONTROLS WILL FLIP.', W / 2, 118, '#c8c8e0', 1, 'center');
-      if (!S.warnBeep || S.warnBeep !== n) { S.warnBeep = n; tone(n <= 2 ? 880 : 660, 0.08, 'square', 0.04); }
-    }
-  }
-  if (S.scramble > 0) text('CONTROLS SCRAMBLED ' + S.scramble.toFixed(1), W / 2, 96, '#ff3b3b', 1, 'center');
   if (S.paused && !S.net) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
     text('PAUSED', W / 2, 70, '#fff', 3, 'center'); text('ESC: RESUME   Q: BAIL OUT OF DRIVE', W / 2, 100, '#ffd23f', 1, 'center');
   }
+}
+// a message pill: big line + optional small line, background sized to the text
+function msg(t1, t2, col, y, a) {
+  ctx.globalAlpha = a;
+  const w = Math.max(String(t1).length * 8, t2 ? String(t2).length * 4 : 0) + 12;
+  ctx.fillStyle = 'rgba(20,12,30,0.78)'; ctx.fillRect(Math.round(W / 2 - w / 2), y - 2, w, t2 ? 26 : 15);
+  text(t1, W / 2, y, col, 2, 'center');
+  if (t2) text(t2, W / 2, y + 15, '#e8e0ff', 1, 'center');
+  ctx.globalAlpha = 1;
 }
 
 function drawPick() {

@@ -328,11 +328,15 @@ function handle(client, m) {
     case 'transit-start':
       if (!room || client.id !== room.host) return;
       room.transit = { k: String(m.k || '').slice(0, 8), from: m.from | 0, to: m.to | 0, w: m.w | 0 };
+      // v1.2 (Step 15.3): remember who actually got this transit-start (the crew genuinely riding it,
+      // not anyone who joins later) - see leave()'s host-reassignment below, which needs this to hand
+      // off to someone who can actually continue the ride instead of an arbitrary remaining player.
+      room.transitParticipants = new Set(room.players.keys());
       broadcast(room, { t: 'transit-start', k: room.transit.k, from: room.transit.from, to: room.transit.to, w: room.transit.w }, client.id);
       break;
     case 'transit-end':
       if (!room || client.id !== room.host) return;
-      room.transit = null;
+      room.transit = null; room.transitParticipants = null;
       broadcast(room, { t: 'transit-end' }, client.id);
       break;
     case 'chat': {
@@ -407,10 +411,33 @@ function leave(client) {
   room.players.delete(client.id); room.fin.delete(client.id); room.ready.delete(client.id);
   if (room.spectators) room.spectators.delete(client.id);
   broadcast(room, { t: 'pl', id: client.id, spectate: wasSpectator });
-  if (room.host === client.id && room.players.size) { room.host = room.players.keys().next().value; broadcast(room, { t: 'host', id: room.host }); }
-  // v1.2 fix (Step 2.3): if the host bails mid-ride, nobody will ever send transit-end - clear it so a
-  // future joiner doesn't get stuck waiting forever, and free any live waiters immediately.
-  if (room.transit) { room.transit = null; broadcast(room, { t: 'transit-end' }); }
+  if (room.transit && room.transitParticipants) room.transitParticipants.delete(client.id);
+  if (room.host === client.id && room.players.size) {
+    // v1.2 fix (Step 15.3): mid-ride, an arbitrary "first remaining player" pick can hand the room-host
+    // role to someone who was never actually IN the ride (e.g. a player who joined afterward and is
+    // stuck on the "CREW IS DRIVING..." wait screen) - drive.js/transit.js's own driver-disconnect
+    // takeover (already built and tested by those agents - see AGENT_NOTES) only works if the new host
+    // is a client that's genuinely running the same ride locally, since it hands off via `net.hostId`
+    // being read by an instance that already exists. Prefer a real participant so that takeover has
+    // someone to hand off to, instead of unconditionally ending every ride the instant the room-host
+    // socket happens to close.
+    const candidates = room.transit && room.transitParticipants
+      ? [...room.players.keys()].filter(id => room.transitParticipants.has(id))
+      : [];
+    room.host = (candidates[0] || room.players.keys().next().value);
+    broadcast(room, { t: 'host', id: room.host });
+  }
+  // v1.2 fix (Step 15.3): only truly end an in-progress ride when NOBODY who was actually riding it is
+  // left in the room - previously this cleared `room.transit`/broadcast `transit-end` on ANY host
+  // disconnect, even when other real riders remained and the surviving host could have picked up the
+  // simulation via their own already-built silence-timeout takeover. That blanket clear was quietly
+  // cutting every ride short the instant the room-host socket closed, whether or not the ride itself
+  // could have continued - a real regression introduced by the original Step 2.3 fix, not a pre-existing
+  // bug in the transit games themselves.
+  if (room.transit) {
+    const stillRiding = room.transitParticipants && [...room.players.keys()].some(id => room.transitParticipants.has(id));
+    if (!stillRiding) { room.transit = null; room.transitParticipants = null; broadcast(room, { t: 'transit-end' }); }
+  }
   if (room.players.size === 0) room.emptySince = Date.now(); // kept 2 min so people can reconnect
   else checkProgress(room);
 }

@@ -2461,7 +2461,13 @@ function update() {
   else if (state === 'sitting') {
     me.vx = me.vz = 0;
     if (frame % 8 === 0) puff(lvl.spot.x + 40, sy(-2) - 14, 1, ['#ffffff', '#e8e4f4', '#d4c8f8'], .3, -0.03);
-    if (!Net.online && !Net.reconnecting && finInfo && --finInfo.t <= 0 && !trans) go(toResults, true);
+    if (!Net.online && !Net.reconnecting && finInfo) {
+      // v1.2 fix (Step 15.4): solo previously had no way to skip this wait at all - only the crew's
+      // ENTER/SPACE-to-call online. Since there's no crew to wait FOR solo, let the same input jump
+      // straight to results (matches the HUD hint added alongside this fix).
+      if (K.enterPressed || K.jumpPressed) finInfo.t = 0;
+      if (--finInfo.t <= 0 && !trans) go(toResults, true);
+    }
     if (Net.online && (K.enterPressed || K.jumpPressed) && !finInfo.hurried) { Net.send({ t: 'hurry' }); finInfo.hurried = true; }
   } else if (state === 'results') updateShop();
   if (hurryT > 0 && --hurryT === 0) Net.send({ t: 'timeup' });
@@ -3755,7 +3761,16 @@ function drawScene() {
     ctx.fillRect(Math.round(p.x - camX), Math.round(p.y), p.s, p.s); ctx.globalAlpha = 1;
   }
   drawForeground();
-  for (const p of popups) text(p.str, p.x - camX, p.y, p.col);
+  // v1.2 fix (Step 15.4): all text (popups AND the banner) is queued through `text()` onto the separate
+  // `tv` overlay canvas, which always sits above the main game canvas `cv` regardless of draw-call order
+  // - so drawHUD()'s banner background rect (drawn on `ctx`/`cv`) can never actually occlude a popup's
+  // text (drawn on `tv`), even though the code order looks like it should. A boss-intro banner is long
+  // (220 frames) and boss fights spawn plenty of popups ("NUTS! +3" etc.) in that same window, so text
+  // like that visibly ran straight through the boss name/quote. Simplest real fix: skip queuing any
+  // popup whose screen position falls inside the banner's own occupied band while one is showing, rather
+  // than trying to reorder two canvases that are composited independently by the browser.
+  const bannerBand = banner ? [62, 62 + (banner.b ? 34 : 22) * (settings.bigText ? 2 : 1)] : null;
+  for (const p of popups) { if (bannerBand && p.y >= bannerBand[0] && p.y <= bannerBand[1]) continue; text(p.str, p.x - camX, p.y, p.col); }
   if (lg && lg.met && me.legendT > 0 && state === 'play') {
     const L = LEGENDS[lg.who];
     ctx.fillStyle = 'rgba(42,24,56,.9)'; ctx.fillRect(10, 30, W - 20, 26);
@@ -3892,6 +3907,14 @@ function drawHUD() {
     if (Net.online) {
       text((finInfo ? finInfo.n : 1) + '/' + (remotes.size + 1) + ' OF THE CREW MADE IT', W / 2, 125, '#ffffff', 1, 'center');
       text(hurryT > 0 ? 'CREW HAS ' + Math.ceil(hurryT / 60) + 'S TO GET HERE' : finInfo && finInfo.hurried ? 'CALLED THE CREW...' : 'ENTER OR SPACE = CALL THE CREW (20S)', W / 2, 135, '#e4b3ff', 1, 'center');
+    } else {
+      // v1.2 fix (Step 15.4): solo left the bottom ~2/3 of this same box visually empty - it only ever
+      // filled in the crew-wait lines above, which are online-only by design (there's no crew to wait for
+      // solo). Fill the same space with solo's own real status instead of leaving dead space: how long
+      // until the results screen (finInfo's own countdown, already driving the real auto-advance in
+      // update()) and the same "press to skip the wait" affordance the crew-call prompt gives online.
+      text('HEADING TO THE SHOP IN ' + (finInfo ? Math.max(0, Math.ceil(finInfo.t / 60)) : 0) + 'S', W / 2, 125, '#ffffff', 1, 'center');
+      text('ENTER OR SPACE TO SKIP THE WAIT', W / 2, 135, '#e4b3ff', 1, 'center');
     }
   } else if (hurryT > 0 && state === 'play') {
     ctx.fillStyle = 'rgba(42,24,56,.75)'; ctx.fillRect(60, 24, W - 120, 20);
@@ -4578,6 +4601,10 @@ function openMap() {
   mapSel = next < 0 ? 0 : next;
 }
 function updateMap() {
+  // v1.2 fix (Step 15.1): same defensive clamp as drawMap_() - a driving client's own mapSel should
+  // always be valid already (it's the one setting it), but this makes every MAP_NODES[mapSel] read
+  // below crash-proof too, not just the drawing side.
+  if (!(MAP_NODES[mapSel])) mapSel = Math.max(0, Math.min(mapSel, MAP_NODES.length - 1));
   const canDrive = !Net.online || isHost();
   if (canDrive) {
     let dir = 0;
@@ -4632,7 +4659,18 @@ function updateMap() {
       }
     }
     if (K.worldPrev || K.worldNext) { setWorld(curWorld + (K.worldNext ? 1 : -1)); SFX.tick(); Net.send({ t: 'mapsel', i: mapSel, w: curWorld }); }
-  } else if (Net.mapCursor !== undefined) { if (Net.mapWorld !== undefined && Net.mapWorld !== curWorld) { curWorld = Net.mapWorld; MAP_NODES = mapNodes(curWorld); } mapSel = Net.mapCursor; }
+  } else if (Net.mapCursor !== undefined) {
+    // v1.2 fix (Step 15.1): a non-host applies the host's relayed cursor/world every frame here, but the
+    // two updates aren't atomic on the wire - `mapsel` messages can arrive out of order with a world-gate
+    // ride's own local `advance()` (see startGateTransit), so for a few frames this client can hold a
+    // WORLD that already changed locally but a stale CURSOR from before the ride (or vice versa). That
+    // combination used to leave `mapSel` pointing past the end of whatever `MAP_NODES` this client is
+    // currently showing, and `drawMap_()` dereferences `MAP_NODES[mapSel]` unguarded - a real, previously
+    // unfixed crash for non-host clients right after a world-gate ride. Range-check the incoming cursor
+    // against the CURRENT node list (after any world change) instead of trusting it blindly.
+    if (Net.mapWorld !== undefined && Net.mapWorld !== curWorld) { curWorld = Net.mapWorld; MAP_NODES = mapNodes(curWorld); }
+    mapSel = Math.max(0, Math.min(Net.mapCursor, MAP_NODES.length - 1));
+  }
   K.worldPrev = K.worldNext = false;
   if (K.shopPressed) go(openShop);
   if (K.dailyPressed) startDaily();
@@ -4689,6 +4727,10 @@ function mapClick(gx, gy) {
 }
 function openShop() { results = { shopOnly: true, made: false }; state = 'results'; shopSel = 0; }
 function drawMap_() {
+  // v1.2 fix (Step 15.1): belt-and-suspenders - whatever set `mapSel` (host input, a relayed cursor,
+  // `setWorld()`'s own guard), never let a stale/out-of-range index reach the unguarded `MAP_NODES[mapSel]`
+  // dereferences below. Self-heals instead of crashing if anything upstream still gets this wrong.
+  if (!(MAP_NODES[mapSel])) mapSel = Math.max(0, Math.min(mapSel, MAP_NODES.length - 1));
   useMap(curWorld);
   const ox = Math.floor((W - MW) / 2);
   ctx.fillStyle = '#1c3a6e'; ctx.fillRect(0, 0, W, H);
@@ -5342,5 +5384,11 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   attack, emote, checkEmoteCombo, yoink, giveItem, toggleSoftPause, get softPause() { return softPause; },
   playersList, realRemotes, applySnapshot, addCoins, djDankLine,
   // v1.2 (Step 11) debug hooks: share card / leaderboard / armor visuals, for the automated Step 11 tests.
-  shareCard, get leaderboard() { return leaderboard; }, submitScore, lbKeyFor, armorTier, todaySeed };
+  shareCard, get leaderboard() { return leaderboard; }, submitScore, lbKeyFor, armorTier, todaySeed,
+  // v1.2 (Step 15) debug hook: force the smoke-spot "crew is chilling" screen to stay up for a
+  // screenshot/automated check instead of racing its own 150-frame auto-advance to results.
+  get finInfo() { return finInfo; }, set finInfo(v) { finInfo = v; },
+  // v1.2 (Step 15) debug hooks: banner/popups access + a direct popup() call, for testing the
+  // popup-vs-banner overlap fix without needing to drive a real kill/pickup to generate one.
+  get banner() { return banner; }, set banner(v) { banner = v; }, get popups() { return popups; }, popup, bossIntro, get TQ() { return TQ; } };
 })();

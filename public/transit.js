@@ -145,7 +145,7 @@
       get warnLeft() { return Math.ceil(warnT / 1000); },
       trigger(bannerText, opts) {
         opts = opts || {};
-        active = true; t = 0; total = opts.freezeMs || 1400; banner = bannerText; sub = '';
+        active = true; t = 0; total = opts.freezeMs || 1400; banner = bannerText; sub = ''; warnT = 0; warnCb = null;
         reseated = false; onReseat = opts.onReseat || null; onDone = opts.onDone || null;
       },
       get active() { return active; },

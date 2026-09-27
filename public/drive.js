@@ -352,7 +352,7 @@ function deliver(from, p) {
     case 'start': if (S.mode === 'pick' || S.mode === 'card' || S.mode === 'wait') applyStart(p); break;
     case 'in': if (S.auth) S.inq.push(Object.assign({ id: from }, p)); break;
     case 'st':
-      if (S.mode === 'wait' && p.hdr) { applyStart(p.hdr); setupDrive(); S.auth = false; S.spectating = true; }
+      if (S.mode === 'wait' && p.hdr) { applyStart(p.hdr); S.spectating = true; setupDrive(); S.auth = false; }
       if (!S.auth && S.mode === 'drive') { S.lastSt = S.t; S.stFrom = from; applyState(p); }
       break;
     case 'swap': if (S.mode === 'drive') applySwap(p); break;
@@ -456,7 +456,7 @@ function setupDrive() {
   const len = S.practice ? 700 : S.solo ? 1400 : 1900;
   // GAS MONEY: every real drive costs coins up front (paid from the save, so a bad drive is a net loss).
   // A clean run earns it back and a bit more; a messy one doesn't.
-  if (!S.practice && S.gas == null) {
+  if (!S.practice && S.gas == null && !S.spectating) {
     const tier = Math.max(0, ['park', 'beach', 'suburb', 'city', 'downtown', 'woods', 'hq'].indexOf(S.world));
     const cost = 12 + tier * 3, have = Math.max(0, Math.floor(+S.save.coins || 0));
     S.gas = Math.min(cost, have); S.gasCost = cost;
@@ -489,7 +489,7 @@ function setupDrive() {
     snacks: 20 + 12 * (S.crew.length - 1) + 10 * (up.stash || 0), coins: 0, heat: 0, lockT: 0, caught: 0, crashes: [0, 0], shaken: [0, 0], dists: [0, 0],
     cops: [], traffic: [], shots: [], fx: [], route: null, swapped: false, scramble: 0, freeze: 0, banner: null,
     hitCd: 0, throwCd: 0, drift: 0, sway: 0, blur: 0, siren: 0, damage: shit ? 3 : 0, sirensSlow: 0, backfireT: 5 + Math.random() * 8,
-    nextCop: 4, nextTraffic: 2, nextBlock: 25, nextHaz: 6, lost: 0, lastSteer: 0, pc, stats: {}, got: [], extra: [], allGot: [], allExtra: [], out: [], inq: [], stT: 0, lastSt: S.t,
+    nextCop: 4, nextTraffic: 2, nextBlock: 25, nextHaz: 6, lost: 0, crashCd: 0, lastSteer: 0, pc, stats: {}, got: [], extra: [], allGot: [], allExtra: [], out: [], inq: [], stT: 0, lastSt: S.t,
     drivers: [S.seats[0], null],
   });
   driveCount[S.seats[0]] = (driveCount[S.seats[0]] || 0) + 1;
@@ -659,13 +659,13 @@ function snapshot() {
   };
 }
 // full state for the seat-swap handoff (brief 1.6): the new driver's game takes over from exactly this
-const FULL_KEYS = ['allExtra', 'allGot', 'pos', 'x', 'speed', 'heat', 'lockT', 'coins', 'snacks', 'pc', 'damage', 'sirensSlow', 'caught', 'route', 'trackLen', 'crashes', 'shaken', 'dists', 'stats', 'nextCop', 'nextTraffic', 'nextBlock', 'swapped', 'event', 'drivers', 'secret', 'lockCd'];
+const FULL_KEYS = ['allExtra', 'allGot', 'pos', 'x', 'speed', 'heat', 'lockT', 'coins', 'snacks', 'pc', 'damage', 'sirensSlow', 'caught', 'route', 'trackLen', 'crashes', 'shaken', 'dists', 'stats', 'nextCop', 'nextTraffic', 'nextBlock', 'swapped', 'event', 'drivers', 'secret', 'lockCd', 'lost', 'nextHaz', 'dist'];
 function fullState() {
   const f = {}; for (const k of FULL_KEYS) f[k] = S[k];
   f.cops = S.cops; f.traffic = S.traffic;
   return JSON.parse(JSON.stringify(f));
 }
-function loadFull(f) { for (const k of FULL_KEYS) if (f[k] !== undefined) S[k] = f[k]; S.cops = f.cops || []; S.traffic = f.traffic || []; }
+function loadFull(f) { for (const k of FULL_KEYS) if (f[k] !== undefined) S[k] = f[k]; S.crashCd = 0; S.cops = f.cops || []; S.traffic = f.traffic || []; }
 
 // ---------------- swap event (brief 1.9) ----------------
 function triggerSwap() {
@@ -846,7 +846,7 @@ function updateDrive(rdt) {
     });
   }
   // off-road: trees, lamps, houses hurt
-  if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of vsg.props) if (!SOFT[pr.k] && Math.abs(pr.x - S.x) < VHW + 0.12) { crash(null, 'OUCH! STAY ON THE ROAD'); loseCoins(3); S.x *= 0.8; }
+  if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of vsg.props) if (!SOFT[pr.k] && Math.abs(pr.x - S.x) < VHW + 0.12) { if (crash(null, 'OUCH! STAY ON THE ROAD')) loseCoins(3); S.x *= 0.8; }
   S.nextHaz -= dt;
   if (!S.practice && S.nextHaz <= 0 && segIdx < S.segs.length - 100) {
     S.nextHaz = 5 + Math.random() * 4;
@@ -862,7 +862,7 @@ function updateDrive(rdt) {
     c.z += c.sp * dt;
     c.rel = c.z - S.pos;
     const dx = Math.abs(c.x - S.x), vr = c.rel - PZ;
-    if (vr > -SEG * 0.5 && vr < SEG * 0.5 && dx < VHW * 2 + 0.02) { crash(c, 'CRASH!'); loseCoins(4 + Math.floor(S.coins * 0.15)); }
+    if (vr > -SEG * 0.5 && vr < SEG * 0.5 && dx < VHW * 2 + 0.02) { if (crash(c, 'CRASH!')) loseCoins(4 + Math.floor(S.coins * 0.15)); }
     
     if (vr < -SEG) c.passed = true;
   }
@@ -999,11 +999,12 @@ function copAI(c, dt) {
   S.siren = Math.max(S.siren, Math.max(0, Math.min(1, 1 + vr / 1200)));
 }
 function crash(car, why) {
-  if (S.crashCd > S.t) return;
+  if (S.crashCd > S.t) return false;
   S.crashCd = S.t + 1.2; if (why) banner(why, '', '#ff6b6b', 0.8, true);
   S.speed *= 0.35; S.shake = 4; S.damage++; S.crashes[half()]++; addHeat(12); sfx('crash');
   if (car) { car.z += SEG * 1.5; car.x += (car.x > S.x ? 1 : -1) * 0.25; }
   puff(W / 2, 150, 10, '#888');
+  return true;
 }
 
 

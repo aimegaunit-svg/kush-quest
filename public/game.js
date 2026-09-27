@@ -4308,6 +4308,7 @@ function launchTransit(mod, extraOpts, afterBanner, onAfter) {
   const mount = document.getElementById('transitMount');
   if (!mount) { banner = { t: 120, a: 'RIDE UNAVAILABLE', b: 'NO MOUNT POINT ON THIS PAGE' }; return; }
   mount.innerHTML = ''; mount.style.display = 'flex'; state = 'transit';
+  const coinsBefore = save.coins || 0; // gas money is taken from the save when a ride starts, so net = after - before
   const crew = Net.online ? [{ id: Net.id, name: Net.name, color: Net.color }, ...[...remotes].map(([id, r]) => ({ id, name: r.name, color: r.color }))] : 1;
   try {
     mod.start({
@@ -4329,7 +4330,8 @@ function launchTransit(mod, extraOpts, afterBanner, onAfter) {
         // the matching `case 'transit-end'` handler and the drop-in wait screen below.
         if (Net.online && isHost()) Net.send({ t: 'transit-end' });
         if (typeof onAfter === 'function') onAfter();
-        banner = { t: 150, a: (afterBanner && afterBanner.a) || 'MADE IT!', b: (r && typeof r.coins === 'number' ? '+' + Math.max(0, Math.round(r.coins)) + ' COINS - ' : '') + ((afterBanner && afterBanner.b) || '') };
+        const netC = (save.coins || 0) - coinsBefore;
+        banner = { t: 150, a: (afterBanner && afterBanner.a) || 'MADE IT!', b: (r && typeof r.coins === 'number' ? (netC >= 0 ? '+' : '') + netC + ' COINS - ' : '') + ((afterBanner && afterBanner.b) || '') };
         SFX.cp();
       }
     });

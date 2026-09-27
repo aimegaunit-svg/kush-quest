@@ -217,8 +217,17 @@ let rng = Math.random;
 function seeded(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
 // ---------------- road building ----------------
-const SEG = 200, RUMBLE = 3, DRAW = 140, ROADW = 2000, CAMH = 1000, FOV = 100;
+const SEG = 200, RUMBLE = 3, DRAW = 230, ROADW = 2000, CAMH = 1500, FOV = 100;
+const HZ = 58;          // horizon line (higher = more road on screen, more top-down)
+const VANY = 184;       // where the van sits on screen
 const CAMD = 1 / Math.tan(FOV / 2 * Math.PI / 180);
+// the van's plane in the world: how far ahead of the camera the van visually sits. Everything that
+// touches the van (coins, hazards, traffic, cops) is checked HERE so hits match what you see.
+const PSC = (VANY - HZ) / (CAMH * H / 2);            // projection scale at the van
+const PZ = CAMD / PSC;                                 // world distance camera -> van
+const UPX = PSC * ROADW * W / 2;                       // screen px per road unit at the van
+const VHW = 36 / UPX;                                  // van half-width in road units
+const CARK = 0.42, ITK = 0.7;                          // sprite size factors (cars/cops, items) so they match the van
 const MAXSP = SEG / (1 / 60);
 let S; // drive state
 
@@ -451,14 +460,15 @@ function sfx(k) { SFX[k] && SFX[k](); if (S.auth && S.net) S.out.push(['s', k]);
 
 function spawnTraffic(segAhead) {
   const z = (S.pos + segAhead * SEG) % S.trackLen;
-  S.traffic.push({ z, x: [-0.6, 0, 0.6][Math.random() * 3 | 0], sp: MAXSP * (0.3 + Math.random() * 0.25), col: ['#3a7bd5', '#e0e0e0', '#c94', '#6a4', '#a4a'][Math.random() * 5 | 0] });
+  S.traffic.push({ z, x: [-0.62, 0, 0.62][Math.random() * 3 | 0], sp: MAXSP * (0.3 + Math.random() * 0.25), col: ['#3a7bd5', '#e0e0e0', '#c94', '#6a4', '#a4a'][Math.random() * 5 | 0] });
 }
 function spawnCop() {
   const later = (S.save.drivesDone || 0) >= 3;
   const r = Math.random();
   const type = later && r < 0.2 ? 'suv' : r < 0.55 ? 'moto' : 'cruiser';
   const hp = { cruiser: 2, moto: 1, suv: 5 }[type];
-  S.cops.push({ type, hp, rel: -900 - Math.random() * 500, x: Math.random() < 0.5 ? -0.5 : 0.5, side: 0, stage: 'tail', t: 0, blind: 0, wob: Math.random() * 6 });
+  const plan = type === 'suv' ? 'block' : type === 'moto' ? 'side' : Math.random() < 0.35 ? 'block' : 'side';
+  S.cops.push({ type, hp, plan, z: S.pos - 700 - Math.random() * 600, sp: S.speed, x: [-0.62, 0, 0.62][Math.random() * 3 | 0], side: 1, stage: 'tail', t: 0, blind: 0, wob: Math.random() * 6 });
   sfx('siren');
 }
 function addItem(seg, k, x) { S.segs[seg % S.segs.length].items.push({ k, x }); if (S.auth) { S.extra.push([seg, k, x]); S.allExtra.push([seg, k, x]); } }
@@ -479,12 +489,15 @@ function pickTarget(seat, aim) {
   let dir = aim;
   if (dir == null) dir = seat === 1 ? 1 : seat === 3 ? -1 : 0;
   const pool = S.cops.filter(c => {
+    if (c.stage === 'spin') return false;
     if (S.solo || (n === 2 && seat === 1)) return true; // solo / lone window covers everything
-    if (dir === 0) return c.stage === 'tail';
-    return c.stage !== 'tail' && c.side === dir;
+    if (c.stage === 'spin') return false;
+    if (dir === 0) return c.z - S.pos < PZ - SEG;
+    return c.z - S.pos >= PZ - SEG && c.side === dir;
   });
   let best = null;
-  for (const c of pool) if (!best || Math.abs(c.rel) < Math.abs(best.rel)) best = c;
+  const dd = c => Math.abs(c.z - S.pos - PZ);
+  for (const c of pool) if (!best || dd(c) < dd(best)) best = c;
   return best;
 }
 
@@ -560,7 +573,7 @@ function updateRemote(dt) {
     S.lastSteer += (S.tgt.ls - S.lastSteer) * Math.min(1, dt * 10);
   }
   for (const c of S.traffic) { c.z += c.sp * dt * sd; c.rel = c.z - S.pos; }
-  for (const c of S.cops) { c.t += dt; c.wob += dt; }
+  for (const c of S.cops) { c.t += dt; c.wob += dt; c.z += (c.sp || 0) * dt * sd; c.rel = c.z - S.pos; }
   const lvl = bakedLevel();
   S.sway = [0, 3, 7, 10][lvl];
   for (const s of S.shots) s.t += dt; S.shots = S.shots.filter(s => s.t < 0.5);
@@ -571,7 +584,7 @@ function applyState(p) {
   S.tgt = p;
   S.speed = p.v; S.heat = p.h; S.lockT = p.l; S.coins = p.c; S.snacks = p.s; S.pc = p.pc; S.damage = p.dm; S.sirensSlow = p.ss;
   S.caught = p.cg; S.route = p.r; S.trackLen = p.tl; S.siren = p.si;
-  S.cops = p.cops.map(a => ({ type: a[0], hp: a[1], rel: a[2], x: a[3], side: a[4], stage: a[5], t: a[6], blind: a[7], wob: 0 }));
+  S.cops = p.cops.map(a => ({ type: a[0], hp: a[1], z: a[2], x: a[3], side: a[4], stage: a[5], t: a[6], blind: a[7], sp: a[8] || 0, wob: 0, rel: a[2] - S.pos }));
   S.traffic = p.tr.map(a => ({ z: a[0], x: a[1], sp: a[2], col: a[3] }));
   S.seenEx = S.seenEx || {};
   for (const e of p.ex) { const key = e.join(','); if (S.seenEx[key]) continue; S.seenEx[key] = 1; S.segs[e[0] % S.segs.length].items.push({ k: e[1], x: e[2] }); }
@@ -579,7 +592,7 @@ function applyState(p) {
   for (const ev of p.o) {
     if (ev[0] === 'b') S.banner = { txt: ev[1], sub: ev[2], col: ev[3], t: ev[4] };
     else if (ev[0] === 's') SFX[ev[1]] && SFX[ev[1]]();
-    else if (ev[0] === 'shot') S.shots.push({ t: 0, x0: W / 2, y0: 150, side: ev[1] });
+    else if (ev[0] === 'shot') S.shots.push({ t: 0, x0: W / 2, y0: 150, side: ev[1], tx: ev[2], ty: ev[3] });
     else if (ev[0] === 'puff') puff(W / 2 + 34, 150, 14, '#cfcfcf');
     else if (ev[0] === 'pop') S.fx.push({ x: W / 2, y: 130, vx: 0, vy: -30, t: 1, col: ev[2], txt: ev[1] });
   }
@@ -588,7 +601,7 @@ function snapshot() {
   return {
     p: S.pos, x: S.x, ls: S.lastSteer, v: S.speed, h: S.heat, l: S.lockT, c: S.coins, s: S.snacks, pc: S.pc, dm: S.damage, ss: S.sirensSlow,
     cg: S.caught, r: S.route, tl: S.trackLen, si: S.siren,
-    cops: S.cops.map(c => [c.type, c.hp, Math.round(c.rel), +c.x.toFixed(2), c.side, c.stage, +c.t.toFixed(2), +c.blind.toFixed(2)]),
+    cops: S.cops.map(c => [c.type, c.hp, Math.round(c.z), +c.x.toFixed(2), c.side, c.stage, +c.t.toFixed(2), +c.blind.toFixed(2), Math.round(c.sp || 0)]),
     tr: S.traffic.map(c => [Math.round(c.z), c.x, Math.round(c.sp), c.col]),
     ex: S.hdrT % 10 === 0 ? S.allExtra.slice() : S.extra.splice(0), g: S.hdrT % 10 === 0 ? S.allGot.slice() : S.got.splice(0), o: S.out.splice(0),
     hdr: (S.hdrT = (S.hdrT || 0) + 1) % 10 === 1 ? { car: S.car, seats: S.seats, seed: S.seed, crew: S.crew, look: S.look } : undefined,
@@ -639,7 +652,7 @@ function eventFx(name) {
   if (S.eventFx === 'splat') S.splat = 3;
   if (S.eventFx === 'feathers') for (let i = 0; i < 40; i++) S.fx.push({ x: Math.random() * W, y: Math.random() * 60, vx: Math.random() * 40 - 20, vy: 20 + Math.random() * 20, t: 2.5, col: '#fff', r: 2 });
   if (S.eventFx === 'spin') S.spin = 1.2;
-  if (name === 'THE BACKFIRE BLAST') { SFX.backfire(); for (const c of S.cops) c.rel -= 400; }
+  if (name === 'THE BACKFIRE BLAST') { SFX.backfire(); for (const c of S.cops) c.z -= 400; }
 }
 function commonFx(dt) {
   if (S.flash > 0) S.flash -= dt;
@@ -668,13 +681,14 @@ function doThrow(id, seat, aim) {
   const tgt = pickTarget(seat, aim);
   S.snacks--; sfx('throw');
   const side = tgt ? (tgt.stage === 'tail' ? 0 : tgt.side) : (aim || 1);
-  S.shots.push({ tgt, t: 0, x0: W / 2, y0: 150, side, by: id });
-  if (S.net) S.out.push(['shot', side]);
+  const tx = tgt && tgt.sx != null && tgt.z - S.pos >= PZ * 0.5 ? Math.round(tgt.sx) : null, ty = tx != null ? Math.round(tgt.sy) : null;
+  S.shots.push({ tgt, t: 0, x0: W / 2, y0: 150, side, by: id, tx, ty });
+  if (S.net) S.out.push(['shot', side, tx, ty]);
 }
 function doGrab(id) { stat(id).grabT = S.t + 0.6; } // K opens a short grab window
 function grabTick(id) {
-  const segIdx = Math.floor(S.pos / SEG);
-  for (let i = segIdx; i < segIdx + 3; i++) {
+  const segIdx = Math.floor((S.pos + PZ) / SEG) - 1;
+  for (let i = segIdx; i < segIdx + 4; i++) {
     const sg = S.segs[i % S.segs.length];
     sg.items.forEach((it, j) => { if (!it.got && it.k === 'coin' && Math.abs(it.x - S.x) < 1.1 && takeItem(sg.i, j)) { S.coins += coinMul(); pop("GRAB +" + coinMul(), "#ffd23f"); stat(id).grabs++; sfx('coin'); } });
   }
@@ -732,7 +746,7 @@ function updateDrive(rdt) {
 
   const dz = S.speed * dt;
   S.pos += dz; S.dist += dz; S.dists[half()] += dz;
-  const segIdx = Math.floor(S.pos / SEG);
+  const segIdx = Math.floor(S.pos / SEG), vIdx = Math.floor((S.pos + PZ) / SEG), vsg = S.segs[vIdx % S.segs.length];
 
   if (S.practice && practiceStep(dt, segIdx, boost, brake)) return;
   // ---- fork at 25% ----
@@ -752,11 +766,11 @@ function updateDrive(rdt) {
 
   // ---- pickups ----
   // coin magnet: coins just ahead drift toward the car so driving "through" a coin line always feels right
-  for (let i = segIdx + 1; i < segIdx + 6; i++) for (const it of S.segs[i % S.segs.length].items) if (it.k === 'coin' && !it.got && Math.abs(it.x - S.x) < 0.8) it.x += (S.x - it.x) * Math.min(1, dt * 5);
-  for (let i = segIdx; i < segIdx + 2; i++) {
+  for (let i = vIdx + 1; i < vIdx + 6; i++) for (const it of S.segs[i % S.segs.length].items) if (it.k === 'coin' && !it.got && Math.abs(it.x - S.x) < 0.8) it.x += (S.x - it.x) * Math.min(1, dt * 5);
+  for (let i = vIdx; i < vIdx + 2; i++) {
     const s2 = S.segs[i % S.segs.length];
     s2.items.forEach((it, j) => {
-      if (it.got || HAZ[it.k] || Math.abs(it.x - S.x) > (it.k === 'coin' ? 0.5 : 0.35)) return;
+      if (it.got || HAZ[it.k] || Math.abs(it.x - S.x) > VHW + (it.k === 'coin' ? 0.12 : 0.08)) return;
       if (!takeItem(s2.i, j)) return;
       if (it.k === 'coin') { const v = coinMul(); S.coins += v; stat(S.seats[0]).grabs++; sfx('coin'); pop('+' + v, '#ffd23f'); }
       else if (it.k === 'snacks') { S.snacks += 8; sfx('pickup'); banner('+8 SNACKS', '', '#ffd23f', 1, true); }
@@ -767,10 +781,10 @@ function updateDrive(rdt) {
     });
   }
   // hazards: roadblocks, cones, potholes, oil
-  for (let i = segIdx; i < segIdx + 2; i++) {
+  for (let i = vIdx; i < vIdx + 2; i++) {
     const si = i % S.segs.length;
     S.segs[si].items.forEach((c, j) => {
-      const hz = HAZ[c.k]; if (!hz || c.got || Math.abs(c.x - S.x) > hz.w || !takeItem(si, j)) return;
+      const hz = HAZ[c.k]; if (!hz || c.got || Math.abs(c.x - S.x) > hz.w + VHW || !takeItem(si, j)) return;
       if (c.k === 'block') { crash(null, 'ROADBLOCK!'); loseCoins(6); addHeat(10); }
       else if (c.k === 'cone') { S.shake = Math.max(S.shake, 2); S.speed *= 0.85; loseCoins(2); sfx('splat'); for (let k = 0; k < 6; k++) S.fx.push({ x: W / 2 + Math.random() * 20 - 10, y: 150, vx: Math.random() * 160 - 80, vy: -80 - Math.random() * 60, g: 260, t: 0.9, col: k % 2 ? '#f80' : '#fff', r: 4 }); }
       else if (c.k === 'pothole') { S.shake = 5; S.speed *= 0.6; S.damage++; loseCoins(3); sfx('crash'); banner('POTHOLE!', '', '#ff6b6b', 0.8, true); }
@@ -778,7 +792,7 @@ function updateDrive(rdt) {
     });
   }
   // off-road: trees, lamps, houses hurt
-  if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of sg.props) if (!SOFT[pr.k] && Math.abs(pr.x - S.x) < 0.35) { crash(null, 'OUCH! STAY ON THE ROAD'); loseCoins(3); S.x *= 0.8; }
+  if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of vsg.props) if (!SOFT[pr.k] && Math.abs(pr.x - S.x) < VHW + 0.12) { crash(null, 'OUCH! STAY ON THE ROAD'); loseCoins(3); S.x *= 0.8; }
   S.nextHaz -= dt;
   if (!S.practice && S.nextHaz <= 0 && segIdx < S.segs.length - 100) {
     S.nextHaz = 2.5 + Math.random() * 3 / (1 + 0.3 * bakedLevel());
@@ -793,12 +807,13 @@ function updateDrive(rdt) {
   for (const c of S.traffic) {
     c.z += c.sp * dt;
     c.rel = c.z - S.pos;
-    const dx = Math.abs(c.x - S.x);
-    if (c.rel > -SEG * 0.3 && c.rel < SEG * 0.8 && dx < 0.38) { crash(c, 'CRASH!'); loseCoins(4 + Math.floor(S.coins * 0.15)); }
-    else if (!c.passed && c.rel < 0 && dx < 0.7 && S.speed > S.maxSp * 0.6) { c.passed = true; if ((S.ccCd || 0) <= S.t) { S.ccCd = S.t + 4; S.coins += 1; sfx('sel'); pop('CLOSE CALL +1', '#8ef0b0'); } }
-    if (c.rel < -SEG) c.passed = true;
+    const dx = Math.abs(c.x - S.x), vr = c.rel - PZ;
+    if (vr > -SEG * 0.5 && vr < SEG * 0.5 && dx < VHW * 2 + 0.02) { crash(c, 'CRASH!'); loseCoins(4 + Math.floor(S.coins * 0.15)); }
+    else if (!c.passed && vr < 0 && dx < VHW * 2 + 0.25 && S.speed > S.maxSp * 0.6) { c.passed = true; if ((S.ccCd || 0) <= S.t) { S.ccCd = S.t + 4; S.coins += 1; sfx('sel'); pop('CLOSE CALL +1', '#8ef0b0'); } }
+    if (vr < -SEG) c.passed = true;
   }
   S.traffic = S.traffic.filter(c => c.rel > -SEG * 4 && c.rel < SEG * DRAW);
+  // traffic brakes for cops/other cars in its lane? no - it just keeps going. Cops have to dodge it.
 
   // ---- cops ----
   const copRate = (S.route === 'fast' ? 0.7 : 1) * (S.solo ? 1.3 : 1);
@@ -813,29 +828,7 @@ function updateDrive(rdt) {
     banner('ROADBLOCK AHEAD!', 'FIND THE GAP', '#ff6b6b', 1.5, true);
   }
   S.siren = 0;
-  for (const c of S.cops) {
-    c.t += dt; c.wob += dt;
-    if (c.blind > 0) { c.blind -= dt; c.rel -= 250 * dt; continue; }
-    const want = c.type === 'moto' ? 1.1 : c.type === 'suv' ? 0.85 : 1;
-    const closing = (220 * want * (S.lockT > 0 ? 1.6 : 1) + (S.maxSp - S.speed) * 0.4 - (S.lastBoost ? 60 : 0)) * dt;
-    if (c.stage === 'tail') {
-      c.rel += closing;
-      if (c.rel > -60) {
-        c.stage = 'side'; c.t = 0; sfx('horn');
-        // pick the side with fewer cops so both windows get work
-        const l = S.cops.filter(o => o.side === -1 && o.stage !== 'tail').length, r = S.cops.filter(o => o.side === 1 && o.stage !== 'tail').length;
-        c.side = l === r ? (Math.random() < 0.5 ? -1 : 1) : l < r ? -1 : 1;
-      }
-    } else if (c.stage === 'side') {
-      c.rel = -20 + Math.sin(c.t * 2) * 10;
-      addHeat(dt * 2);
-      if (c.t > (S.solo ? 5 : 3.5)) { c.stage = 'ram'; c.t = 0; }
-    } else if (c.stage === 'ram') {
-      if (c.t > 0.4 && !c.rammed) { c.rammed = true; S.shake = 5; S.damage++; loseCoins(5); addHeat(8); pop('RAMMED!', '#ff3b3b'); sfx('crash'); S.x += c.side * -0.4; }
-      if (c.t > 1.5) { c.stage = 'side'; c.t = 0; c.rammed = false; }
-    }
-    S.siren = Math.max(S.siren, Math.max(0, 1 + c.rel / 900));
-  }
+  for (const c of S.cops) copAI(c, dt);
   // shots land
   for (const s of S.shots) {
     s.t += dt;
@@ -843,20 +836,20 @@ function updateDrive(rdt) {
       s.done = true;
       const c = s.tgt;
       if (c && S.cops.includes(c)) {
-        c.hp--; c.blind = 0.8; stat(s.by).hitc++; sfx('splat');
-        if (c.hp <= 0) { S.cops.splice(S.cops.indexOf(c), 1); S.shaken[half()]++; addHeat(-10); banner('COP SHAKEN!', '', '#8ef0b0', 1, true); }
+        c.hp--; c.blind = 1.2; stat(s.by).hitc++; sfx('splat');
+        if (c.hp <= 0 && c.stage !== 'spin') wipeout(c, 'COP SHAKEN!');
       }
     }
   }
   S.shots = S.shots.filter(s => s.t < 0.5);
-  if (S.car === 'shitbox') { S.backfireT -= dt; if (S.backfireT <= 0) { S.backfireT = 6 + Math.random() * 10; sfx('backfire'); puff(W / 2, 170, 8, '#555', 0); for (const c of S.cops) if (c.stage !== 'tail') { c.stage = 'tail'; c.rel = -500; } } }
-  S.cops = S.cops.filter(c => { if (c.rel < -1800) { S.shaken[half()]++; return false; } return true; });
+  if (S.car === 'shitbox') { S.backfireT -= dt; if (S.backfireT <= 0) { S.backfireT = 6 + Math.random() * 10; sfx('backfire'); puff(W / 2, 170, 8, '#555', 0); for (const c of S.cops) { c.z -= 500; c.blind = 1; } } }
+  S.cops = S.cops.filter(c => { if (c.stage === 'spin' && c.t > 2.5) return false; if (c.type !== 'cone' && c.z - S.pos < -2200) { if (c.stage !== 'spin') S.shaken[half()]++; return false; } return true; });
 
   // ---- heat: locked on / busted ----
   if (!S.practice && S.heat >= 100 && S.lockT <= 0) {
     S.lockT = 5; banner('LOCKED ON!', 'BOOST, SWERVE OR PELT IT', '#ff3b3b', 1.5); sfx('siren');
     if (!S.cops.length) spawnCop();
-    S.cops[0].stage = 'side'; S.cops[0].side = S.cops[0].side || 1; S.cops[0].t = 0;
+    for (const c of S.cops) { c.plan = 'side'; c.t = 99; }
   }
   if (S.lockT > 0) {
     S.lockT -= dt;
@@ -876,7 +869,7 @@ function updateDrive(rdt) {
   else if (S.pos >= S.trackLen - SEG * 40) endDrive(false);
 }
 const SOFT = { bush: 1, tuft: 1, flower: 1, rock: 1, post: 1, mile: 1 };
-const HAZ = { block: { w: 0.4 }, cone: { w: 0.3 }, pothole: { w: 0.3 }, oil: { w: 0.35 } };
+const HAZ = { block: { w: 0.2 }, cone: { w: 0.03 }, pothole: { w: 0.12 }, oil: { w: 0.13 } };
 // floating text popup above the car
 function pop(txt, col) { S.fx.push({ x: W / 2 + Math.random() * 16 - 8, y: 130, vx: 0, vy: -30, t: 1, col, txt }); if (S.auth && S.net) S.out.push(['pop', txt, col]); }
 // lose coins: they spray out of the windows, and about half land on the road ahead so you can win them back
@@ -886,11 +879,68 @@ function loseCoins(n) {
   for (let i = 0; i < Math.min(14, n * 2); i++) S.fx.push({ x: W / 2 + Math.random() * 30 - 15, y: 150, vx: Math.random() * 200 - 100, vy: -90 - Math.random() * 80, g: 300, t: 1.1, col: '#ffd23f', r: 4 });
   if (!S.practice) { const si = Math.floor(S.pos / SEG) + 25, lx = Math.random() * 1.2 - 0.6; for (let j = 0; j < Math.floor(n / 3); j++) addItem(si + j * 3, 'coin', lx + Math.sin(j) * 0.2); }
 }
+// ---- cop AI: they drive on the road like everyone else ----
+// tail: behind you (mirror), speeding up. then either
+//   side  -> pull up in the lane next to you, pace you, then swerve into you (RAM)
+//   block -> overtake, cut into your lane ahead and brake-check you
+// they crash into traffic too (lure them!), and snacks blind them so they drift and drop back.
+function wipeout(c, why) { c.stage = 'spin'; c.t = 0; S.shaken[half()]++; addHeat(-10); banner(why, '', '#8ef0b0', 1, true); sfx('crash'); }
+function copAI(c, dt) {
+  c.t += dt; c.wob += dt;
+  if (c.type === 'cone') { c.z = S.pos + PZ; c.x = S.x + 0.5; c.side = 1; c.stage = 'side'; return; }
+  const rel = c.z - S.pos, vr = rel - PZ, lock = S.lockT > 0;
+  c.rel = rel; c.side = c.x < S.x ? -1 : 1;
+  let tsp = S.speed, tx = c.x, lat = 0.7;
+  if (c.stage === 'spin') {
+    c.sp = Math.max(0, c.sp - S.maxSp * 1.2 * dt); c.x += (c.spinDir || 1) * dt * 0.9; c.z += c.sp * dt; return;
+  }
+  const want = c.type === 'moto' ? 1.15 : c.type === 'suv' ? 0.9 : 1;
+  const chase = S.maxSp * 0.35 * want * (lock ? 1.5 : 1);
+  if (c.blind > 0) {
+    c.blind -= dt; tsp = S.speed * 0.7; tx = c.x + Math.sin(c.t * 7) * 0.5; lat = 1.2;
+  } else if (vr < -SEG * 2) {
+    c.stage = 'tail'; tsp = S.speed + chase; tx = S.x + (c.plan === 'side' ? (c.x < S.x ? -0.62 : 0.62) : 0.62);
+    if (c.x !== tx && Math.abs(c.x - S.x) < 0.3) tx = S.x + 0.62; // don't rear-end the van, go around
+  } else if (c.plan === 'side') {
+    const lane = S.x + (c.lane || (c.lane = c.x < S.x ? -0.62 : 0.62));
+    if (c.stage !== 'ram') {
+      if (c.stage !== 'pace') { c.stage = 'pace'; c.t = 0; sfx('horn'); }
+      tsp = S.speed - vr * 0.9; tx = lane; lat = 0.9;
+      addHeat(dt * 2);
+      if (c.t > (S.solo ? 3.5 : 2.5) && Math.abs(vr) < SEG * 1.5) { c.stage = 'ram'; c.t = 0; }
+    } else {
+      tsp = S.speed - vr * 0.9; tx = S.x; lat = 2.2; // swerve in
+      if (Math.abs(c.x - S.x) < VHW * 2 + 0.02 && Math.abs(vr) < SEG * 0.6 && !c.rammed) {
+        c.rammed = true; S.shake = 5; S.damage++; loseCoins(5); addHeat(8); pop('RAMMED!', '#ff3b3b'); sfx('crash');
+        S.x += (S.x > c.x ? 1 : -1) * 0.35; c.x -= (S.x > c.x ? 1 : -1) * 0.2;
+      }
+      if (c.t > 1.2) { c.stage = 'pace'; c.t = 0; c.rammed = false; c.lane = -c.lane * (Math.random() < 0.5 ? 1 : -1); }
+    }
+  } else { // block: get in front of you and brake-check
+    if (vr < SEG * 5) { c.stage = 'pass'; tsp = S.speed + chase; tx = Math.abs(S.x - 0.62) > 0.4 ? 0.62 : -0.62; }
+    else {
+      if (c.stage !== 'block') { c.stage = 'block'; c.t = 0; sfx('horn'); banner('COP CUTTING YOU OFF!', 'GO AROUND IT', '#ff6b6b', 1, true); }
+      tx = S.x; lat = 0.6;
+      const brake = (c.t % 4) > 2.6; // brake-check every few seconds
+      tsp = brake ? S.speed * 0.5 : S.speed + (SEG * 5 - vr) * 0.9;
+      addHeat(dt * 1.5);
+    }
+  }
+  c.sp += (tsp - c.sp) * Math.min(1, dt * 4); c.sp = Math.max(0, Math.min(S.maxSp * 1.6, c.sp));
+  c.z += c.sp * dt;
+  const d = tx - c.x; c.x += Math.sign(d) * Math.min(Math.abs(d), lat * dt);
+  c.x = Math.max(-0.95, Math.min(0.95, c.x));
+  // bumping into the van from behind / you rear-ending a blocking cop
+  if (c.stage !== 'ram' && Math.abs(vr) < SEG * 0.5 && Math.abs(c.x - S.x) < VHW * 2 && S.crashCd <= S.t) { crash(null, 'HIT A COP!'); loseCoins(5); addHeat(15); c.z += vr >= 0 ? SEG : -SEG; }
+  // cops crash into traffic too
+  for (const t of S.traffic) if (Math.abs(t.z - c.z) < SEG * 0.5 && Math.abs(t.x - c.x) < VHW * 2) { c.spinDir = c.x < t.x ? -1 : 1; wipeout(c, 'COP WIPED OUT!'); break; }
+  S.siren = Math.max(S.siren, Math.max(0, Math.min(1, 1 + vr / 1200)));
+}
 function crash(car, why) {
   if (S.crashCd > S.t) return;
   S.crashCd = S.t + 1.2; if (why) banner(why, '', '#ff6b6b', 0.8, true);
   S.speed *= 0.35; S.shake = 4; S.damage++; S.crashes[half()]++; addHeat(12); sfx('crash');
-  if (car) { car.z += SEG * 2; car.x += (car.x > S.x ? 1 : -1) * 0.3; }
+  if (car) { car.z += SEG * 1.5; car.x += (car.x > S.x ? 1 : -1) * 0.25; }
   puff(W / 2, 150, 10, '#888');
 }
 
@@ -913,7 +963,7 @@ function practiceStep(dt, segIdx, boost, brake) {
   else if (st === 1) { if (boost && S.speed > S.maxSp * 0.7) S.pBoost = true; ok = S.pBoost && brake; }
   else if (st === 2) {
     ok = (stat(S.me).hitc || 0) > 0;
-    if (!ok && !S.cops.length) S.cops.push({ type: 'cone', hp: 1, rel: -20, x: 0, side: 1, stage: 'side', t: -99, blind: 0, wob: 0 });
+    if (!ok && !S.cops.length) S.cops.push({ type: 'cone', hp: 1, z: S.pos + PZ, sp: 0, x: 0, side: 1, stage: 'side', t: -99, blind: 0, wob: 0 });
     for (const c of S.cops) c.t = -99; // cone-cop never rams
   }
   else if (st === 3) {
@@ -997,7 +1047,7 @@ function stop() {
 function project(p, camX, camY, camZ) {
   const cx = p.x - camX, cy = p.y - camY, cz = p.z - camZ;
   const sc = CAMD / cz;
-  return { x: Math.round(W / 2 + sc * cx * W / 2), y: Math.round(H / 2 - sc * cy * H / 2), w: Math.round(sc * ROADW * W / 2), sc };
+  return { x: Math.round(W / 2 + sc * cx * W / 2), y: Math.round(HZ - sc * cy * H / 2), w: Math.round(sc * ROADW * W / 2), sc };
 }
 function shade(hex, k) { const n = parseInt(hex.slice(1, 7).padEnd(6, '0'), 16); const f = v => Math.max(0, Math.min(255, Math.round(v * k))); if (hex.length === 4) { const r = parseInt(hex[1] + hex[1], 16), g = parseInt(hex[2] + hex[2], 16), b = parseInt(hex[3] + hex[3], 16); return 'rgb(' + f(r) + ',' + f(g) + ',' + f(b) + ')'; } return 'rgb(' + f(n >> 16) + ',' + f(n >> 8 & 255) + ',' + f(n & 255) + ')'; }
 function poly(x1, y1, w1, x2, y2, w2, col) {
@@ -1018,7 +1068,7 @@ function draw() {
   ctx.translate(Math.round((Math.random() - 0.5) * sh * 2), Math.round((Math.random() - 0.5) * sh * 2));
   // sky
   const wob = lvl ? Math.sin(S.t * 1.3) * S.sway * 0.4 : 0;
-  const g = ctx.createLinearGradient(0, 0, 0, H / 2);
+  const g = ctx.createLinearGradient(0, 0, 0, HZ);
   g.addColorStop(0, ultra ? hue(S.t * 60) : th.sky[0]); g.addColorStop(1, ultra ? hue(S.t * 60 + 120) : th.sky[1]);
   ctx.fillStyle = g; ctx.fillRect(-4, -4, W + 8, H + 8);
   if (S.night) { ctx.fillStyle = '#fff'; for (let i = 0; i < 30; i++) ctx.fillRect((i * 97) % W, (i * 53) % 70, 1, 1); }
@@ -1029,15 +1079,15 @@ function draw() {
   if (!S.night) { ctx.fillStyle = ultra ? hue(S.t * 60 + 200, 60, 85) : '#ffffffcc'; for (let i = 0; i < 6; i++) { const cx = ((i * 71 - S.bgX * 0.3 - S.t * 3) % (W + 80) + W + 80) % (W + 80) - 40, cy = 14 + (i * 37) % 40; ctx.fillRect(cx, cy, 34, 6); ctx.fillRect(cx + 6, cy - 4, 20, 5); ctx.fillRect(cx + 14, cy - 7, 10, 4); } }
   const city = ['city', 'downtown', 'hq'].includes(S.world);
   ctx.fillStyle = city ? (S.night ? '#140a24' : '#3a3050') : shade(th.hill, 0.55);
-  if (!city) for (let x = -4; x < W + 4; x += 2) { const u = x + S.bgX * 0.5, hh = 26 + Math.sin(u * 0.02) * 12 + Math.sin(u * 0.047) * 5; ctx.fillRect(x, H / 2 - hh + wob, 2, hh + 4); }
+  if (!city) for (let x = -4; x < W + 4; x += 2) { const u = x + S.bgX * 0.5, hh = 26 + Math.sin(u * 0.02) * 12 + Math.sin(u * 0.047) * 5; ctx.fillRect(x, HZ - hh * 0.7 + wob, 2, hh * 0.7 + 4); }
   else for (let x = -12; x < W + 12; x += 12) {
     const off = ((S.bgX * 0.5) % 12 + 12) % 12, k = Math.floor((x + S.bgX * 0.5) / 12);
     const hh = 18 + (Math.abs(Math.sin(k * 12.9898) * 43758) % 1) * 30;
-    ctx.fillRect(x - off, H / 2 - hh + wob, 11, hh + 4);
-    if (S.night && k % 2) { ctx.fillStyle = '#ffd84a'; ctx.fillRect(x - off + 3, H / 2 - hh + 6 + wob, 2, 2); ctx.fillStyle = '#140a24'; }
+    ctx.fillRect(x - off, HZ - hh * 0.7 + wob, 11, hh * 0.7 + 4);
+    if (S.night && k % 2) { ctx.fillStyle = '#ffd84a'; ctx.fillRect(x - off + 3, HZ - hh * 0.7 + 4 + wob, 2, 2); ctx.fillStyle = '#140a24'; }
   }
   ctx.fillStyle = th.hill;
-  for (let x = -4; x < W + 4; x += 2) { const hh = 14 + Math.sin((x + S.bgX) * 0.03) * 8 + Math.sin((x + S.bgX) * 0.011) * 10; ctx.fillRect(x, H / 2 - hh + wob, 2, hh + 4); }
+  for (let x = -4; x < W + 4; x += 2) { const hh = 14 + Math.sin((x + S.bgX) * 0.03) * 8 + Math.sin((x + S.bgX) * 0.011) * 10; ctx.fillRect(x, HZ - hh * 0.7 + wob, 2, hh * 0.7 + 4); }
 
   // road
   const base = segAt(S.pos), basePct = (S.pos % SEG) / SEG;
@@ -1053,10 +1103,20 @@ function draw() {
     const p2 = project({ x: 0, y: s.y2, z: (s.i + 1) * SEG + loop }, pl - xacc - dx + swayX, camY, S.pos);
     xacc += dx; dx += s.curve;
     s.clip = maxY; s.p = p1;
+    s.vis = false;
     if (p1.sc <= 0 || p2.y >= maxY || p2.y >= p1.y) { list.push(s); continue; }
+    s.p2 = p2; s.vis = true;
+    maxY = p2.y;
+    list.push(s);
+  }
+  // paint the road far -> near so nearer slices always cover farther ones
+  ctx.fillStyle = ultra ? hue(S.t * 90, 70, 32) : th.grass[0]; ctx.fillRect(-4, HZ + wob - 2, W + 8, H);
+  for (let n = list.length - 1; n >= 0; n--) {
+    const s = list[n]; if (!s.vis) continue;
+    const p1 = s.p, p2 = s.p2;
     const alt = Math.floor(s.i / RUMBLE) % 2;
     const y1 = p1.y + wob, y2 = p2.y + wob;
-    ctx.fillStyle = ultra ? hue(s.i * 8 + S.t * 90, 70, alt ? 35 : 30) : th.grass[alt]; ctx.fillRect(-4, y2, W + 8, y1 - y2 + 1);
+    ctx.fillStyle = ultra ? hue(s.i * 8 + S.t * 90, 70, alt ? 35 : 30) : th.grass[alt]; ctx.fillRect(-4, y2, W + 8, y1 - y2 + 2);
     if (!ultra) poly(p1.x, y1, p1.w * 1.4, p2.x, y2, p2.w * 1.4, shade(th.grass[alt], 0.8)); // dirt shoulder
     poly(p1.x, y1, p1.w * 1.15, p2.x, y2, p2.w * 1.15, ultra ? hue(s.i * 12, 90, 70) : th.rumble[alt]);
     poly(p1.x, y1, p1.w, p2.x, y2, p2.w, ultra ? hue(s.i * 5 + S.t * 40, 50, alt ? 32 : 28) : th.road[alt]);
@@ -1070,33 +1130,37 @@ function draw() {
     }
     if (Math.floor(s.i / 3) % 2) for (const lx of [-1 / 3, 1 / 3]) poly(p1.x + p1.w * lx, y1, p1.w * 0.02, p2.x + p2.w * lx, y2, p2.w * 0.02, th.lane);
     if (!S.route && s.i > S.forkAt - 5 && s.i < S.forkAt) poly(p1.x, y1, p1.w * 0.03, p2.x, y2, p2.w * 0.03, '#ff3b3b');
-    maxY = p2.y;
-    list.push(s);
   }
   // sprites back to front
   for (let n = list.length - 1; n > 0; n--) {
     const s = list[n]; if (!s.p || s.p.sc <= 0) continue;
     const p = s.p, y = p.y + wob;
     for (const pr of s.props) drawProp(pr, p.x + p.w * pr.x, y, p.w / 140, s.clip);
-    for (const it of s.items) if (!it.got) drawItem(it, p.x + p.w * it.x, y, p.w / 140);
-    for (const c of S.traffic) { const ci = Math.floor(c.z / SEG); if (ci === s.i) drawCar(p.x + p.w * c.x, y, p.w / 140, c.col, false); }
+    for (const it of s.items) if (!it.got) drawItem(it, p.x + p.w * it.x, y, p.w / 140 * ITK);
+    for (const c of S.traffic) if (Math.floor(c.z / SEG) === s.i && c.z - S.pos >= PZ) drawCar(p.x + p.w * c.x, y, p.w / 140 * CARK, c.col, false);
+    for (const c of S.cops) if (c.type !== 'cone' && Math.floor(c.z / SEG) === s.i && c.z - S.pos >= PZ) { c.sx = p.x + p.w * c.x; c.sy = y; drawCop(c, c.sx, y, p.w / 140 * CARK); }
   }
-  // cops alongside (screen space, beside the van)
-  for (const c of S.cops) if (c.stage !== 'tail') {
-    const sx = W / 2 + c.side * 70 + (c.stage === 'ram' ? -c.side * Math.min(1, c.t * 3) * 30 : 0);
-    drawCop(c, sx, 172, 1.05);
-    text(c.side < 0 ? '<' : '>', c.side < 0 ? 6 : W - 10, 120, '#ff3b3b', 3);
+  // cones for the test drive + arrows for cops coming up behind
+  for (const c of S.cops) {
+    if (c.type === 'cone') { c.sx = W / 2 + 80; c.sy = 176; drawCop(c, c.sx, c.sy, 1); continue; }
+    if (c.stage !== 'spin' && c.z - S.pos < PZ && c.z - S.pos > -900) { const sd = c.x < S.x ? -1 : 1; text(sd < 0 ? '<' : '>', sd < 0 ? 6 : W - 12, 130, Math.floor(S.t * 6) % 2 ? '#ff3b3b' : '#fff', 3); }
   }
   // aim marker: which cop your next throw hits
   if (S.mode === 'drive' && S.cops.length && (S.solo || mySeat() > 0)) {
     const tg = pickTarget(S.solo ? 0 : mySeat(), null);
-    if (tg && tg.stage !== 'tail') { const tx = W / 2 + tg.side * 70, ty = 176, b = Math.floor(S.t * 6) % 2 ? 2 : 0; ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.strokeRect(tx - 34 - b, ty - 58 - b, 68 + b * 2, 58 + b * 2); text('J', tx, ty - 70, '#ffd23f', 1, 'center'); }
+    if (tg && tg.sx != null && tg.z - S.pos >= PZ * 0.5) { const tx = tg.sx, ty = tg.sy, sc = Math.max(0.5, Math.min(1.4, PZ / Math.max(1, tg.z - S.pos))), b = Math.floor(S.t * 6) % 2 ? 2 : 0; ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.strokeRect(tx - 30 * sc - b, ty - 52 * sc - b, 60 * sc + b * 2, 52 * sc + b * 2); text('J', tx, ty - 62 * sc, '#ffd23f', 1, 'center'); }
   }
   // van (blinks while recovering from a crash)
   if (!(S.crashCd > S.t && Math.floor(S.t * 12) % 2)) drawPlayer();
+  // vehicles between the camera and the van are nearer to us: draw them over the van
+  { const near = [];
+    for (const c of S.traffic) if (c.z - S.pos < PZ && c.z - S.pos > SEG * 0.6) near.push([c, 0]);
+    for (const c of S.cops) if (c.type !== 'cone' && c.z - S.pos < PZ && c.z - S.pos > SEG * 0.6) near.push([c, 1]);
+    near.sort((a, b) => b[0].z - a[0].z);
+    for (const [c, cop] of near) { const d = c.z - S.pos, sc = CAMD / d, px = W / 2 + sc * (c.x - S.x) * ROADW * W / 2, py = HZ + sc * CAMH * H / 2, k = sc * ROADW * W / 2 / 140 * CARK; if (cop) { c.sx = px; c.sy = py; drawCop(c, px, py, k); } else drawCar(px, py, k, c.col, false); } }
   // shots
   for (const s of S.shots) {
-    const tx = s.side === 0 ? W / 2 : W / 2 + s.side * 70, ty = s.side === 0 ? 14 : 160;
+    const tx = s.tx != null ? s.tx : s.side === 0 ? W / 2 : W / 2 + s.side * 70, ty = s.ty != null ? s.ty - 20 : s.side === 0 ? 14 : 160;
     const k = Math.min(1, s.t / 0.35);
     ctx.fillStyle = '#e8a33a'; ctx.fillRect(s.x0 + (tx - s.x0) * k - 2, s.y0 + (ty - s.y0) * k - 10 * Math.sin(k * Math.PI) - 2, 4, 4);
   }
@@ -1163,6 +1227,11 @@ function drawCar(x, y, sc, col, cop) {
   if (cop) { r(-12, 42, 12, 5, Math.floor(S.t * 8) % 2 ? '#f00' : '#600'); r(0, 42, 12, 5, Math.floor(S.t * 8) % 2 ? '#006' : '#03f'); }
 }
 function drawCop(c, x, y, sc) {
+  if (c.stage === 'spin') { ctx.save(); ctx.translate(x, y - 20 * sc); ctx.rotate(c.t * 9 * (c.spinDir || 1)); ctx.translate(-x, -(y - 20 * sc)); }
+  drawCop2(c, x, y, sc);
+  if (c.stage === 'spin') { ctx.restore(); if (Math.random() < 0.5) S.fx.push({ x: x + Math.random() * 20 - 10, y: y - 10, vx: 0, vy: -25, t: 0.6, col: '#777', r: 3 }); }
+}
+function drawCop2(c, x, y, sc) {
   if (c.type === 'cone') { ctx.fillStyle = '#f80'; ctx.beginPath(); ctx.moveTo(x, y - 40); ctx.lineTo(x - 14, y); ctx.lineTo(x + 14, y); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(x - 8, y - 20, 16, 4); ctx.fillStyle = '#03f'; ctx.fillRect(x - 4, y - 46, 8, 5); text('COP', x, y - 56, '#fff', 1, 'center'); return; }
   const r = (ox, oy, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(x + ox * sc), Math.round(y - (oy + h) * sc), Math.max(1, Math.round(w * sc)), Math.max(1, Math.round(h * sc))); };
   const fl = Math.floor(S.t * 8) % 2, red = fl ? '#ff2a2a' : '#6a0000', blu = fl ? '#10206a' : '#2a6aff';
@@ -1186,7 +1255,7 @@ function drawCop(c, x, y, sc) {
     r(-wide + 3, 3, 8, 6, '#222'); r(wide - 11, 3, 8, 6, '#222');
     r(-wide + 2, 6, wide * 2 - 4, 20, body);                          // lower body
     r(-wide + 2, 12, wide * 2 - 4, 7, trim);                          // door band (black&white / red stripe)
-    r(-12, 8, 24, 7, '#f6f0c0'); text(suv ? 'BUZZKILL' : 'BUZZ PD', x, y - 14 * sc, suv ? '#fff' : '#111', 1, 'center');
+    r(-12, 8, 24, 7, '#f6f0c0'); if (sc > 0.6) text(suv ? 'BUZZKILL' : 'BUZZ PD', x, y - 14 * sc, suv ? '#fff' : '#111', 1, 'center');
     r(-wide + 4, 20, 10, 5, '#f33'); r(wide - 14, 20, 10, 5, '#f33'); // tail lights
     r(-wide + 10, 26, wide * 2 - 20, suv ? 20 : 16, body);            // cabin
     r(-wide + 14, 28, wide * 2 - 28, suv ? 14 : 11, '#1c2a3c');       // rear window
@@ -1202,7 +1271,7 @@ function drawCop(c, x, y, sc) {
   }
   if (c.blind > 0) { ctx.fillStyle = '#e8a33a'; ctx.fillRect(x - 16, y - 40 * sc, 32, 10); ctx.fillStyle = '#b5651d'; ctx.fillRect(x - 6, y - 38 * sc, 4, 4); }
   if (rage && Math.floor(S.t * 10) % 2) text('!', x, y - 70 * sc, '#ff3b3b', 2, 'center');
-  for (let i = 0; i < c.hp; i++) { ctx.fillStyle = '#f33'; ctx.fillRect(x - c.hp * 3 + i * 6, y - 60 * sc, 4, 3); }
+  if (sc > 0.4) for (let i = 0; i < c.hp; i++) { ctx.fillStyle = '#f33'; ctx.fillRect(x - c.hp * 3 + i * 6, y - 60 * sc, 4, 3); }
 }
 function drawPlayer() {
   const shit = S.car === 'shitbox';
@@ -1268,8 +1337,8 @@ function drawHUD() {
   ctx.fillStyle = '#222'; ctx.fillRect(mx - 2, my - 2, 64, 24);
   ctx.fillStyle = S.theme.road[0]; ctx.fillRect(mx, my, 60, 20);
   ctx.fillStyle = S.theme.grass[0]; ctx.fillRect(mx, my, 60, 6);
-  for (const c of S.cops) if (c.stage === 'tail') {
-    const k = Math.max(0.15, 1 + c.rel / 1500);
+  for (const c of S.cops) if (c.type !== 'cone' && c.z - S.pos < SEG * 0.6 && c.stage !== 'spin') {
+    const k = Math.max(0.15, Math.min(1, 1 + (c.z - S.pos) / 1500));
     const cx = mx + 30 + c.x * 20, cy = my + 8 + k * 10;
     ctx.fillStyle = c.type === 'suv' ? '#222' : '#eee'; ctx.fillRect(cx - 8 * k, cy - 4 * k, 16 * k, 8 * k);
     ctx.fillStyle = Math.floor(S.t * 8) % 2 ? '#f00' : '#03f'; ctx.fillRect(cx - 3 * k, cy - 6 * k, 6 * k, 2 * k);

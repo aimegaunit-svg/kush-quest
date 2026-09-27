@@ -135,6 +135,20 @@ const SFX = {
   boom: () => { tone(150, 0.25, 'sawtooth', 0.09, 0, 0.3); if (AC) noise(0.2, 0.07, AC.currentTime, 500); },
   beep: () => tone(1300, 0.05, 'square', 0.05),
   blow: () => { if (AC) noise(0.22, 0.07, AC.currentTime, 1200); tone(200, 0.15, 'sawtooth', 0.05, 0, 0.6); },
+  // v1.4 (World 1-2 content pack, Part 6): chiptune blips for the new enemies/bosses, same tone()/noise() pattern as every SFX entry above.
+  whistle: () => { tone(1100, 0.14, 'square', 0.05, 0, 4); tone(1300, 0.1, 'square', 0.04, 0.1); }, // PARK RANGER's whistle: a rising square wave
+  coo: () => { tone(500, 0.08, 'sine', 0.04, 0, -1.2); tone(420, 0.1, 'sine', 0.03, 0.05, -0.8); }, // pigeon
+  yap: () => { tone(900, 0.05, 'square', 0.05); tone(1100, 0.05, 'square', 0.04, 0.06); }, // dog nip
+  squawk: () => { tone(1400, 0.06, 'sawtooth', 0.05); tone(1000, 0.09, 'sawtooth', 0.04, 0.05, -2); }, // seagull
+  flex: () => tone(90, 0.3, 'sawtooth', 0.09, 0, -0.2), // BEACH BRO's low grunt
+  zap: () => { tone(2600, 0.03, 'square', 0.05); tone(2000, 0.14, 'sawtooth', 0.05, 0.03, 0.3); }, // jellyfish - taser pitched up
+  engine: () => { if (AC) noise(0.1, 0.03, AC.currentTime, 300); tone(80, 0.12, 'sawtooth', 0.05, 0, 0.6); }, // ATV loop tick
+  honk: () => { tone(340, 0.16, 'sawtooth', 0.07); tone(280, 0.2, 'sawtooth', 0.06, 0.08); }, // Pete's cart horn
+  megaphone: () => { tone(600, 0.2, 'sawtooth', 0.06, 0, -3); tone(900, 0.2, 'sawtooth', 0.05, 0.05, 3); }, // Barb's distorted sweep
+  splash: () => { if (AC) noise(0.28, 0.08, AC.currentTime, 2200); tone(260, 0.18, 'triangle', 0.05, 0, -0.4); }, // soaker/wave
+  frisbeeWhoosh: () => { if (AC) noise(0.16, 0.04, AC.currentTime, 1800); },
+  snap: () => { tone(140, 0.05, 'square', 0.09); tone(90, 0.1, 'square', 0.08, 0.04); }, // bear trap
+  pinch: () => tone(700, 0.05, 'square', 0.06, 0, -1), // crab
 };
 // ---- ADAPTIVE SOUNDTRACK ----
 // map: bouncy 8-bit theme | exploring: laid-back lo-fi chiptune | fights: 8-bit + drum & bass at 174 bpm
@@ -837,6 +851,9 @@ const ENV_WEAPONS = {
 };
 // v1.2 fix (Step 1.4): Wild weapons have no dedicated icon art of their own - reuse the closest-themed
 // existing MELEE/THROW icon so the Bag's WILD row always has a real image to draw (never a blank/crash).
+// v1.4 (Part 3.1): every ENV_WEAPONS id that has real icon art in the W12 pack (applepipe, plus whichever
+// held/icon sprites assets-w12.js ships) uses that instead of borrowing an old melee weapon's icon.
+const wildIcon = id => (W12['icon_' + id] && W12['icon_' + id][0]) || ICONS[WILD_ICON_ID[id]] || ICONS.joint;
 const WILD_ICON_ID = { bonghammer: 'bong', bluntbat: 'blunt', rollingpapers: 'papers', nugbombs: 'bombs', dabtorch: 'dab', hackysack: 'grinder', leafblower: 'lighter', zippoflick: 'lighter', hookahwhip: 'bong', lavalampmace: 'bong', gravitybongcannon: 'bong', applepipe: 'joint', budbustershotgun: 'papers', seaweedsmg: 'dab', nuglauncher: 'bombs', cannonballbazooka: 'bombs', dankdragonflamer: 'lighter', tikitorcher: 'lighter' };
 // v1.1 A3: per-world Wild-weapon pool (brief's table, minus Astral Plane which doesn't exist in this
 // codebase yet - Gravity Bong Cannon is just available in HQ per the task instructions). A pickup rolls
@@ -1209,19 +1226,36 @@ function variantTheme(base, name, tint, a, enemies) {
 }
 // enemy variants: same moves as the originals, new looks, a bit tougher
 const BASE_AI = {
-  ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop', badtrip: 'cop', paranoia: 'karen', scout: 'squirrel', tourist: 'cop',
+  ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop', badtrip: 'cop', paranoia: 'karen', scout: 'squirrel', tourist: 'cop',
   // v1.3 (content pass 2, requested 2026-09-26): 10 more Park/Beach reskins - 5 flavored for each world,
   // same zero-new-art recolor recipe as every variant above, filling out each family's pool further.
-  jogger: 'cop', birdwatcher: 'cop', yogamom: 'karen', pigeonlady: 'mouse', skateboarder: 'squirrel', // PARK
+  birdwatcher: 'cop', yogamom: 'karen', pigeonlady: 'mouse', skateboarder: 'squirrel', // PARK
   patrol: 'cop', influencer: 'karen', beachbum: 'mouse', surfer: 'squirrel', parrot: 'squirrel', // BEACH
+  // v1.4 (World 1-2 content pack, requested 2026-09-26): 5 new shared AIs for the 14 new W12 enemy kinds -
+  // see BRIEF_v1.4_W12.md Part 1.1/READ FIRST point 2-3. `jogger` moves OUT of 'cop' into its own 'charger'
+  // AI, and `crab` moves OUT of 'squirrel' into its own 'crab' AI (both keep the same sprite id, so
+  // saves/ENEMY_FAMILY/save.met all keep working - see the W12 art-replace block above).
+  jogger: 'charger', pigeon: 'flyer', dog: 'swarm', dogwalker: 'summoner', parkranger: 'cop',
+  goldsquirrel: 'squirrel', crab: 'crab', treasurecrab: 'crab',
+  seagull: 'flyer', beachbro: 'grabber', metaldetector: 'planter', jellyfish: 'planter', atv: 'rider',
+  // v1.4 (Part 2.1): the 4 unique bosses' own kind names need a BASE_AI fallback too (bossDataFor's `ai:
+  // BASE_AI[bd[1]] || bd[1]` would otherwise use the kind STRING itself as the ai, which matches nothing).
+  // Every existing bossAI brawler/shooter branch keeps working off these, exactly per the brief.
+  pete_cart: 'cop', pete: 'cop', rangerrick: 'cop', rangerrick_atv: 'cop', barb: 'karen', lance: 'cop',
 };
 const VARIANT_HP = {
-  ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2, badtrip: 1, scout: 1, tourist: 1,
-  jogger: -1, birdwatcher: 2, yogamom: 1, pigeonlady: 0, skateboarder: -1,
+  ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, lawnmower: 2, segway: 1, owl: 1, securitybot: 2, badtrip: 1, scout: 1, tourist: 1,
+  birdwatcher: 2, yogamom: 1, pigeonlady: 0, skateboarder: -1,
   patrol: 1, influencer: 1, beachbum: 2, surfer: -1, parrot: 0,
+  // v1.4: tuned per BRIEF_v1.4_W12.md Part 1.1 (extra HP on top of the AI's base 1)
+  jogger: 1, pigeon: 0, dog: 0, dogwalker: 1, parkranger: 1, goldsquirrel: 2, crab: 1, treasurecrab: 4,
+  seagull: 0, beachbro: 4, metaldetector: 1, jellyfish: 2, atv: 3,
 };
 // v1.3: per-kind speed multiplier for the new fast/slow variants above (everything else defaults to 1x via `SPD_MUL[k] || 1`)
-const SPD_MUL = { jogger: 1.35, birdwatcher: 0.8, skateboarder: 1.3, beachbum: 0.75, surfer: 1.25, parrot: 1.2 };
+// v1.4: `jogger` DROPS its SPD_MUL entry per the brief's READ FIRST point 2 - the new charger AI has its own
+// dedicated approach/dash speeds (see the e.ai === 'charger' branch in hostUpdate), not a multiplier on the
+// old cop chase speed it no longer uses.
+const SPD_MUL = { birdwatcher: 0.8, skateboarder: 1.3, beachbum: 0.75, surfer: 1.25, parrot: 1.2, goldsquirrel: 1.3 };
 {
   const tintSprites = (src, map) => src.map(img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { const key = d.data[i] + ',' + d.data[i + 1] + ',' + d.data[i + 2]; if (map[key]) { d.data[i] = map[key][0]; d.data[i + 1] = map[key][1]; d.data[i + 2] = map[key][2]; } } g.putImageData(d, 0, 0); return c; });
   const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -1438,6 +1472,12 @@ const MEGA_SKILLS = ['toke', 'puffpass', 'breath', 'bongrip', 'regen', 'ultimate
 const CAPTAIN_TITLES = ['SERGEANT', 'CAPTAIN', 'CHIEF', 'DEPUTY', 'INSPECTOR', 'WARDEN', 'FOREMAN', 'SUPERVISOR', 'MANAGER', 'DIRECTOR'];
 const CAPTAIN_NAMES = ['BOB', 'RICK', 'STEVE', 'DOUG', 'GARY', 'LARRY', 'KAREN', 'PAM', 'LINDA', 'CAROL'];
 function seededPick(n, salt, arr) { let s = (n * 7919 + salt * 104729 + 1) >>> 0; s = (s * 1103515245 + 12345) >>> 0; return arr[s % arr.length]; }
+// v1.4 (World 1-2 content pack, Part 2.1): the 4 unique W12 bosses get their own hand-drawn kind instead of
+// the plain seededPick(n,0,theme.enemies) reskin every other boss still uses. e.ai stays whatever BASE_AI
+// falls back to for that kind (Pete/Rick -> 'cop', Barb -> 'karen', Lance -> 'cop'), so every existing
+// bossAI branch (brawler/shooter/sigRing) still works unmodified - only the pattern list (BOSS_PATTERNS
+// below) decides which of those branches actually gets used, and when.
+const BOSS_KIND = { 'PARK RANGER PETE': 'pete_cart', 'RANGER RICK': 'rangerrick', 'BEACH PATROL BARB': 'barb', 'LIFEGUARD LANCE': 'lance' };
 function bossDataFor(n) {
   // skill slot reuses 'ultimate' rather than null: every UI that shows "BEAT HIM TO LEARN X" (the brief
   // panel, bossDataFor's callers) assumes a real skill id, and learnSkill() itself is already a no-op for
@@ -1445,8 +1485,8 @@ function bossDataFor(n) {
   if (isAstralLevel(n)) return ['THE PARANOIA', 'paranoia', 'ultimate', "YOU CAN'T ESCAPE YOUR OWN HEAD.", true, false];
   const w = worldOf(n), li = levelInWorld(n), wd = WORLDS[w], theme = THEMES[themeKeyFor(n)];
   if (isSecretLevel(n)) return [wd.name + ' STASH GUARDIAN', seededPick(n, 1, theme.enemies), seededPick(n, 2, SKILL_ORDER), 'YOU FOUND MY SECRET SPOT?!', false, false];
-  if (li === wd.bossAt) return [wd.bossName, seededPick(n, 0, theme.enemies), MEGA_SKILLS[w % MEGA_SKILLS.length], wd.bossName + " WON'T LET YOU THROUGH THIS EASY.", true, false];
-  if (li === wd.miniAt) return [wd.miniName, seededPick(n, 0, theme.enemies), seededPick(n, 3, SKILL_ORDER), wd.miniName.toUpperCase() + ' BLOCKS THE WAY.', false, true];
+  if (li === wd.bossAt) return [wd.bossName, BOSS_KIND[wd.bossName] || seededPick(n, 0, theme.enemies), MEGA_SKILLS[w % MEGA_SKILLS.length], wd.bossName + " WON'T LET YOU THROUGH THIS EASY.", true, false];
+  if (li === wd.miniAt) return [wd.miniName, BOSS_KIND[wd.miniName] || seededPick(n, 0, theme.enemies), seededPick(n, 3, SKILL_ORDER), wd.miniName.toUpperCase() + ' BLOCKS THE WAY.', false, true];
   const kind = seededPick(n, 0, theme.enemies);
   const name = seededPick(n, 4, CAPTAIN_TITLES) + ' ' + seededPick(n, 5, CAPTAIN_NAMES);
   return [name, kind, seededPick(n, 6, SKILL_ORDER), name + ' STEPS UP.', false, false];
@@ -1484,18 +1524,60 @@ const SPOOF_SIGNS = ['TACO BONG', 'KUSH & CARRY', 'BUDS BEFORE STUDS', 'THE STON
 // roster slots on a per-LEVEL seed, so a level not only can differ from its neighbor's theme but almost
 // always shows at least one face the player hasn't fought yet within that theme cycle.
 const ENEMY_FAMILY = {
-  cop: ['cop', 'ranger', 'guard', 'lawnmower', 'segway', 'securitybot', 'badtrip', 'tourist', 'jogger', 'birdwatcher', 'patrol'],
+  cop: ['cop', 'ranger', 'guard', 'lawnmower', 'segway', 'securitybot', 'badtrip', 'tourist', 'birdwatcher', 'patrol'],
   karen: ['karen', 'suit', 'paranoia', 'yogamom', 'influencer'],
   mouse: ['mouse', 'rat', 'pigeonlady', 'beachbum'],
-  squirrel: ['squirrel', 'raccoon', 'crab', 'owl', 'scout', 'skateboarder', 'surfer', 'parrot'],
+  squirrel: ['squirrel', 'raccoon', 'owl', 'scout', 'skateboarder', 'surfer', 'parrot'], // goldsquirrel deliberately NOT here - secret-level-only, never a random swap-in (see W12_ROSTER's comment)
+  // v1.4: new families for the 5 new shared AIs, so enemiesForLevel() has something to swap between.
+  // `crab`/`treasurecrab` and `jellyfish` are left OUT of any family (no swap partner) since their placement
+  // is either a fixed roster slot (crab) or zone-restricted (jellyfish, shallows-only) - see W12_ROSTER.
+  charger: ['jogger'], flyer: ['pigeon', 'seagull'], grabber: ['beachbro'], planter: ['metaldetector'],
+};
+// v1.4 (World 1-2 content pack, requested 2026-09-26): a fixed per-level roster override (Part 5 of the
+// brief) that enemiesForLevel() uses as its BASE roster instead of the theme's flat 5-kind cycle, so each
+// Park/Beach level's intro kind is guaranteed to appear at all (the swap step below still runs on top, but
+// is blocked from swapping OUT whichever kind(s) this level introduces - see the `noSwapOut` set below).
+// Level indices: Park n 0-5 (+49 secret), Beach n 6-12 (+50 secret). Only Park+Beach are covered; every
+// other world still falls back to its plain theme.enemies cycle.
+const W12_ROSTER = {
+  0: ['mouse', 'squirrel', 'cop', 'squirrel', 'mouse'],
+  1: ['jogger', 'pigeon', 'cop', 'squirrel', 'mouse'],
+  2: ['jogger', 'pigeon', 'cop', 'scout', 'mouse'],
+  3: ['dogwalker', 'jogger', 'cop', 'pigeon', 'scout'],
+  4: ['parkranger', 'dogwalker', 'jogger', 'pigeon', 'scout'],
+  5: ['parkranger', 'jogger', 'dogwalker', 'pigeon', 'cop'],
+  49: ['goldsquirrel', 'goldsquirrel', 'goldsquirrel', 'scout', 'pigeon'],
+  6: ['crab', 'tourist', 'crab', 'mouse', 'tourist'],
+  7: ['seagull', 'crab', 'tourist', 'squirrel', 'crab'],
+  8: ['beachbro', 'seagull', 'crab', 'karen', 'tourist'],
+  9: ['beachbro', 'crab', 'seagull', 'tourist', 'karen'],
+  10: ['metaldetector', 'jellyfish', 'beachbro', 'crab', 'seagull'],
+  11: ['atv', 'metaldetector', 'beachbro', 'seagull', 'crab'],
+  12: ['atv', 'beachbro', 'crab', 'seagull', 'tourist'],
+  50: ['treasurecrab', 'treasurecrab', 'crab', 'seagull', 'jellyfish'],
+};
+// which kind(s) each W12 level introduces, so a random family swap can never remove the whole reason the
+// level exists (brief READ FIRST point 4 / Part 5's placement rules) - anything NOT in this map for a given
+// n is free to be swapped like any other roster slot.
+const W12_INTRO_KIND = {
+  1: ['jogger', 'pigeon'], 3: ['dogwalker'], 4: ['parkranger'],
+  6: ['crab'], 7: ['seagull'], 8: ['beachbro'], 10: ['metaldetector', 'jellyfish'], 11: ['atv'],
+  // v1.4 fix: GOLD SQUIRREL reuses ai:'squirrel', so without this it's a valid `from` for the random
+  // family-swap step (fam('goldsquirrel') resolves by AI, returning the WHOLE squirrel family - being left
+  // out of that family list only stops it being swapped IN elsewhere, not OUT here) - caught by the
+  // automated Playwright smoke test (buildLevel(49) was coming back with zero goldsquirrels).
+  49: ['goldsquirrel'],
 };
 function enemiesForLevel(n, theme) {
   const fam = k => ENEMY_FAMILY[BASE_AI[k] || k] || [k];
-  let roster = theme.enemies.slice();
+  let roster = (W12_ROSTER[n] || theme.enemies).slice();
+  const noSwapOut = new Set(W12_INTRO_KIND[n] || []);
   const swaps = 1 + (seededPick(n, 60, [0, 0, 1]) ? 1 : 0); // most levels get 1 reskin, some get 2
   for (let i = 0; i < swaps; i++) {
-    const from = seededPick(n, 61 + i * 2, [...new Set(roster)]);
-    const options = fam(from).filter(k => k !== from);
+    const candidates = [...new Set(roster)].filter(k => !noSwapOut.has(k));
+    if (!candidates.length) continue;
+    const from = seededPick(n, 61 + i * 2, candidates);
+    const options = fam(from).filter(k => k !== from && !noSwapOut.has(k));
     if (!options.length) continue;
     const to = seededPick(n, 62 + i * 2, options);
     roster = roster.map(k => k === from ? to : k);
@@ -1549,17 +1631,34 @@ function buildLevel(n, remix) {
     const count = firstFight ? 4 : Math.round(base * 2.5 * (gauntletZone ? 1.7 : 1)) + (n < 2 ? 4 : 0); // enough for a full crew of 4; the host only uses what the crew size needs
     const ids = [];
     for (let k = 0; k < count; k++) {
-      const kind = pick(levelEnemies);
-      const hp = { cop: 3 + Math.floor(diff / 3), karen: 2 + Math.floor(diff / 4), mouse: 1, squirrel: 1 }[BASE_AI[kind] || kind] + (VARIANT_HP[kind] || 0);
+      // v1.4 (Part 4): TREASURE CRAB also gets a 10% chance to show up in the Beach's 2 veteran levels
+      // (2-6/2-7), on top of its guaranteed spot in the Beach secret level above.
+      const kind = ((n === 11 || n === 12) && rand() < 0.1) ? 'treasurecrab' : pick(levelEnemies), ai = BASE_AI[kind] || kind;
+      // v1.4: the new W12 AIs (charger/flyer/swarm/summoner/grabber/planter/rider/crab) aren't in this old
+      // fixed per-AI base map - like mouse/squirrel they all get the plain base of 1, per the brief's own
+      // "VARIANT_HP (extra HP on top of 1)" framing for every new kind.
+      const hp = ({ cop: 3 + Math.floor(diff / 3), karen: 2 + Math.floor(diff / 4), mouse: 1, squirrel: 1 }[ai] || 1) + (VARIANT_HP[kind] || 0);
       ids.push(enemies.length);
-      enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, hp, maxHp: hp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60 + Math.floor(rand() * 60), flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0 });
+      const en = { id: enemies.length, kind, ai, zone: zi, hp, maxHp: hp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60 + Math.floor(rand() * 60), flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0 };
+      enemies.push(en);
+      // v1.4 (Part 1.2, 'summoner'/dogwalker): pre-allocate her up-to-4 dogs as reserve enemies the same
+      // way a boss's summons[] are pre-allocated (see the boss block below) - mirroring summonAdds()'s own
+      // release path (the brief's explicit ask) instead of pushing brand-new array entries mid-run, which
+      // would never reach non-host clients (their lvl.enemies array is only ever built once, at buildLevel).
+      if (ai === 'summoner') {
+        en.summons = [];
+        for (let d = 0; d < 4; d++) { en.summons.push(enemies.length); enemies.push({ id: enemies.length, kind: 'dog', ai: 'swarm', zone: zi, owner: en.id, reserve: true, hp: 1, maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
+      }
     }
     if (zi === zoneCount - 1) { // the boss arrives after its crew
       const bd = bossDataFor(n), mega = !!bd[4], mini = !!bd[5], crewN = Net.online ? realRemotes() + 1 : 1, bhp = Math.round((14 + n * 3) * (mega ? 2.2 : mini ? 1.5 : 1) * (1 + 0.4 * (crewN - 1)));
       ids.push(enemies.length);
       const boss = { id: enemies.length, kind: bd[1], ai: BASE_AI[bd[1]] || bd[1], boss: true, mega, mini, bname: bd[0], skill: bd[2], quote: bd[3], zone: zi, hp: bhp, maxHp: bhp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 90, flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0, summons: [] };
       enemies.push(boss);
-      for (let k = 0; k < 8; k++) { boss.summons.push(enemies.length); const kind = pick(levelEnemies); enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, reserve: true, hp: 1 + (VARIANT_HP[kind] || 0), maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
+      // v1.4 (Part 2.4/2.6): RANGER RICK and LIFEGUARD LANCE whistle in a fixed pack, not the level's random pool.
+      const rickAdds = ['jogger', 'jogger', 'pigeon', 'pigeon', 'pigeon'], lanceAdds = ['crab', 'crab', 'tourist', 'seagull'];
+      const fixedAdds = bd[1] === 'rangerrick' ? rickAdds : bd[1] === 'lance' ? lanceAdds : null;
+      for (let k = 0; k < 8; k++) { boss.summons.push(enemies.length); const kind = fixedAdds ? fixedAdds[k % fixedAdds.length] : pick(levelEnemies); enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, reserve: true, hp: 1 + (VARIANT_HP[kind] || 0), maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
     }
     zones.push({ x0, ids, base, started: false, cleared: false, ambush: zi === ambushZone, gauntlet: gauntletZone });
     // stuff inside each fight area
@@ -1609,7 +1708,10 @@ function buildLevel(n, remix) {
     zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: [],
     type, chase, chaseX: 0, escort,
     // v1.1 A6: SUBURBIA mousetraps - a few placed on the ground in each fight area, telegraphed by being visible before they trigger
-    traps: (themeKey === 'suburb' || theme.base === 'suburb') ? zones.map(z => ({ x: z.x0 + 90 + Math.floor(rand() * 140), z: rz(), armed: true, flash: 0 })) : []
+    traps: (themeKey === 'suburb' || theme.base === 'suburb') ? zones.map(z => ({ x: z.x0 + 90 + Math.floor(rand() * 140), z: rz(), armed: true, flash: 0 })) : [],
+    // v1.4 (Part 2.4): RANGER RICK's bear traps - a separate array from the SUBURBIA mousetraps above since
+    // these are dropped live by his 'traps' pattern rather than placed at buildLevel time (see bossAI).
+    beartraps: []
   };
 }
 
@@ -2208,6 +2310,15 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (e.kind === 'crab' && e.h > 0 && dmg > 0) { popup(e.x - 14, sy(e.z, e.h) - 30, 'PINCHED SHUT!', '#ffb0b0'); return; } // CRAB: can't be hit while pinching/hopping
   if (e.kind === 'securitybot' && dmg > 0 && !fx.stun) { popup(e.x - 10, sy(e.z, e.h) - 30, 'SHIELDED!', '#9ab0ff'); return; } // SECURITY BOT: shielded unless stunned (Bong)
   if (e.kind === 'owl' && dmg > 0 && !fx.air) dmg = Math.max(1, Math.floor(dmg / 3)); // OWL NARC: needs an air hit to really connect
+  // v1.4 (Part 1.2/2): a few new kinds/boss states change how a hit lands, same pattern as the checks above.
+  if (e.ai === 'charger' && e.state === 63 && dmg > 0) dmg += 1; // JOGGER recover: vulnerable, +1 damage
+  if ((e.state === 92 || (e.kind === 'rangerrick_atv' && e.state === 87)) && dmg > 0) dmg *= 2; // pete_cart parked / Rick's ATV stalled: 2x damage while vulnerable
+  if (e.ai === 'grabber' && e.armor && dmg > 0) { fx = { ...fx, kb: 0, stun: 0, hr: 0 }; popup(e.x - 10, sy(e.z, e.h) - 30, 'SUPER ARMOR!', '#ffd84a'); } // BEACH BRO flexing: takes damage, no knockback/stun/launch
+  if (e.ai === 'grabber' && e.state === 75 && dmg > 0) { e.state = 72; e.t = 0; popup(e.x - 16, sy(e.z, e.h) - 30, 'BRO, LET GO!', '#c8ffa0'); return; } // a crewmate hitting the bro once breaks his hold
+  if (e.ai === 'rider') { // ATV: a jump attack/launch, or 4 total hits, knocks the rider off
+    e.hitsTaken = (e.hitsTaken || 0) + (dmg > 0 ? 1 : 0);
+    if ((fx.air || fx.hr || e.hitsTaken >= 4) && dmg > 0) dmg = 999;
+  }
   // v1.1 A6: DOWNTOWN riot shields - cops block frontal damage; hit them from behind, or stun them first (fx.stun), to get through
   if (e.ai === 'cop' && !e.boss && dmg > 0 && !fx.stun && e.state !== 4 && (lvl.theme.base || lvl.themeKey) === 'city' && dir === -e.dir) {
     popup(e.x - 14, sy(e.z, e.h) - 30, 'SHIELDED!', '#9ab0ff'); SFX.bump(); return;
@@ -2238,9 +2349,13 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
       for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - e.x) < 26 && Math.abs(o.z - e.z) < 18) damageEnemy(o, 2, Math.sign(o.x - e.x) || 1, false, by, { burn: 2 });
       if (Math.abs(e.x - me.x) < 26 && Math.abs(e.z - me.z) < 18) hurt(1, 2, e.x);
     }
+    // v1.4 (Part 1.2): PIGEON - killing one scatters every other pigeon nearby (a 60-frame flee/scatter pose).
+    if (e.kind === 'pigeon') for (const o of lvl.enemies) if (o !== e && o.kind === 'pigeon' && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - e.x) < 60 && Math.abs(o.z - e.z) < 24) { o.state = 66; o.t = 60; }
     Net.send({ t: 'kill', i: e.id, by, st: e.stolen, l: lvl.n, ex: explodeMouse ? 1 : 0, exx: Math.round(e.x), exz: Math.round(e.z) });
     onKill(e, by);
   } else {
+    // BEACH BRO's flex is true super armor: takes the damage above, but no stagger/knockback/launch at all.
+    if (e.ai === 'grabber' && e.armor) return;
     const kb = (fx.kb || 1) * (e.boss ? 0.25 : 1);
     if (e.boss) { if (!(e.state === 1 || e.state === 2) || fx.stun) { e.state = 4; e.t = fx.stun ? 30 : 8; } e.vx = dir * kb; if (fx.hr) fx = { ...fx, hr: 0 }; return; }
     e.state = 4; e.t = Math.max(strong ? 30 : 20, fx.stun || 0); e.stunned = fx.stun ? e.t : 0; e.vx = dir * (strong ? 3 : 1.4) * kb; if (strong) e.vh = 2.2;
@@ -2334,7 +2449,21 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   const zn = lvl.zones[lvl.zi];
   if (zn && lvl.locked && zn.ids.every(i => { const o = lvl.enemies[i]; return o === e || !o.alive || o.state === 5 || !o.spawned && o.skipped; }) && zn.ids.filter(i => !lvl.enemies[i].spawned && lvl.enemies[i].alive).length === 0) { hitstop = 14; shake = 10; }
   if (by !== Net.id) return;
-  const reward = (e.boss ? (e.mega ? 150 : 60) : { cop: 8, karen: 6, mouse: 2, squirrel: 3 }[e.ai]) + e.stolen;
+  // v1.4 (Part 4): the elites' own jackpot payouts, instead of the plain coin+e.stolen reward every other
+  // kind gets below. GOLD SQUIRREL's e.stolen tracks Resin (not coins) it lifted off you - see the thief
+  // loop above - so it's paid out through gainResin(), not addCoins().
+  if (e.kind === 'goldsquirrel') {
+    addCoins(15); gainResin(e.stolen * 3); addCooked(3); me.kills++; addCombo(e.x, sy(e.z) - 30); SFX.stomp();
+    popup(e.x - 20, sy(e.z) - 34, 'GOLD SQUIRREL! +15 +' + (e.stolen * 3) + ' RESIN', '#ffd84a'); e.stolen = 0; return;
+  }
+  if (e.kind === 'treasurecrab') {
+    addCoins(8); gainResin(12); addCooked(3); me.kills++; addCombo(e.x, sy(e.z) - 30); SFX.stomp();
+    lvl.items.push({ id: 'tc' + e.id + '_' + frame, kind: 'munchie', x: e.x, z: e.z, h: 10, vh: 1.4, taken: false });
+    popup(e.x - 24, sy(e.z) - 34, 'TREASURE CRAB! +12 RESIN', '#ffd84a'); return;
+  }
+  // v1.4: the new W12 AIs aren't in this old fixed per-AI coin map - a flat 4 (between mouse's 2 and cop's
+  // 8) for all of them.
+  const reward = (e.boss ? (e.mega ? 150 : 60) : ({ cop: 8, karen: 6, mouse: 2, squirrel: 3 }[e.ai] || 4)) + e.stolen;
   addCoins(reward); addCooked(3); me.kills++; addCombo(e.x, sy(e.z) - 30); SFX.stomp();
   gainResin(e.mega ? 5 : e.mini ? 3 : 1); // v1.1 A3: Resin drops from every knock-out - see gainResin()'s comment on the simplification here
   // v1.2 (Step 9.2): "rare enemy drops" - a Wild weapon pickup, beyond the one guaranteed spawn per mission
@@ -2362,6 +2491,11 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   e.stolen = 0;
 }
 function attack(charged) {
+  // v1.4 (Part 1.2): BEACH BRO's grab - "mashing attack 8 times" breaks it. This is a local-only escape (no
+  // dedicated net message, unlike the brief's literal `mash`/`ungrab`): it just clears me.grabbedBy on this
+  // client once the count is hit, exactly like the crewmate-hit break already does via the synced e.state
+  // dropping out of 75 (see updatePlayer) - a documented simplification, not a full host-authoritative mash.
+  if (me.grabbedBy != null) { me.mashN = (me.mashN || 0) + 1; if (me.mashN >= 8) { me.grabbedBy = null; popup(me.x - 20, sy(me.z) - 34, 'BROKE FREE!', '#c8ffa0'); SFX.power(); } return; }
   if (me.spectator || me.deadOut || (me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
   // v1.4 (user-directed, 2026-09-26): no more Q-toggle - a held Wild weapon (me.envWeapon) is ALWAYS the
   // active weapon; it auto-reverts to Core the instant its charge/ammo runs dry (see the gun branch and the
@@ -2593,6 +2727,17 @@ function updateShots() {
       if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 8) { s.life = 0; me.rootT = Math.max(me.rootT || 0, 50); popup(me.x - 16, sy(me.z) - 34, 'ROOTED!', '#c070ff'); SFX.thud(); }
     } else if (s.k === 'lifering') { // v1.3: BEACH's PATROL - a thrown life-ring that stuns briefly, no direct damage
       if (state === 'play' && Math.abs(s.x - me.x) < 11 && Math.abs(s.z - me.z) < 9 && me.h < 8) { s.life = 0; me.stunT = Math.max(me.stunT || 0, 34); popup(me.x - 16, sy(me.z) - 34, 'RINGED!', '#ff4a4a'); SFX.bump(); }
+    } else if (s.k === 'ticket') { // v1.4 Part 2.3: PARK RANGER PETE's ticket fan - damage + a coin fine
+      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 10) { s.life = 0; hurt(1, 3, s.x); const amt = 3; save.coins = Math.max(0, save.coins - amt); popup(me.x - 16, sy(me.z) - 34, 'FINED! -' + amt, '#ffb0b0'); }
+    } else if (s.k === 'buoy') { // v1.4 Part 2.5: BEACH PATROL BARB's rolling buoy - bounces off the zone walls once, jump clears it
+      const zb3 = lvl.zones[lvl.zi], bL = zb3 ? zb3.x0 + 10 : s.x - 200, bR = zb3 ? zb3.x0 + ZW - 10 : s.x + 200;
+      if (!s.bounced && (s.x < bL || s.x > bR)) { s.vx *= -1; s.bounced = true; s.x = Math.max(bL, Math.min(bR, s.x)); }
+      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 8) { s.life = 0; hurt(1, 3, s.x); }
+    } else if (s.k === 'junk') { // v1.4 Part 1.2: METAL DETECTOR GUY's arcing junk lob
+      s.h = (s.h == null ? 8 : s.h) + (s.vh = (s.vh == null ? 2.0 : s.vh) - 0.14);
+      if (s.h <= 0) { s.h = 0; s.life = 0; puff(s.x, sy(s.z) - 4, 6, ['#7a7a6a', '#ffffff'], 1); if (state === 'play' && Math.abs(s.x - me.x) < 20 && Math.abs(s.z - me.z) < 14 && me.h < 18) hurt(1, 3, s.x); }
+    } else if (s.k === 'tube') { // v1.4 Part 2.6: LIFEGUARD LANCE's lasso/rescue tube - hits, stuns briefly (a simplified stand-in for a full pull+follow-up punch)
+      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 10) { s.life = 0; hurt(1, 3, s.x); me.stunT = Math.max(me.stunT || 0, 40); popup(me.x - 16, sy(me.z) - 34, 'LASSOED!', '#ff5a6a'); SFX.thud(); }
     } else if (!s.k) { // plain purse throw
       if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 7) { s.life = 0; hurt(1, 8, s.x); }
     }
@@ -2791,12 +2936,24 @@ function updatePlayer() {
   if (me.rootT > 0) { me.rootT--; if (Net.online && remotes.size > 0) for (const r of remotes.values()) if (r.l === lvl.n && Math.abs(r.x - me.x) < 20 && Math.abs(r.z - me.z) < 14) { me.rootT -= 1.5; break; } } // a nearby teammate mashes you free faster (WOODS net launcher)
   if (me.slowT > 0) me.slowT--;
   if (me.blindT > 0) me.blindT--;
+  // v1.4 (Part 2.6/3.2): wet status (Lance's surf dash/wave, the shallows) - purely a damage-multiplier flag
+  // read at the hit-detection sites above (jellyfish/taserbolt), no movement effect of its own.
+  if (me.wetT > 0) { me.wetT--; if (frame % 12 === 0) puff(me.x, sy(me.z, me.h) - 4, 1, ['#9ae8ff', '#ffffff'], .4, -0.01); }
+  // v1.4 (Part 1.2): BEACH BRO's grab hold - pins you near him and blocks input until he releases (his own
+  // state falling out of 75, whether from his 90-frame timer, your own mash count in attack(), or a
+  // crewmate's hit - see damageEnemy) or you're thrown (state 76).
+  if (me.grabbedBy != null) {
+    const g = lvl.enemies[me.grabbedBy];
+    if (!g || !g.alive || (g.state !== 75 && g.state !== 76)) me.grabbedBy = null;
+    else if (g.state === 76 && !g.thrown76) { g.thrown76 = true; me.vx = (g.dir || 1) * 6; me.vz = (Math.random() - .5) * 2; me.vh = 2; hurt(1, 2, g.x); me.grabbedBy = null; }
+    else { me.x = g.x + (g.dir || 1) * 10; me.z = g.z; me.h = 0; }
+  }
   const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1) * farmSpeedMul() * (me.slowT > 0 ? 0.5 : 1);
   const highSlow = tooHigh() ? 0.9 : 1;
   const mx = (K.run ? 2.1 : 1.3) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow, mz = (K.run ? 1.3 : 0.9) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow;
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
   if (p.atkT > 6 && p.h === 0) { ix = 0; iz = 0; } // plant your feet while swinging
-  if (me.stunT > 0 || me.rootT > 0) { ix = 0; iz = 0; }
+  if (me.stunT > 0 || me.rootT > 0 || me.grabbedBy != null) { ix = 0; iz = 0; }
   if (ix) p.face = ix; // v1.3 (control feedback 2026-09-26): WASD alone now decides facing - mouse-aim turning removed per playtest feedback
   if (p.roll > 0) { p.roll--; if (hasSkill('rollsmoke') && frame % 3 === 0) { puff(p.x, sy(p.z) - 6, 3, ['#ffffff', '#c8ffa0'], .6); for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - p.x) < 14 && Math.abs(e.z - p.z) < 10 && !(e.rollHit > frame)) { e.rollHit = frame + 30; hitEnemy(e, 1, Math.sign(e.x - p.x) || 1, false, { burn: 1 }); } } }
   else if (p.inv > 55) { /* knockback */ } else { p.vx += (ix * mx - p.vx) * 0.3; p.vz += (iz * mz - p.vz) * 0.3; }
@@ -2893,6 +3050,14 @@ function updatePlayer() {
     if (!e.spawned || !e.alive || (e.ai !== 'mouse' && e.ai !== 'squirrel') || e.state !== 0) continue;
     if (Math.abs(e.x - p.x) < 10 && Math.abs(e.z - p.z) < 7 && p.h < 10 && !(p.stealCd[e.id] > frame)) {
       p.stealCd[e.id] = frame + 120;
+      // v1.4 (Part 4): the GOLD SQUIRREL elite steals Resin instead of coins - everything else about the
+      // thief interaction (cooldown, flee, pouch halving) is identical, just against a different currency.
+      if (e.kind === 'goldsquirrel') {
+        const gbase = Math.min(save.resin || 0, 5), gk = save.pouch ? Math.round(gbase / 2) : gbase;
+        if (gk) { save.resin -= gk; popup(p.x - 16, sy(p.z) - 36, '-' + gk + ' RESIN STOLEN!', '#ffd84a'); SFX.steal(); }
+        if (isHost()) thiefFlee(e, gk); else Net.send({ t: 'steal', i: e.id, k: gk, l: lvl.n });
+        continue;
+      }
       const base = Math.min(save.coins, e.ai === 'mouse' ? 5 : 8), k = save.pouch ? Math.round(base / 2) : base;
       const thiefBonus = save.pouch && k > 0 ? 1 : 0; // STASH POUCH: halves theft instead of blocking it, but the thief gets a small bonus coin
       if (k) { save.coins -= k; p.lost += k; popup(p.x - 16, sy(p.z) - 36, '-' + k + ' STOLEN!' + (save.pouch ? ' (POUCH HALVED IT)' : ''), '#ff8a8a'); SFX.steal(); }
@@ -2905,11 +3070,35 @@ function updatePlayer() {
     if (!e.spawned || !e.alive) continue;
     const dx = p.x - e.x, dzp = p.z - e.z;
     if (e.boss) {
+      // v1.4 (Part 2): the 4 unique W12 bosses' own pattern hits, on top of the plain brawler swing below.
+      if (e.hitMe !== e.strikeN) {
+        if (e.state === 91 && Math.abs(dx) < 18 && Math.abs(dzp) < 14 && p.h < 10) { e.hitMe = e.strikeN; hurt(1, 4, e.x); } // Pete's cart ram
+        else if (e.state === 95 && Math.abs(dx) < 64 && Math.abs(dzp) < 12 && p.h < 6) { e.hitMe = e.strikeN; hurt(1, 4, e.x); } // Rick's rake sweep (jump clears it)
+        else if (e.state === 84 && e.kind === 'rangerrick_atv' && Math.abs(dzp) < 8 && Math.abs(dx) < 16 && p.h < 14 && !(e.hitFrame > frame)) { e.hitFrame = frame + 20; hurt(1, 4, e.x); } // rage: Rick's ATV pass
+        else if (e.state === 101 && Math.abs(dx) < 110 && dx * e.dir > -10 && Math.abs(dzp) < 20) { e.hitMe = e.strikeN; me.vx = (dx > 0 ? 1 : -1) * 7; me.stunT = Math.max(me.stunT || 0, 30); for (const c of lvl.clouds.slice()) if (Math.abs(c.x - p.x) < 8) lvl.clouds.splice(lvl.clouds.indexOf(c), 1); SFX.megaphone(); popup(p.x - 16, sy(p.z) - 34, 'DAZED!', '#e4b3ff'); } // Barb's megaphone cone
+        else if (e.state === 108 && Math.abs(dzp) < 16 && Math.abs(dx) < 14) { e.hitMe = e.strikeN; hurt(1, 3, e.x); me.wetT = Math.max(me.wetT || 0, 180); } // Lance's surf dash
+        else if (e.state === 111 && Math.abs(dzp) < 30 && p.h < 10) { e.hitMe = e.strikeN; hurt(1, 4, e.x); me.wetT = Math.max(me.wetT || 0, 240); } // Lance's tidal wave (jump over it)
+      }
       if (e.state !== 2 || e.hitMe === e.strikeN) continue;
       if ((e.dash ? Math.abs(dx) < 22 : dx * e.dir > -6 && Math.abs(dx) < 44) && Math.abs(dzp) < 14 && p.h < 20) { e.hitMe = e.strikeN; hurt(e.mega ? 2 : 1, 5, e.x); }
       continue;
     }
-    if (e.ai === 'cop') {
+    if (e.ai === 'charger') { // JOGGER dash: no damage on approach, only during the fixed-line dash itself
+      if (e.state === 62 && e.hitMe !== e.strikeN && dx * e.dashDir > -10 && Math.abs(dx) < 16 && Math.abs(dzp) < 9 && p.h < 12) { e.hitMe = e.strikeN; hurt(1, 3, e.x); }
+    } else if (e.ai === 'flyer') {
+      if (e.state === 65 && e.hitMe !== e.strikeN && Math.abs(dx) < 10 && Math.abs(dzp) < 9 && e.h < 14) {
+        e.hitMe = e.strikeN;
+        if (e.kind === 'seagull') seagullSteal(e); else hurt(1, 2, e.x);
+      }
+    } else if (e.ai === 'swarm') {
+      if (e.state === 69 && e.hitMe !== e.strikeN && Math.abs(dx) < 10 && Math.abs(dzp) < 8 && p.h < 10 && Math.random() < 0.5) { e.hitMe = e.strikeN; hurt(1, 1, e.x); }
+    } else if (e.ai === 'grabber') {
+      if (e.state === 74 && e.hitMe !== e.strikeN && Math.abs(dx) < 15 && Math.abs(dzp) < 9 && p.h < 12 && !me.roll) { e.hitMe = e.strikeN; me.grabbedBy = e.id; me.mashN = 0; popup(p.x - 16, sy(p.z) - 34, 'GRABBED!', '#ff9ab8'); SFX.bump(); }
+    } else if (e.ai === 'planter' && e.kind === 'jellyfish') {
+      if (e.state === 82 && e.hitMe !== e.strikeN && Math.abs(dx) < 16 && Math.abs(dzp) < 12) { e.hitMe = e.strikeN; hurt(me.wetT > 0 ? 2 : 1, 3, e.x); }
+    } else if (e.ai === 'rider') {
+      if (e.state === 84 && Math.abs(dzp) < 8 && Math.abs(dx) < 14 && p.h < 14 && !(e.hitFrame > frame)) { e.hitFrame = frame + 20; hurt(1, 4, e.x); }
+    } else if (e.ai === 'cop') {
       if (e.state === 2) { if (e.hitMe !== e.strikeN && dx * e.dir > -4 && Math.abs(dx) < 28 && Math.abs(dzp) < 8 && p.h < 14) { e.hitMe = e.strikeN; hurt(1, 2, e.x); } }
       // v1.1 A6: BEACH taser lunge - a short stun, shorter range than the baton
       else if (e.state === 11) { if (e.hitMe !== e.strikeN && dx * e.dir > -4 && Math.abs(dx) < 20 && Math.abs(dzp) < 8 && p.h < 12) { e.hitMe = e.strikeN; me.stunT = Math.max(me.stunT || 0, 46); shake = Math.max(shake, 6); SFX.taser(); popup(p.x - 14, sy(p.z) - 34, 'TASED!', '#9ae8ff'); } }
@@ -3070,6 +3259,30 @@ function playersList() {
   for (const [id, r] of remotes) if (!r.spectate && r.l === lvl.n && r.tx > -500 && !(r.b & 28)) list.push({ id, x: r.x, z: r.z, h: r.h, ok: true });
   return list;
 }
+// v1.4 (World 1-2 content pack, Part 2.2): pattern lists for the 4 unique W12 bosses, cycled via e.pat/e.patCd
+// instead of the single mega-only signature trigger this replaces. 'brawl' falls through to bossAI's own
+// existing brawler/shooter code below (unchanged); 'sigRing' is the existing state-50/51 dart/taser ring,
+// now just one entry in the list instead of a standalone e.mega trigger.
+const BOSS_PATTERNS = {
+  pete_cart: ['cartRam', 'cartRam', 'tickets'],
+  pete: ['tickets', 'brawl'],
+  rangerrick: ['rake', 'traps', 'sigRing', 'brawl'],
+  rangerrick_atv: ['atvPass'],
+  barb: ['megaphone', 'buoys', 'brawl'],
+  lance: ['lasso', 'surfDash', 'sigRing', 'brawl'],
+};
+function startBossPattern(e, name) {
+  if (name === 'cartRam') { e.state = 90; e.t = 70; }
+  else if (name === 'tickets') { e.state = 93; e.t = 30; e.ticketN = 0; }
+  else if (name === 'rake') { e.state = 94; e.t = 30; }
+  else if (name === 'traps') { e.state = 96; e.t = 10; }
+  else if (name === 'megaphone') { e.state = 100; e.t = 24; }
+  else if (name === 'buoys') { e.state = 102; e.t = 20; }
+  else if (name === 'lasso') { e.state = 104; e.t = 20; }
+  else if (name === 'surfDash') { e.state = 107; e.t = 30; }
+  else if (name === 'wave') { e.state = 110; e.t = 60; }
+  else if (name === 'atvPass') { e.state = 83; e.t = 30; e.dir = Math.sign(Math.random() - .5) || 1; }
+}
 function bossAI(e, tgt, dx, dz, cloud) {
   const rage = e.hp < e.maxHp / 2, spd = (rage ? 1.3 : 1) * (cloud ? 0.5 : 1);
   const wk = lvl.theme.base || lvl.themeKey;
@@ -3102,8 +3315,92 @@ function bossAI(e, tgt, dx, dz, cloud) {
     if (--e.t <= 0) { e.state = 3; e.t = 70; }
     return [0, 0];
   }
-  if (e.mega && (wk === 'park' || wk === 'beach') && !(e.sigCd > 0) && Math.abs(dz) < 40) {
-    e.state = 50; e.t = 46; e.sigCd = rage ? 420 : 560; return [0, 0];
+  // v1.4 (Part 2.3-2.6): the 4 unique W12 bosses' own pattern states. Each ends by falling back to state 3
+  // (the existing short post-attack pause that returns to state 0) so the pattern-list dispatch below picks
+  // the next entry once it's over - `sigRing`/`brawl` reuse the states already handled above/below instead.
+  const zb2 = lvl.zones[lvl.zi], zL = zb2 ? zb2.x0 + 14 : e.x - 140, zR = zb2 ? zb2.x0 + ZW - 14 : e.x + 140;
+  if (e.kind === 'pete_cart') {
+    if (e.state === 90) { if (--e.t <= 0) { e.state = 91; e.dashDir = e.x < (zL + zR) / 2 ? 1 : -1; e.x = e.dashDir > 0 ? zL - 10 : zR + 10; e.z = tgt.z; } return [0, 0]; }
+    if (e.state === 91) { const v = e.dashDir * 3.6 * spd; if ((e.dashDir > 0 && e.x > zR + 10) || (e.dashDir < 0 && e.x < zL - 10)) { e.state = 92; e.t = 40; } return [v, 0]; }
+    if (e.state === 92) { if (--e.t <= 0) { e.state = 3; e.t = 60; } return [0, 0]; }
+    if (e.state === 93) {
+      if (--e.t <= 0) { e.state = 3; e.t = 60; }
+      else if (e.t === 15) { e.strikeN = (e.strikeN || 0) + 1; const n = rage ? 5 : 3; for (let i = 0; i < n; i++) { const oz = (i - (n - 1) / 2) * 12; const shot = { x: e.x + e.dir * 10, z: Math.max(0, Math.min(ZMAX, e.z + oz)), vx: e.dir * 1.9, life: 150, spin: 0, k: 'ticket' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'ticket' }); } SFX.honk(); }
+      return [0, 0];
+    }
+    // v1.4 (Part 2.3): phase change at 50% HP - the cart breaks down, Pete continues on foot as `pete`.
+    if (rage && !e.phaseSwitched) { e.phaseSwitched = true; e.kind = 'pete'; e.pat = 0; e.patCd = 0; e.state = 0; puff(e.x, sy(e.z) - 6, 12, ['#e8e0d0', '#ffffff'], 1.4); banner = { t: 130, a: 'THE CART BREAKS DOWN!', b: 'PETE FIGHTS ON FOOT NOW' }; Net.send({ t: 'bphase', id: e.id, kind: 'pete' }); return [0, 0]; }
+  } else if (e.kind === 'pete') {
+    if (e.state === 93) {
+      if (--e.t <= 0) { e.state = 3; e.t = 60; }
+      else if (e.t === 15) { e.strikeN = (e.strikeN || 0) + 1; for (let i = 0; i < 5; i++) { const oz = (i - 2) * 10; const shot = { x: e.x + e.dir * 10, z: Math.max(0, Math.min(ZMAX, e.z + oz)), vx: e.dir * 1.9, life: 150, spin: 0, k: 'ticket' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'ticket' }); } SFX.honk(); }
+      return [0, 0];
+    }
+  } else if (e.kind === 'rangerrick') {
+    if (e.state === 94) { if (--e.t <= 0) { e.state = 95; e.t = 20; e.dir = Math.sign(dx) || e.dir; e.strikeN = (e.strikeN || 0) + 1; SFX.thud(); } return [0, 0]; }
+    if (e.state === 95) { if (--e.t <= 0) { e.state = 3; e.t = 60; } return [0, 0]; }
+    if (e.state === 96) {
+      if (--e.t <= 0) {
+        e.state = 3; e.t = 40;
+        const ps = playersList();
+        for (let i = 0; i < Math.min(3, ps.length || 1); i++) {
+          const p2 = ps[i] || tgt, id = 'bt' + frame + '_' + i;
+          lvl.beartraps.push({ id, x: p2.x, z: p2.z, armed: false, flash: 50, t: 600, snapped: false });
+          Net.send({ t: 'prop', k: 'beartrap', l: lvl.n, x: Math.round(p2.x), z: Math.round(p2.z), id });
+        }
+      }
+      return [0, 0];
+    }
+    // Rage: the ATV phase replaces the pattern list entirely - he never dismounts, a KO ends the fight.
+    if (rage && !e.phaseSwitched) { e.phaseSwitched = true; e.kind = 'rangerrick_atv'; e.pat = 0; e.patCd = 0; e.state = 0; banner = { t: 130, a: 'RANGER RICK HOPS ON THE ATV!', b: '' }; Net.send({ t: 'bphase', id: e.id, kind: 'rangerrick_atv' }); return [0, 0]; }
+  } else if (e.kind === 'rangerrick_atv') {
+    if (e.state === 0) e.state = 83;
+    if (e.state === 83) { if (--e.t <= 0) { e.state = 84; e.dashDir = e.dir; e.x = e.dashDir > 0 ? zL - 10 : zR + 10; e.z = tgt.z; e.t = 900; } return [0, 0]; }
+    if (e.state === 84) {
+      const v = e.dashDir * 3.8 * spd;
+      if ((e.dashDir > 0 && e.x > zR + 10) || (e.dashDir < 0 && e.x < zL - 10)) {
+        e.passN = (e.passN || 0) + 1; const btid = 'bt' + frame + '_atv';
+        lvl.beartraps.push({ id: btid, x: e.x, z: e.z, armed: false, flash: 50, t: 600, snapped: false });
+        Net.send({ t: 'prop', k: 'beartrap', l: lvl.n, x: Math.round(e.x), z: Math.round(e.z), id: btid });
+        if (e.passN % 4 === 0) { e.state = 87; e.t = 150; } else { e.state = 83; e.t = 30; e.dir *= -1; }
+      }
+      return [v, 0];
+    }
+    if (e.state === 87) { if (--e.t <= 0) { e.state = 83; e.t = 30; e.dir *= -1; } return [0, 0]; } // stalled: vulnerable, 2x damage (damageEnemy)
+    return [0, 0];
+  } else if (e.kind === 'barb') {
+    if (e.state === 100) { if (--e.t <= 0) { e.state = 101; e.t = 24; e.dir = Math.sign(dx) || e.dir; e.strikeN = (e.strikeN || 0) + 1; SFX.megaphone();
+      for (const c of lvl.clouds.slice()) if (Math.abs(c.x - e.x) < 110 && Math.abs(c.z - e.z) < 20) lvl.clouds.splice(lvl.clouds.indexOf(c), 1); } return [0, 0]; }
+    if (e.state === 101) { if (--e.t <= 0) { e.state = 3; e.t = 60; } return [0, 0]; }
+    if (e.state === 102) {
+      if (--e.t <= 0) {
+        e.state = 3; e.t = 50; e.strikeN = (e.strikeN || 0) + 1; SFX.thud();
+        const n = rage ? 3 : 2; for (let i = 0; i < n; i++) { const shot = { x: e.x + e.dir * 10, z: Math.max(4, Math.min(ZMAX - 4, e.z + (i - (n - 1) / 2) * 14)), vx: e.dir * 2.2, life: 200, spin: 0, h: 0, k: 'buoy' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'buoy' }); }
+      }
+      return [0, 0];
+    }
+  } else if (e.kind === 'lance') {
+    if (e.state === 104) { if (--e.t <= 0) { e.state = 105; e.t = 20; e.dir = Math.sign(dx) || e.dir; e.strikeN = (e.strikeN || 0) + 1;
+      const shot = { x: e.x + e.dir * 10, z: e.z, vx: e.dir * 2.8, life: 90, spin: 0, k: 'tube' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'tube' }); SFX.thud(); } return [0, 0]; }
+    if (e.state === 105) { if (--e.t <= 0) { e.state = 3; e.t = 60; } return [0, 0]; }
+    if (e.state === 107) { if (--e.t <= 0) { e.state = 108; e.t = 60; e.dir = Math.sign(dx) || e.dir; e.dashZ = tgt.z; e.z = e.dashZ; e.strikeN = (e.strikeN || 0) + 1; } return [0, 0]; }
+    if (e.state === 108) { const v = e.dir * 5 * spd; e.z = e.dashZ; if ((e.dir > 0 && e.x > zR) || (e.dir < 0 && e.x < zL) || --e.t <= 0) { e.state = 3; e.t = 60; } return [v, 0]; }
+    if (e.state === 110) { if (--e.t <= 0) { e.state = 111; e.t = 90; banner = { t: 60, a: "SURF'S UP!", b: '' }; SFX.splash(); } return [0, 0]; }
+    if (e.state === 111) { const v = (e.dir || 1) * 2.6 * spd; if (--e.t <= 0 || e.x < zL - 30 || e.x > zR + 30) { e.state = 3; e.t = 80; } return [v, 0]; }
+    // Rage: every 3rd pattern becomes the tidal wave instead of the normal list entry.
+    if (rage && (e.pat || 0) % 3 === 0 && !(e.patCd > 0) && e.state === 0 && !e.waving) { e.waving = true; e.dir = Math.sign(dx) || 1; startBossPattern(e, 'wave'); return [0, 0]; }
+    if (e.state === 0) e.waving = false;
+  }
+  // v1.4 (Part 2.2): the pattern-list dispatch itself - only fires for the 4 unique W12 boss kinds (every
+  // other world's boss has no BOSS_PATTERNS entry, so this is a no-op for them and they're untouched).
+  if (BOSS_PATTERNS[e.kind] && e.state === 0) {
+    if (e.patCd > 0) e.patCd--;
+    else if (Math.abs(dz) < 40) {
+      const list = BOSS_PATTERNS[e.kind], name = list[(e.pat || 0) % list.length]; e.pat = (e.pat || 0) + 1;
+      e.patCd = rage ? 50 : 70;
+      if (name === 'sigRing') { e.state = 50; e.t = 46; return [0, 0]; }
+      if (name !== 'brawl') { startBossPattern(e, name); return [0, 0]; }
+    }
   }
   e.dir = Math.sign(dx) || 1; e.cd--;
   // v1.2 (Step 6.4): mini-bosses (e.mini) now get the same phase-toggled 2nd attack pattern mega bosses
@@ -3135,6 +3432,22 @@ function summonAdds(e, k) {
   if (n) popup(e.x - 20, sy(e.z) - 56, 'GET THEM!', '#ff8a8a');
 }
 function thiefFlee(e, k) { e.stolen += k; e.state = 6; e.t = 0; }
+// v1.4 (Part 3.3): the SEAGULL steals your quick consumable (not coins). Client-side like the coin-thief
+// loop above - `save` is per-player local state (see giveItem's own comment on this), so there is nothing
+// for the host to arbitrate here beyond the flock's own e.state (already host-authoritative via bossAI's
+// sibling AI branches). `gullFlee` mirrors thiefFlee but stores the item id on the gull instead of a count.
+function gullFlee(e, item) { e.loot = item; e.state = 67; e.t = 0; }
+function seagullSteal(e) {
+  const id = save.quick || 'brownie';
+  if (!(save[id] > 0)) { hurt(1, 2, e.x); popup(me.x - 14, sy(me.z) - 34, 'PECKED!', '#e8e0c8'); SFX.thud(); return; }
+  save[id]--; persist(); popup(me.x - 20, sy(me.z) - 34, 'SEAGULL STOLE YOUR ' + (ITEMS[id] ? ITEMS[id].name : id) + '!', '#ff9ab8'); SFX.steal();
+  if (isHost()) gullFlee(e, id); else Net.send({ t: 'steal', i: e.id, k: 0, item: id, l: lvl.n });
+}
+// if the gull is KO'd before it leaves the screen, whatever it stole drops as a normal pickup (Part 3.3)
+function droppedGullLoot(e) {
+  if (!e.loot) return;
+  if (e.loot === 'munchie' || e.loot === 'brownie' || e.loot === 'soda' || e.loot === 'preroll' || e.loot === 'gold' || e.loot === 'vape') lvl.items.push({ id: 'gl' + e.id + '_' + frame, kind: e.loot, x: e.x, z: e.z, h: 10, vh: 1.4, taken: false });
+}
 function hostUpdate() {
   // v1.3 (rebalance, requested 2026-09-26): the whole crew is out of lives (everyone deadOut) - restart the
   // level for real, the same way an escort death or a solo knockout already does. Checked host-side since
@@ -3280,6 +3593,114 @@ function hostUpdate() {
       } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 48; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
       else if (e.state === 2) { sx = e.dir * 3; sz = 0; if (--e.t <= 0) { e.state = 3; e.t = 50; } }
       else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
+    } else if (e.ai === 'charger') { // v1.4 Part 1.2: JOGGER - can't turn mid-dash, dodge by stepping up/down (states 60-63)
+      if (e.state === 0) e.state = 60;
+      if (e.state === 60) {
+        e.dir = Math.sign(dx) || 1;
+        sx = e.dir * Math.min(1.2, Math.abs(dx)); sz = Math.sign(dz) * Math.min(1.0, Math.abs(dz));
+        if (Math.abs(dx) < 70 && Math.abs(dz) < 16) { e.state = 61; e.t = 26; e.dashDir = e.dir; e.dashZ = e.z; }
+      } else if (e.state === 61) { if (--e.t <= 0) { e.state = 62; e.t = 40; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
+      else if (e.state === 62) {
+        sx = e.dashDir * 3.4; e.z = e.dashZ;
+        // the "jogging loop": dashing past either edge of the fight area wraps him around instead of stopping
+        if (e.x < zMin - 6) e.x = zMax + 6; else if (e.x > zMax + 6) e.x = zMin - 6;
+        if (--e.t <= 0) { e.state = 63; e.t = 50; }
+      } else if (e.state === 63) { if (--e.t <= 0) e.state = 60; } // recover: vulnerable, takes +1 damage (see damageEnemy)
+    } else if (e.ai === 'flyer') { // v1.4 Part 1.2: PIGEON/SEAGULL - hovers out of melee range, swoops in (64-67)
+      if (e.state === 0) { e.state = 64; e.cd = 90 + (e.id * 37) % 60; }
+      if (e.state === 64) {
+        e.h = 34 + Math.sin(frame / 20 + e.id) * 4; e.vh = 0;
+        const wantX = inZone(tgt.x + (e.id % 2 ? 30 : -30));
+        e.dir = Math.sign(dx) || e.dir || 1;
+        sx = Math.sign(wantX - e.x) * Math.min(0.8, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.5, Math.abs(dz));
+        if (--e.cd <= 0 && Math.abs(dz) < 30) { e.state = 65; e.t = 22; e.swoopX = tgt.x; e.swoopZ = tgt.z; e.strikeN = (e.strikeN || 0) + 1; if (e.kind === 'seagull') SFX.squawk(); else SFX.coo(); }
+      } else if (e.state === 65) {
+        e.h = Math.max(4, 34 - (1 - e.t / 22) * 30); e.vh = 0;
+        sx = Math.sign(e.swoopX - e.x) * Math.min(2.2, Math.abs(e.swoopX - e.x)); sz = Math.sign(e.swoopZ - e.z) * Math.min(1.4, Math.abs(e.swoopZ - e.z));
+        if (--e.t <= 0) { e.state = 66; e.t = 30; e.cd = 90 + (e.id * 37) % 60; }
+      } else if (e.state === 66) { e.h = Math.min(34, e.h + 1.2); e.vh = 0; if (--e.t <= 0) e.state = 64; }
+      else if (e.state === 67) { // seagull flying off with the stolen quick item
+        e.h += 2.4; e.vh = 0; sx = e.dir * 1.2;
+        if (e.h > 80 || e.x < camX - 40 || e.x > camX + W + 40) { e.alive = false; e.gone = true; if (e.loot) droppedGullLoot(e); }
+      }
+    } else if (e.ai === 'swarm') { // v1.4 Part 1.2: DOG - orbits its owner's target, nips when close (68-69)
+      const walker = e.owner != null ? lvl.enemies[e.owner] : null;
+      if (walker && (!walker.alive || walker.state === 5)) e.fleeing = true; // owner (dogwalker) KO'd: dogs run off, no kill credit/coins
+      if (e.fleeing) {
+        e.dir = e.dir || (Math.sign(dx) || 1); sx = e.dir * 2.6;
+        if (e.x < camX - 60 || e.x > camX + W + 60) { e.alive = false; e.gone = true; }
+      } else {
+        if (e.state === 0) e.state = 68;
+        if (e.state === 68) {
+          const ang = (e.id * 137 % 360) * Math.PI / 180 + frame / 60;
+          const wantX = inZone(tgt.x + Math.cos(ang) * 18), wantZ = Math.max(0, Math.min(ZMAX, tgt.z + Math.sin(ang) * 10));
+          e.dir = Math.sign(dx) || 1;
+          sx = Math.sign(wantX - e.x) * Math.min(1.8, Math.abs(wantX - e.x)); sz = Math.sign(wantZ - e.z) * Math.min(1.8, Math.abs(wantZ - e.z));
+          if (Math.abs(dx) < 10 && Math.abs(dz) < 8) { e.state = 69; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.yap(); }
+        } else if (e.state === 69) { if (--e.t <= 0) e.state = 68; }
+      }
+    } else if (e.ai === 'summoner') { // v1.4 Part 1.2: DOG WALKER - releases up to 4 dogs over the fight (70-71)
+      if (e.state === 0) e.state = 70;
+      if (e.state === 70) {
+        const side = e.x < tgt.x ? -1 : 1, wantX = inZone(tgt.x + side * 90);
+        e.dir = Math.sign(dx) || 1;
+        sx = Math.sign(wantX - e.x) * Math.min(0.55, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.5, Math.abs(dz));
+        if ((e.relCd = (e.relCd == null ? 240 : e.relCd) - 1) <= 0) {
+          e.relCd = 240;
+          const dogs = e.summons || [], aliveDogs = dogs.filter(id => lvl.enemies[id].alive).length;
+          if (aliveDogs < 3 && dogs.some(id => !lvl.enemies[id].alive && !lvl.enemies[id].spawned)) { e.state = 71; e.t = 18; e.strikeN = (e.strikeN || 0) + 1; }
+        }
+      } else if (e.state === 71) { if (--e.t <= 0) { e.state = 70; summonAdds(e, 1); } }
+    } else if (e.ai === 'grabber') { // v1.4 Part 1.2: BEACH BRO - super-armor flex, then a grab+hold (72-76)
+      if (e.state === 0) e.state = 72;
+      if (e.state === 72) {
+        e.dir = Math.sign(dx) || 1;
+        sx = Math.sign(dx) * Math.min(0.8, Math.abs(dx)); sz = Math.sign(dz) * Math.min(0.6, Math.abs(dz));
+        if ((e.flexCd = (e.flexCd == null ? 300 : e.flexCd) - 1) <= 0) { e.state = 73; e.t = 60; e.flexCd = 300; e.armor = true; SFX.flex(); }
+        else if (Math.abs(dx) < 14 && Math.abs(dz) < 8 && tgt.h < 10) { e.state = 74; e.t = 20; e.strikeN = (e.strikeN || 0) + 1; e.thrown76 = false; }
+      } else if (e.state === 73) { if (--e.t <= 0) { e.state = 72; e.armor = false; } }
+      else if (e.state === 74) { if (--e.t <= 0) { e.state = 75; e.t = 90; e.holdT = 0; } } // player hooks into the grab client-side, see updatePlayer
+      else if (e.state === 75) { if (--e.t <= 0) { e.state = 76; e.t = 14; } }
+      else if (e.state === 76) { if (--e.t <= 0) e.state = 72; }
+    } else if (e.ai === 'planter') { // v1.4 Part 1.2: METAL DETECTOR GUY (77-79) / JELLYFISH (80-82)
+      if (e.kind === 'jellyfish') {
+        if (e.z < ZMAX - 20) e.z = ZMAX - 20; // shallows lane only
+        if (e.state === 0) { e.state = 80; e.cd = 180; e.dir = e.id % 2 ? 1 : -1; }
+        if (e.state === 80) {
+          sx = e.dir * 0.4;
+          if (e.x < zMin + 10 || e.x > zMax - 10) e.dir *= -1;
+          if (--e.cd <= 0) { e.state = 81; e.t = 30; e.cd = 180; }
+        } else if (e.state === 81) { if (--e.t <= 0) { e.state = 82; e.t = 20; e.strikeN = (e.strikeN || 0) + 1; SFX.zap(); } }
+        else if (e.state === 82) { if (--e.t <= 0) e.state = 80; }
+      } else { // metaldetector: wanders, pockets nearby dropped coins, digs up a lobbed junk projectile
+        if (e.state === 0) e.state = 77;
+        if (e.state === 77) {
+          e.dir = Math.sign(dx) || 1;
+          sx = Math.sign(dx) * Math.min(0.5, Math.abs(dx)); sz = Math.sign(dz) * Math.min(0.4, Math.abs(dz));
+          for (const it of lvl.items) if (!it.taken && it.kind === 'coin' && Math.abs(it.x - e.x) < 20 && Math.abs(it.z - e.z) < 14) { it.taken = true; e.stolen++; }
+          if ((e.digCd = (e.digCd == null ? 200 : e.digCd) - 1) <= 0) { e.state = 78; e.t = 40; e.digCd = 200; }
+        } else if (e.state === 78) {
+          if (--e.t <= 0) {
+            e.state = 79; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; e.dir = Math.sign(dx) || e.dir; SFX.beep();
+            const shot = { x: e.x + e.dir * 8, z: e.z, vx: e.dir * 1.5, life: 140, spin: 0, k: 'junk', h: 8, vh: 2.0 };
+            lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'junk', h: shot.h, vh: shot.vh });
+          }
+        } else if (e.state === 79) { if (--e.t <= 0) e.state = 77; }
+      }
+    } else if (e.ai === 'rider') { // v1.4 Part 1.2: ATV - passes through the lane, hurting anything in its path (83-86)
+      if (e.state === 0) { e.state = 83; e.t = 30; e.dir = e.id % 2 ? 1 : -1; e.lane = 6 + ((e.id * 53) % (ZMAX - 12)); e.z = e.lane; e.x = e.dir > 0 ? zMin - 20 : zMax + 20; e.passN = 0; e.hitsTaken = 0; }
+      if (e.state === 83) { if (--e.t <= 0) e.state = 84; }
+      else if (e.state === 84) { sx = e.dir * 3.2; e.z = e.lane; if (e.x > zMax + 20 || e.x < zMin - 20) { e.state = 85; e.t = 40; e.passN++; } }
+      else if (e.state === 85) { if (--e.t <= 0) { e.dir *= -1; e.lane = 6 + ((e.id * 53 + e.passN * 29) % (ZMAX - 12)); e.z = e.lane; e.x = e.dir > 0 ? zMin - 20 : zMax + 20; e.state = 83; e.t = 30; } }
+    } else if (e.ai === 'crab') { // v1.4 Part 1.2: CRAB - a cop-style chaser, 1.6x sideways / 0.4x up-down speed
+      if (e.state === 0) {
+        e.dir = Math.sign(dx) || 1;
+        const wantX = inZone(tgt.x - e.dir * 22);
+        sx = Math.sign(wantX - e.x) * Math.min(1.6, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.4, Math.abs(dz));
+        if (Math.abs(dx) < 20 && Math.abs(dz) < 6 && tgt.h < 14) { e.state = 1; e.t = 20; e.h = 4; e.vh = 0; SFX.pinch(); }
+      } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
+      else if (e.state === 2) { if (--e.t <= 0) { e.state = 3; e.t = 40; } }
+      else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
     } else if (e.ai === 'cop') {
       // v1.1 A6: world tricks, layered on top of the plain baton - state numbers 10+ are exclusive to a theme so they never collide
       if (e.trickCd > 0) e.trickCd--;
@@ -3304,7 +3725,10 @@ function hostUpdate() {
         // stuns on hit. Checked BEFORE the shared wk==='beach' taser trick below (which would otherwise
         // always win the same range check first, since it's earlier in this else-if chain) so a PATROL
         // genuinely throws rings instead of tasing - its own move, not just a reskinned taser cop.
-        if (e.kind === 'patrol' && !(e.trickCd > 0) && Math.abs(dx) < 80 && Math.abs(dz) < 16) { e.state = 34; e.t = 24; e.trickCd = 280; }
+        // v1.4 (Part 1.2): PARK RANGER - his own signature, kind-specific like PATROL/YOGA MOM below: a
+        // whistle that calls in one of the zone's own waiting pigeon flocks early.
+        if (e.kind === 'parkranger' && !(e.trickCd > 0) && Math.abs(dz) < 24) { e.state = 36; e.t = 30; e.trickCd = 320; e.whistleT = 30; }
+        else if (e.kind === 'patrol' && !(e.trickCd > 0) && Math.abs(dx) < 80 && Math.abs(dz) < 16) { e.state = 34; e.t = 24; e.trickCd = 280; }
         else if (e.near && wk === 'beach' && !(e.trickCd > 0) && Math.abs(dx) < 34 && Math.abs(dz) < 8) { e.state = 10; e.t = 26; e.trickCd = 260; e.trickChain = 0; } // BEACH: taser wind-up
         else if (e.near && wk === 'suburb' && !(e.trickCd > 0) && Math.abs(dx) < 30 && Math.abs(dz) < 10) { e.state = 15; e.t = 24; e.trickCd = 280; } // SUBURBIA: pepper-spray wind-up
         else if (!(e.trickCd > 0) && wk === 'woods' && Math.abs(dx) < 62 && Math.abs(dz) < 12) { e.state = 17; e.t = 22; e.trickCd = 340; } // WOODS: net-launcher aim
@@ -3333,6 +3757,12 @@ function hostUpdate() {
       else if (e.state === 34) { if (--e.t <= 0) { e.state = 35; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; e.dir = Math.sign(dx) || e.dir;
         const shot = { x: e.x + e.dir * 9, z: e.z, vx: e.dir * 1.9, life: 140, spin: 0, k: 'lifering' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'lifering' }); SFX.thud(); } } // PATROL: life-ring throw wind-up/fire
       else if (e.state === 35) { if (--e.t <= 0) { e.state = 3; e.t = 55; } }
+      else if (e.state === 36) { if (--e.t <= 0) { // PARK RANGER: whistle - wakes an unspawned pigeon flock member early
+        e.state = 3; e.t = 60;
+        const z2 = lvl.zones[lvl.zi], rsv = z2 && z2.ids.map(i => lvl.enemies[i]).find(o => o.alive && !o.spawned && !o.boss && o.kind === 'pigeon');
+        if (rsv) { rsv.spawned = true; rsv.x = e.x + (e.id % 2 ? -30 : 30); rsv.z = e.z; rsv.dir = e.dir; }
+        SFX.whistle();
+      } }
     } else if (e.ai === 'karen') {
       if (e.trickCd > 0) e.trickCd--;
       if (wk === 'hq' && frame % 30 === 0) { // HQ clipboard Karen: "writing up" nearby cops/mice buffs them until she's KO'd
@@ -3395,7 +3825,7 @@ function hostUpdate() {
       if (e.h === 0) {
         if ((wk === 'beach' || wk === 'woods') && !(e.trickCd > 0) && e.state !== 10 && Math.abs(dz) < 14 && Math.abs(dx) > 20 && Math.abs(dx) < 140) {
           e.state = 10; e.t = wk === 'beach' ? 16 : 20; e.trickCd = 260; e.dir = Math.sign(dx) || 1;
-        } else if (e.state !== 10 && --e.cd <= 0) { e.cd = 24 + (e.id * 7) % 20; e.vh = 2.6; e.dir = Math.sign(dx) || 1; e.hx = Math.sign(dx) * 1.7; e.hz = Math.sign(dz) * Math.min(1, Math.abs(dz) / 10); }
+        } else if (e.state !== 10 && --e.cd <= 0) { const spdMul = SPD_MUL[e.kind] || 1; e.cd = 24 + (e.id * 7) % 20; e.vh = 2.6; e.dir = Math.sign(dx) || 1; e.hx = Math.sign(dx) * 1.7 * spdMul; e.hz = Math.sign(dz) * Math.min(1, Math.abs(dz) / 10) * spdMul; if (e.kind === 'goldsquirrel' && frame % 8 === 0) puff(e.x, sy(e.z, e.h) - 8, 1, ['#ffd84a', '#fff6b0'], .5, -0.02); }
       } else { sx = e.hx || 0; sz = e.hz || 0; }
       if (e.state === 10) {
         if (--e.t <= 0) {
@@ -3418,11 +3848,29 @@ function hostUpdate() {
       break;
     }
   }
-  // enemies stay inside the fight like you do (thieves running off with coins are the only ones allowed to leave)
+  // v1.4 (Part 2.4): RANGER RICK's bear traps - a 50-frame arming flash (telegraphed, like the mousetraps
+  // above), then they snap on the first player OR enemy that steps on them: 70-frame root on a player,
+  // 90-frame stun on an enemy. They disappear after 600 frames or once they've snapped.
+  for (const bt of lvl.beartraps) {
+    if (bt.snapped) continue;
+    if (bt.flash > 0) { bt.flash--; if (bt.flash <= 0) bt.armed = true; continue; }
+    if (--bt.t <= 0) { bt.snapped = true; continue; }
+    if (!bt.armed) continue;
+    let hitSomething = false;
+    for (const p of players) if (p.ok && Math.abs(p.x - bt.x) < 9 && Math.abs(p.z - bt.z) < 7) {
+      bt.armed = false; bt.snapped = true; hitSomething = true;
+      if (p.id === Net.id) { me.rootT = Math.max(me.rootT || 0, 70); SFX.snap(); popup(me.x - 16, sy(me.z) - 34, 'TRAPPED!', '#c8ffa0'); }
+      Net.send({ t: 'propsnap', l: lvl.n, id: bt.id, who: p.id }); break;
+    }
+    if (!hitSomething) { for (const e2 of lvl.enemies) if (e2.spawned && e2.alive && e2.state !== 5 && !e2.boss && Math.abs(e2.x - bt.x) < 9 && Math.abs(e2.z - bt.z) < 7) { bt.armed = false; bt.snapped = true; e2.state = 4; e2.t = 90; e2.stunned = 90; break; } if (bt.snapped) Net.send({ t: 'propsnap', l: lvl.n, id: bt.id }); }
+  }
+  lvl.beartraps = lvl.beartraps.filter(bt => !bt.snapped || bt.flash > 20); // keep a snapped trap on screen briefly for the visual
+  // enemies stay inside the fight like you do (thieves running off with coins and the ATV rider passing
+  // through its lane are the only ones allowed to leave)
   const zb = lvl.zones[lvl.zi];
   const L = lvl.locked && zb ? zb.x0 + 8 : camX + 8, Rt = lvl.locked && zb ? zb.x0 + ZW - 8 : camX + W - 8;
   for (const e of lvl.enemies) {
-    if (!e.spawned || !e.alive || e.state === 6) continue;
+    if (!e.spawned || !e.alive || e.state === 6 || e.ai === 'rider') continue;
     if (!e.entered) { if (e.x > L && e.x < Rt) e.entered = true; else continue; }
     e.x = Math.max(L, Math.min(Rt, e.x));
   }
@@ -3669,7 +4117,7 @@ const W12_FRAME = {
   seagull: e => e.state === 65 || e.state === 67 ? 2 : (Math.floor(frame / 8) % 2),
   dog: e => e.state === 69 ? 2 : Math.floor(frame / 6) % 2,
   dogwalker: e => e.state === 71 ? 1 : 0,
-  parkranger: e => e.state === 30 || e.state === 31 || e.whistleT > 0 ? 1 : 0,
+  parkranger: e => e.state === 30 || e.state === 31 || e.state === 36 ? 1 : 0,
   scout: e => Math.floor(frame / 8) % 2, goldsquirrel: e => Math.floor(frame / 8) % 2,
   crab: e => e.state === 2 ? 2 : Math.floor(frame / 6) % 2, treasurecrab: e => Math.floor(frame / 6) % 2,
   beachbro: e => e.state === 73 ? 1 : (e.state >= 74 ? 2 : 0),
@@ -4037,6 +4485,14 @@ function drawScene() {
     if (!trap.armed) return;
     R(ctx, '#5a5044', X - 6, Y - 3, 12, 3); R(ctx, '#8a7a5a', X - 5, Y - 4, 10, 1); R(ctx, '#c8302a', X - 1, Y - 5, 2, 2);
   } });
+  // v1.4 (Part 2.4): RANGER RICK's bear traps - same telegraphed-before-triggering treatment as the
+  // mousetraps just above, drawn a little bigger/more metallic since they're a boss-tier hazard.
+  for (const bt of lvl.beartraps) list.push({ z: bt.z, d: () => {
+    const X = Math.round(bt.x - camX), Y = sy(bt.z);
+    if (bt.flash > 0) { ctx.globalAlpha = Math.min(1, bt.flash / 50); ctx.fillStyle = bt.snapped ? '#ff5a6a' : '#ffffff'; circle(X, Y - 3, 11); ctx.globalAlpha = 1; }
+    if (bt.snapped) return;
+    R(ctx, '#3a3a48', X - 8, Y - 3, 16, 3); R(ctx, '#7a7a8a', X - 7, Y - 4, 14, 1); R(ctx, '#c8302a', X - 1, Y - 6, 2, 3); R(ctx, '#c8302a', X - 5, Y - 5, 2, 2); R(ctx, '#c8302a', X + 3, Y - 5, 2, 2);
+  } });
   for (const e of lvl.enemies) if (e.spawned && e.alive) list.push({ z: e.z, d: () => { const fogA = lvl.hazardFog ? Math.max(0.15, 1 - Math.max(0, Math.abs(e.x - me.x) - 46) / 90) : 1; ctx.globalAlpha = fogA; shadow(e.x, e.z, e.h, e.ai === 'mouse' ? 5 : 7); drawEnemyB(e); ctx.globalAlpha = 1; } });
   const lg = lvl.legend;
   if (lg) list.push({ z: lg.z, d: () => {
@@ -4070,6 +4526,10 @@ function drawScene() {
     else if (s.k === 'taserbolt') { R(ctx, '#9ae8ff', -3, -3, 6, 6); R(ctx, '#ffffff', -1, -1, 2, 2); } // v1.3: BEACH boss taser bolt
     else if (s.k === 'yogamat') { R(ctx, '#c070ff', -5, -2, 10, 4); R(ctx, '#e4b3ff', -3, -1, 6, 2); } // v1.3: PARK yoga mat
     else if (s.k === 'lifering') { R(ctx, '#ff4a4a', -4, -4, 8, 8); R(ctx, '#ffffff', -2, -2, 4, 4); } // v1.3: BEACH life-ring
+    else if (s.k === 'ticket') { R(ctx, '#ffffff', -4, -2, 8, 4); R(ctx, '#c8302a', -3, -1, 6, 1); } // v1.4: Pete's ticket
+    else if (s.k === 'buoy') { R(ctx, '#ff5a6a', -4, -4, 8, 8); R(ctx, '#ffffff', -4, -1, 8, 2); } // v1.4: Barb's buoy
+    else if (s.k === 'junk') { R(ctx, '#7a7a6a', -3, -4, 6, 8); R(ctx, '#9a9a80', -2, -3, 4, 6); } // v1.4: metal detector guy's junk
+    else if (s.k === 'tube') { R(ctx, '#ff9a3a', -5, -3, 10, 6); R(ctx, '#ffffff', -3, -1, 6, 2); } // v1.4: Lance's rescue tube
     else { R(ctx, P.k, -4, -4, 8, 8); R(ctx, '#ff7ac8', -3, -3, 6, 6); R(ctx, '#ffd84a', -1, -5, 2, 2); }
     ctx.restore();
   } });
@@ -5334,6 +5794,19 @@ function drawBrief() {
     segway: ['MALL COP ON A SEGWAY', '#9ac8ff', ['FAST AND RAMS YOU HEAD-ON.', 'JUMP (SPACE) OVER HIM TO DODGE THE HIT.']],
     owl: ['OWL NARC', '#e0d0a0', ['SWOOPS IN FROM ABOVE.', 'HIT IT WITH AN AIR ATTACK (JUMP + SWING) TO REALLY HURT IT.']],
     securitybot: ['SECURITY BOT', '#ff6a6a', ['SHIELDED UP FRONT - NORMAL HITS BOUNCE OFF.', 'A BONG HAMMER STUN GETS THROUGH THE SHIELD.']],
+    // v1.4 (World 1-2 content pack, Part 1.4/Part 4): NEW BUZZKILL cards for the 14 new enemies + 2 elites.
+    jogger: ['JOGGER', '#e83a5a', ["HE CAN'T TURN MID-SPRINT.", 'STEP UP OR DOWN (W/S) TO DODGE THE DASH.']],
+    pigeon: ['PIGEON FLOCK', '#c8c8c0', ['HIT ONE, THE REST SCATTER.', 'JUMP-SWING THEM OUT OF THE AIR.']],
+    dogwalker: ['DOG WALKER', '#9a5aca', ['TAKE HER OUT AND THE DOGS GO HOME.', 'SHE RELEASES UP TO 4 OVER THE FIGHT.']],
+    parkranger: ['PARK RANGER', '#4a7a3a', ['HIS WHISTLE CALLS PIGEONS EARLY.', 'SHUT HIM UP FIRST.']],
+    crab: ['CRAB', '#ff5a3a', ['FAST SIDEWAYS, SLOW UP/DOWN.', "CAN'T BE HIT WHILE ITS CLAWS ARE UP."]],
+    seagull: ['SEAGULL', '#c8c8c0', ['IT STEALS YOUR QUICK ITEM.', 'SMACK IT BEFORE IT FLIES OFF TO GET IT BACK.']],
+    beachbro: ['BEACH BRO', '#c8a878', ["DON'T HIT HIM WHILE HE FLEXES.", 'MASH ATTACK TO ESCAPE A GRAB.']],
+    metaldetector: ['METAL DETECTOR GUY', '#8a7a4a', ['HE POCKETS DROPPED COINS.', 'KO HIM TO GET THEM BACK.']],
+    jellyfish: ['JELLYFISH', '#9ae8ff', ['ONLY HURTS WHEN IT GLOWS.', 'DOUBLE DAMAGE IF YOU\'RE WET.']],
+    atv: ['BEACH PATROL ATV', '#ff3a3a', ['WATCH THE EDGE LANE WARNINGS.', 'A JUMP-HIT KNOCKS THE RIDER OFF.']],
+    goldsquirrel: ['GOLD SQUIRREL', '#ffd84a', ["IT'S STEALING YOUR RESIN!", 'CATCH IT FOR A FAT PAYOUT.']],
+    treasurecrab: ['TREASURE CRAB', '#ff9a6a', ['CRACK THE SHELL FOR A JACKPOT.', "IT WON'T RUN FROM YOU."]],
   };
   if (fresh && NEW_TIP[fresh]) {
     const [nm, col, lines] = NEW_TIP[fresh];
@@ -5365,7 +5838,7 @@ let invRow = 0, invCol = 0;
 // see invConfirm below) - "on" just reflects which one is actually active right now.
 const INV_ROWS = () => [
   { label: 'CORE', items: [(() => { const w = weaponDef(), lv = coreLevel(); return { kind: 'core', def: { name: formName(w.id, lv) + ' - LV ' + lv, desc: w.desc, dmg: w.dmg + lv - 1, reach: w.reach }, icon: ICONS[w.icon], has: true, on: !me.envWeapon }; })()] },
-  { label: 'WILD', items: [me.envWeapon ? { kind: 'wild', def: { ...ENV_WEAPONS[me.envWeapon.id], desc: ENV_WEAPONS[me.envWeapon.id].desc + ' - CHARGE ' + Math.round(me.envWeapon.charge) + '/' + ENV_WEAPONS[me.envWeapon.id].charge }, icon: ICONS[WILD_ICON_ID[me.envWeapon.id]] || ICONS.joint, has: true, on: true } : { kind: 'wild', def: { name: 'NONE HELD', desc: 'PICK ONE UP OFF THE GROUND THIS MISSION - IT TAKES OVER FROM CORE UNTIL IT RUNS DRY' }, icon: ICONS.joint, has: false, on: false }] },
+  { label: 'WILD', items: [me.envWeapon ? { kind: 'wild', def: { ...ENV_WEAPONS[me.envWeapon.id], desc: ENV_WEAPONS[me.envWeapon.id].desc + ' - CHARGE ' + Math.round(me.envWeapon.charge) + '/' + ENV_WEAPONS[me.envWeapon.id].charge }, icon: wildIcon(me.envWeapon.id), has: true, on: true } : { kind: 'wild', def: { name: 'NONE HELD', desc: 'PICK ONE UP OFF THE GROUND THIS MISSION - IT TAKES OVER FROM CORE UNTIL IT RUNS DRY' }, icon: ICONS.joint, has: false, on: false }] },
   { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'HALVES THEFT AMOUNT (THIEF GETS +1 BONUS COIN)' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
   { label: 'ITEMS', items: Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, def: { name: d.name, desc: d.desc + '. SPACE: USE NOW. ' + KL('quick') + ': QUICK-USE' + (save.quick === id ? ' (SET)' : '') }, icon: ICONS[d.icon], has: save[id] > 0, count: save[id] || 0, on: save.quick === id })) },
 ];
@@ -5529,7 +6002,7 @@ function onNet(m) {
     case 'cloud': if (m.l === lvl.n) lvl.clouds.push({ x: m.x, z: m.z, r: 4, grow: 20, t: 480, poison: true }); break;
     // v1.1 A6: SUBURBIA mousetraps - disarm on every screen, and root whichever player tripped it
     case 'trap': if (m.l === lvl.n && lvl.traps[m.i]) { lvl.traps[m.i].armed = false; lvl.traps[m.i].flash = 30; if (m.who === Net.id) { me.rootT = Math.max(me.rootT || 0, 34); SFX.trap(); popup(me.x - 16, sy(me.z) - 34, 'STUCK!', '#c8ffa0'); } } break;
-    case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) thiefFlee(e, m.k); } break;
+    case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) { if (m.item) gullFlee(e, m.item); else thiefFlee(e, m.k); } } break;
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
     // v1.1 A5: non-host crewmates follow the host's authoritative life count / wipe-restart so everyone agrees.
     // v1.3: 'lives' is dead (no shared pool to sync anymore - each client tracks its own me.lives locally).
@@ -5541,6 +6014,15 @@ function onNet(m) {
     case 'give': if (m.to === Net.id) { save[m.id] = Math.min(itemCap(m.id), (save[m.id] || 0) + 1); persist(); popup(me.x - 20, sy(me.z) - 36, 'GOT ' + (ITEMS[m.id] ? ITEMS[m.id].name : m.id), '#c8ffa0'); SFX.buy(); } break;
     case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'boss': if (m.l === lvl.n) bossIntro(lvl.enemies[m.i]); break;
+    // v1.4 (Part 2.7): a boss swapping its own sprite/kind mid-fight (Pete's cart breaking down, Rick
+    // hopping on the ATV). `e.kind` isn't part of the numeric 'es' snapshot row, so non-host clients would
+    // otherwise never see the swap - this is the one new field this pack needed outside that snapshot.
+    case 'bphase': { const e = lvl.enemies[m.id]; if (e) { e.kind = m.kind; e.ai = BASE_AI[m.kind] || e.ai; } break; }
+    // v1.4 (Part 2.4): Ranger Rick's bear traps - non-host clients don't run bossAI, so they need telling
+    // when one is dropped (visible on the ground, same as the SUBURBIA mousetraps) and when one snaps.
+    case 'prop': if (m.k === 'beartrap' && m.l === lvl.n) lvl.beartraps.push({ id: m.id || ('bt' + frame + Math.random()), x: m.x, z: m.z, armed: false, flash: 50, t: 600, snapped: false }); break;
+    case 'propsnap': { const bt = lvl.beartraps.find(t => t.id === m.id); if (bt) { bt.armed = false; bt.snapped = true; bt.flash = 30; } if (m.who === Net.id) { me.rootT = Math.max(me.rootT || 0, 70); SFX.snap(); popup(me.x - 16, sy(me.z) - 34, 'TRAPPED!', '#c8ffa0'); } break; }
+    case 'fine': { save.coins = Math.max(0, save.coins - (m.amt || 0)); popup(me.x - 16, sy(me.z) - 34, 'FINED! -' + m.amt, '#ffb0b0'); break; }
     case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break;
     case 'pj': addRemote(m); popup(camX + W / 2 - 30, 60, m.name + (m.spectate ? ' IS SPECTATING' : ' JOINED!'), '#c8ffa0'); SFX.cp(); break;
     // v1.2 fix (Step 2.2): also forward player-left to Drive - it tracks its own crew list for Hotbox

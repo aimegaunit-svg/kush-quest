@@ -311,11 +311,21 @@ function handle(client, m) {
     case 'hit': case 'steal': case 'rev': case 'pass': {
       if (!room) return;
       const out = { t: m.t, id: client.id, i: m.i | 0, l: m.l | 0, d: Math.max(0, Math.min(12, m.d | 0)), dir: Math.sign(+m.dir || 0), s: m.s ? 1 : 0, k: Math.max(0, Math.min(20, m.k | 0)), who: String(m.who || '').slice(0, 12),
-        b: Math.max(0, Math.min(8, m.b | 0)), sp: m.sp ? 1 : 0, st: Math.max(0, Math.min(150, m.st | 0)), bl: Math.max(0, Math.min(8, m.bl | 0)), kb: Math.max(0, Math.min(5, +m.kb || 1)), hr: m.hr ? 1 : 0 };
+        b: Math.max(0, Math.min(8, m.b | 0)), sp: m.sp ? 1 : 0, st: Math.max(0, Math.min(150, m.st | 0)), bl: Math.max(0, Math.min(8, m.bl | 0)), kb: Math.max(0, Math.min(5, +m.kb || 1)), hr: m.hr ? 1 : 0,
+        // v1.4 (Part 2.7): 'steal' widened with `item` - the seagull's stolen quick-item id (see game.js's seagullSteal()).
+        item: String(m.item || '').slice(0, 16) };
       if (m.t === 'rev' || m.t === 'pass') broadcast(room, out, client.id);
       else { const h = room.players.get(room.host); if (h && room.host !== client.id) h.client.send(out); }
       break;
     }
+    // v1.4 (World 1-2 content pack, Part 2.7): new host->all boss/prop sync messages - `bphase` (a boss
+    // swapping its own sprite/kind mid-fight, e.g. Pete's cart breaking down), and `prop`/`propsnap`
+    // (Ranger Rick's bear traps). `fine` is host->one-player (Pete's ticket coin penalty), same shape as
+    // the existing 'give'/'brownieshare' sanitize-and-relay cases just above.
+    case 'bphase': if (room && client.id === room.host) broadcast(room, { t: 'bphase', id: m.id | 0, kind: String(m.kind || '').slice(0, 20) }, client.id); break;
+    case 'prop': if (room && client.id === room.host) broadcast(room, { t: 'prop', k: String(m.k || '').slice(0, 16), x: Math.round(+m.x || 0), z: Math.round(+m.z || 0), l: m.l | 0, id: String(m.id || '').slice(0, 24) }, client.id); break;
+    case 'propsnap': if (room && client.id === room.host) broadcast(room, { t: 'propsnap', l: m.l | 0, id: String(m.id || ''), who: String(m.who || '').slice(0, 12) }, client.id); break;
+    case 'fine': if (room) { const to = room.players.get(String(m.to || '')); if (to) to.client.send({ t: 'fine', amt: Math.max(0, Math.min(50, m.amt | 0)) }); } break;
     case 'pick': // the host picks a level on the world map
       if (!room || room.phase !== 'map' || client.id !== room.host) return;
       startLevel(room, m.n);

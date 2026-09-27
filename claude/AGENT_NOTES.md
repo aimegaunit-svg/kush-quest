@@ -1589,3 +1589,78 @@ white flash.
 Also re-ran the full existing regression suite (`kq_cursor_test`, `kq_cooked_redesign_test`,
 `kq_cooked_visual`) after these changes - all still pass, zero new console/page errors. `node --check`
 clean on `game.js`.
+
+## Life/health system rebalance + clarity pass (user-directed, 2026-09-26)
+
+User feedback: "the life and health system needs refining. I don't even understand it right now. and I
+also think it needs adjustment because it may be too easy." Root-caused the confusion (three stacked
+systems: per-fight HP hearts -> a shared "crew lives" pool -> a level restart) and the difficulty gap
+(a carried Munchie silently auto-revived you for free on knockout in solo, so death had almost no cost as
+long as you had one in your bag). Presented the trade-off via AskUserQuestion; the user chose to (1) remove
+the free auto-revive entirely and (2) go further than the original ask - replace the shared crew-lives pool
+with **per-player** lives: run out and you're dead/spectating until either the crew reaches the next
+section (you rejoin with fresh lives) or the whole crew is out too (the level restarts) - plus (3) a
+clearer HUD + a one-time in-game explainer.
+
+**What changed, all in `public/game.js`:**
+- `crewLives` (a shared module-level pool, 3 solo / 5 co-op) is gone. Each player now has their own
+  `me.lives` (`PLAYER_LIVES = 3`, set in `makePlayer()`), synced to remotes via a new bit (16) on the
+  existing `'s'` position-snapshot bitmask.
+- `knockedOut()`'s old "solo: a carried Munchie auto-revives you at half HP for free" branch is deleted.
+  A Munchie now only ever heals HP when eaten on purpose (`useItem`, unchanged) - every knockout spends a
+  real life.
+- `knockedOutFinal()` (still reached either directly on knockout, or after a co-op down-timer expires):
+  spends one of `me.lives`. Still `>0`? Respawn at the checkpoint, same coin-drop as before. Hits 0 while
+  playing **alone** (solo, or the only real player left in an online room - `realRemotes() === 0`)?
+  Restart the level immediately, same as the old "crew's out of lives" path - there's no one left to keep
+  playing for. Hits 0 with **real teammates still up**? `me.deadOut = true` - can't move or act
+  (`updatePlayer`/`attack`/`yoink` all gate on it, same pattern as the existing `me.spectator` checks), no
+  longer counted by `playersList()` for zone-triggers/hazards (same exclusion bit-pattern as the existing
+  `sitting`/`down` bits).
+- A deadOut player rejoins automatically the moment the crew reaches a new zone - `updatePlayer()` now
+  watches `lvl.zi` (already host-authoritative and synced to every client via the existing `'es'` message)
+  and revives them with a full fresh set of lives the instant it changes, so falling early in one section
+  doesn't sideline you for the rest of the level.
+- The "whole crew is down" case is a new host-only check at the top of `hostUpdate()`: if this player is
+  deadOut, checks every real remote's synced deadOut bit; if they're ALL down, restarts the level the same
+  way an ESCORT death already does (`restartLevelOutOfLives()`, banks 50% coins/Resin, broadcasts `'wipe'`).
+- `restartLevelOutOfLives()` and the non-host `case 'wipe':` handler both simplified - they no longer need
+  to compute/relay a shared lives count, since each client's `makePlayer()` already gives itself a fresh
+  `me.lives` locally.
+- HUD: the lives readout is now "N LIVES LEFT" (was just "N LIFE(S)") in the same top-left spot next to the
+  heart icons, and flips to a red "OUT OF LIVES" while deadOut - a persistent, always-on-screen signal, not
+  just a banner that fades.
+- One-time explainer: the very first knockout a save ever has gets a longer banner spelling out the actual
+  mechanic ("HEARTS = THIS FIGHT'S HP. LOSE THEM ALL AND YOU BURN A LIFE...", or the out-of-lives version
+  explaining the sit-out/rejoin/whole-crew-restart chain), gated on a new `save.sawLivesTip` flag. Every
+  knockout after that first one goes back to the normal short banner.
+
+**Deliberately NOT changed**: the existing co-op "down + a teammate can revive you by holding the Munchie
+key next to you" mechanic (`me.down`, `case 'rev'`) is untouched - it still runs BEFORE a knockout reaches
+`knockedOutFinal()` at all when real teammates are present, exactly as before. Lives only ever get spent
+once that down-timer actually expires unrevived (or immediately, solo). This wasn't part of what the user
+asked to change and reusing it kept the redesign scoped to the lives/auto-revive pieces they actually
+flagged.
+
+**Testing**: `kq_lives_test2.js` (solo, via `knockedOutFinal`/`deadOut` debug hooks) - a knockout with
+Munchies on hand now spends a real life and leaves the Munchie count untouched (confirms the free
+auto-revive is really gone); running out of lives alone restarts the level with a fresh 3, not a
+solo-spectate softlock. `kq_lives_online2.js` (single real client, a hand-built but fully-snapshot-shaped
+fake remote standing in for a teammate, driven through the REAL game loop/hostUpdate - not just a direct
+function call) - out of lives with a teammate still up correctly sits out as deadOut rather than
+restarting; reaching the next zone while deadOut revives with a fresh 3 lives; the whole crew being down
+(both the local player and the fake teammate) restarts the level on its own within a few real frames of
+`hostUpdate()`, with zero console/page errors. Caught and fixed one real test-harness bug along the way
+(not a game bug): an incompletely-shaped fake remote object crashed `drawPlayer()` reading fields a real
+network snapshot always provides - fixed the test fixture, not the game code. Re-ran the full existing
+regression suite (`kq_cursor_test`, `kq_cooked_redesign_test`, `kq_variety_test`) - all still pass.
+`node --check` clean on `game.js`.
+
+**Not done this pass, flagged for the next enemy/boss content request** (same session, asked right after
+this): the user separately asked for a lot more enemy variety generated (not just reskins), genuinely
+unique/bigger boss designs with escalating multi-hit signature attacks that tease what standard enemies of
+that family do at harder difficulty, and confirmation on whether Wild weapons ever shipped. Answered the
+last part in chat (they did - Step 5's session already built all 12 named Wild weapons with distinct
+looks/effects/projectile behavior, see that section above) but the boss-pattern-escalation and
+further-enemy-generation asks are large, undone content-design work of their own and weren't started this
+pass - flagged here rather than rushed in on top of an already-substantial rebalance.

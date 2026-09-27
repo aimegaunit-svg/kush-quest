@@ -1542,7 +1542,7 @@ try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.g
 // key used as the save.cores{} key; CORE_WEAPON_ID maps that key to the existing WEAPONS[] id it reuses/skins.
 const CORE_HOMIE = ['rasta', 'snapback', 'bucket', 'afro'];
 const CORE_WEAPON_ID = { rasta: 'puff', snapback: 'bong', bucket: 'grinder', afro: 'lighter' };
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [], grades: {}, killjoyBeaten: false, astralBeaten: false, farmUpgrades: {}, farmCosmetics: {} }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [], grades: {}, killjoyBeaten: false, astralBeaten: false, farmUpgrades: {}, farmCosmetics: {}, sawLivesTip: false }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
@@ -1657,7 +1657,11 @@ let finInfo = null, hurryT = 0, results = null, shopSel = 0, readyInfo = null;
 // v1.1 A5: crew-lives. A shared life pool (3 solo / 5 co-op) that any player's final knockout spends one
 // of; while lives remain, that player respawns at the last-cleared zone (the checkpoint) instead of always
 // the level's very start. At 0 lives the whole level restarts and the crew keeps half their coins/Resin.
-let crewLives = 3, checkpoint = null;
+// v1.3 (rebalance, requested 2026-09-26): lives are per-player now, not a shared "crew lives" pool - see
+// knockedOutFinal()/updatePlayer() for the full flow (out of lives -> spectate until the next section or
+// the whole crew's out -> level restart).
+const PLAYER_LIVES = 3;
+let checkpoint = null, lastZiSeen = -1;
 const remotes = new Map();
 // v1.2 (Step 11.2): shared helper - ARMOR is an upgrade line, so only the single highest tier owned counts
 // (was previously computed inline just inside shopEntries(); drawPlayer's new hat overlay needs it too).
@@ -1675,6 +1679,10 @@ function makePlayer() {
     earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0, crit: 0, dash: 0, ultra: 0 }, legendT: 0, tokeChain: 0, lastTokeFrame: -999,
     color: Net.color, name: Net.name, emote: null, stealCd: {},
     wildOn: false, // v1.2 fix: true = the held Wild weapon (me.envWeapon) is the active weapon; false = the Core weapon is active. Q toggles this - see cycleWeapon().
+    // v1.3 (rebalance, requested 2026-09-26): this player's OWN life count (was a shared crewLives pool).
+    // deadOut = true once lives hit 0 - can't act, sits out until the next zone (fresh lives) or the whole
+    // crew is deadOut too (level restart). See knockedOutFinal()/updatePlayer().
+    lives: PLAYER_LIVES, deadOut: false,
     // v1.2 (Step 10.1): a Spectator (5th+ joiner, room's 4 crew slots were full) - a harmless permanently
     // invincible ghost. attack()/hurt() no-op for them (checked at the top of each), and playersList()
     // filters spectator remotes out so they never trigger zone fights or count toward crew lives.
@@ -1695,8 +1703,8 @@ function startLevel(n, dropIn) {
   camX = 0; state = dropIn ? 'play' : 'brief'; briefT = Net.online ? ([...new Set(lvl.levelEnemies)].some(k => !save.met.includes(k) && k === 'karen') ? 480 : 240) : 1200; particles = []; popups = []; shots = [];
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
   banner = dropIn ? { t: 150, a: 'DROPPING IN...', b: "CATCHING UP TO THE CREW - YOU'RE BRIEFLY INVINCIBLE" } : null;
-  crewLives = Net.online && realRemotes() > 0 ? 5 : 3; checkpoint = null; // v1.1 A5: reset the crew-lives pool + checkpoint for the new level
-  lvl.startFrame = frame; lvl.livesStart = crewLives; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): grade inputs
+  checkpoint = null; lastZiSeen = -1; // v1.3: lives reset per-player (see makePlayer's me.lives), just the checkpoint/zone-tracker here
+  lvl.startFrame = frame; lvl.livesStart = PLAYER_LIVES; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): grade inputs
   if (n === 0 && save.spots === 0) me.tipT = 900;
   persist();
   // v1.1 B1 item 5: a short cutscene when you finish a world's boss and step into the next world, gated so
@@ -1854,7 +1862,7 @@ function pickUp(it) {
   }
 }
 function hurt(dmg = 1, cookedLoss = 0, fromX) {
-  if (me.spectator || me.inv > 0 || me.star > 0 || state !== 'play') return;
+  if (me.spectator || me.deadOut || me.inv > 0 || me.star > 0 || state !== 'play') return;
   if (me.parryT > 0 && dmg > 0) { // BLOCK tapped just before the hit: PARRY - no damage, attacker's stunned & knocked back
     me.parryT = 0; popup(me.x - 16, sy(me.z) - 38, 'PARRY!', '#ffd84a'); shake = 8; hitstop = 6; SFX.power();
     puff(me.x, sy(me.z, me.h) - 10, 8, ['#ffd84a', '#ffffff']);
@@ -1873,31 +1881,47 @@ function hurt(dmg = 1, cookedLoss = 0, fromX) {
   if (me.hp <= 0) knockedOut();
 }
 function knockedOut() {
-  if (Net.online && remotes.size > 0 && !me.down) {
+  // v1.3 (rebalance, requested 2026-09-26): the old "a carried Munchie auto-revives you for free" solo
+  // path is gone - it made death nearly consequence-free as long as you had one in your bag. A Munchie now
+  // only ever heals HP when you eat it on purpose (see useItem) - knockouts always spend a real life.
+  if (Net.online && realRemotes() > 0 && !me.down) {
     me.down = 480; me.hp = 0; me.vx = me.vz = 0; me.h = 0; me.inv = 999; me.revive = 0; save.stats.deaths++;
     banner = { t: 160, a: 'YOU GOT BEAT UP!', b: 'A HOMIE CAN REVIVE YOU - STAND NEXT TO YOU + HOLD ' + KL('munchie') };
     SFX.hurt(); return;
   }
-  if (!Net.online && save.munchie > 0) { // solo: a carried munchie auto-revives instead of losing coins
-    save.munchie--; persist(); save.stats.deaths++;
-    me.hp = Math.max(1, Math.ceil(maxHp() / 2)); me.inv = 90; me.combo = 0; me.puffed = false;
-    banner = { t: 150, a: 'AUTO-MUNCHED!', b: 'A CARRIED MUNCHIE SAVED YOU - BACK UP AT HALF HP' };
-    SFX.power(); return;
-  }
   return knockedOutFinal();
 }
+// v1.3 (rebalance, requested 2026-09-26): lives are per-player now (me.lives), not a shared crew pool.
+// While you still have lives left, a knockout just costs one and respawns you at the checkpoint, same as
+// before. At 0 lives: alone (solo, or the only real player left standing), the whole level restarts right
+// away - there's no one left to keep playing for. In a real crew, you instead sit out as a powerless
+// spectator (me.deadOut) until EITHER the crew reaches the next zone (you rejoin with a fresh set of
+// lives - see updatePlayer's zone-watch) OR the whole crew is deadOut too (the host restarts the level).
 function knockedOutFinal() {
   me.down = 0; save.stats.deaths++;
-  // v1.1 A5: this knockout spends one crew life from the shared pool instead of just costing coins forever.
-  crewLives = Math.max(0, crewLives - 1);
-  if (isHost()) Net.send({ t: 'lives', n: crewLives, l: lvl.n });
-  if (crewLives <= 0) { restartLevelOutOfLives(); return; }
-  const loss = Math.min(save.coins, 40, Math.max(5, Math.floor(save.coins * 0.1)));
-  save.coins -= loss; me.lost += loss;
-  const cp = checkpoint || lvl.spawn;
-  me.hp = maxHp(); me.x = camX + cp.x; me.z = cp.z; me.h = 140; me.vx = me.vz = me.vh = 0; me.inv = 150; me.combo = 0; me.puffed = false;
-  banner = { t: 160, a: 'YOU GOT BEAT UP!', b: 'DROPPED ' + loss + ' HASH COINS - ' + crewLives + ' CREW LIFE' + (crewLives === 1 ? '' : 'S') + ' LEFT' };
-  SFX.hurt();
+  me.lives = Math.max(0, me.lives - 1);
+  // v1.3 (rebalance, requested 2026-09-26): a one-time, longer explainer the very first time this save
+  // ever gets knocked out - the user's own "I don't even understand it" feedback. Every knockout after
+  // this first one goes back to the normal short banner.
+  const firstTime = !save.sawLivesTip;
+  if (firstTime) { save.sawLivesTip = true; persist(); }
+  if (me.lives > 0) {
+    const loss = Math.min(save.coins, 40, Math.max(5, Math.floor(save.coins * 0.1)));
+    save.coins -= loss; me.lost += loss;
+    const cp = checkpoint || lvl.spawn;
+    me.hp = maxHp(); me.x = camX + cp.x; me.z = cp.z; me.h = 140; me.vx = me.vz = me.vh = 0; me.inv = 150; me.combo = 0; me.puffed = false;
+    banner = firstTime
+      ? { t: 280, a: 'YOU GOT BEAT UP!', b: 'HEARTS = THIS FIGHT\'S HP. LOSE THEM ALL AND YOU BURN A LIFE, THEN RESPAWN HERE. ' + me.lives + ' LIFE' + (me.lives === 1 ? '' : 'S') + ' LEFT.' }
+      : { t: 160, a: 'YOU GOT BEAT UP!', b: 'DROPPED ' + loss + ' HASH COINS - ' + me.lives + ' LIFE' + (me.lives === 1 ? '' : 'S') + ' LEFT' };
+    SFX.hurt();
+    return;
+  }
+  if (!Net.online || realRemotes() === 0) { restartLevelOutOfLives(); return; }
+  me.deadOut = true; me.hp = 0; me.vx = me.vz = me.vh = 0; me.combo = 0; me.inv = 999;
+  banner = firstTime
+    ? { t: 320, a: "YOU'RE OUT OF LIVES!", b: "OUT OF LIVES = YOU SIT OUT (CAN'T MOVE/FIGHT) UNTIL THE CREW REACHES THE NEXT FIGHT (YOU REJOIN WITH FRESH LIVES), OR EVERYONE'S OUT TOO (THE LEVEL RESTARTS)" }
+    : { t: 220, a: "YOU'RE OUT OF LIVES!", b: 'SPECTATING - BACK IN AT THE NEXT SECTION, OR IF THE WHOLE CREW GOES DOWN' };
+  SFX.bump();
 }
 // v1.1 A5: the crew is out of lives - restart the whole level (not just a checkpoint respawn), banking the
 // coins/Resin lost at half value rather than wiping them, per the brief ("keeps 50% of coins/Resin").
@@ -1908,11 +1932,11 @@ function restartLevelOutOfLives() {
   const n = lvl.n;
   lvl = buildLevel(n, lvl.remix);
   me = makePlayer();
-  crewLives = Net.online && realRemotes() > 0 ? 5 : 3; checkpoint = null; camX = 0;
-  lvl.startFrame = frame; lvl.livesStart = crewLives; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): restart resets the grade window too
-  // v1.2 fix (Step 1.2): send the actual reset lives count so non-host clients apply the real number
-  // instead of a hardcoded 5 (which drifted from this formula the moment it stopped always being 5).
-  if (isHost()) Net.send({ t: 'wipe', l: n, n: crewLives });
+  checkpoint = null; lastZiSeen = -1; camX = 0;
+  lvl.startFrame = frame; lvl.livesStart = PLAYER_LIVES; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): restart resets the grade window too
+  // v1.3: each client rebuilds its OWN fresh player/lives locally (makePlayer() above) - the 'wipe' message
+  // just tells everyone else to do the same, no shared lives count to pass along anymore.
+  if (isHost()) Net.send({ t: 'wipe', l: n });
   banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL - LOST HALF YOUR COINS + RESIN' };
   SFX.bump();
 }
@@ -1988,7 +2012,7 @@ function giveItem() {
 // instead of just whoever's standing closest. No network message needed - `pickUp()` already runs the
 // same local-only + `collect()`-broadcast path every ordinary walk-up grab uses.
 function yoink() {
-  if (me.spectator || state !== 'play') { SFX.bump(); return; }
+  if (me.spectator || me.deadOut || state !== 'play') { SFX.bump(); return; }
   let best = null, bestD = 90;
   for (const it of lvl.items) { if (it.taken) continue; const d = Math.abs(it.x - me.x) + Math.abs(it.z - me.z); if (d < bestD) { bestD = d; best = it; } }
   if (!best) { popup(me.x - 14, sy(me.z) - 34, 'NOTHING TO YOINK', '#b0a8c0'); SFX.bump(); return; }
@@ -2256,7 +2280,7 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   e.stolen = 0;
 }
 function attack(charged) {
-  if (me.spectator || (me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
+  if (me.spectator || me.deadOut || (me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
   const wildActive = !!(me.envWeapon && me.wildOn);
   const w = wildActive ? ENV_WEAPONS[me.envWeapon.id] : weaponDef(), wi = wildActive ? 0 : WEAPONS.indexOf(w);
   if (me.puffed) { // exhale a smoke blast from the cloud
@@ -2568,7 +2592,7 @@ function update() {
     // can scale by tier too (see drawHeld/drawSlash), not just the local player's own.
     // v1.2 (Step 11.2): `ar` (armor tier, -1..3) rides along the same way `cl` does, so a crewmate's worn
     // armor is actually visible to everyone, not just a stat only they can see in their own Bag.
-    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked), hp: me.hp, mh: maxHp(), cl: coreLevel(), ar: armorTier() });
+    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0) | (me.deadOut ? 16 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked), hp: me.hp, mh: maxHp(), cl: coreLevel(), ar: armorTier() });
   }
 }
 function animFrame(p) {
@@ -2580,6 +2604,19 @@ function animFrame(p) {
 }
 
 function updatePlayer() {
+  // v1.3 (rebalance, requested 2026-09-26): a deadOut player (out of lives, sitting out) rejoins the fight
+  // the moment the crew reaches a new zone - checked here so it applies whether or not this player was the
+  // one who fell (lvl.zi is host-authoritative and already synced to every client via the 'es' message).
+  if (state === 'play' && lvl.zi !== lastZiSeen) {
+    lastZiSeen = lvl.zi;
+    if (me.deadOut) {
+      me.deadOut = false; me.lives = PLAYER_LIVES; me.hp = maxHp();
+      const cp = checkpoint || lvl.spawn;
+      me.x = camX + cp.x; me.z = cp.z; me.h = 140; me.vx = me.vz = me.vh = 0; me.inv = 150; me.combo = 0; me.puffed = false;
+      banner = { t: 160, a: "BACK IN IT!", b: 'FRESH LIVES - JUMP BACK IN' }; SFX.power();
+    }
+  }
+  if (me.deadOut) { me.vx = me.vz = 0; me.atkT = 0; return; }
   // v1.3 (mechanic redesign, requested 2026-09-26): Cooked no longer passively fades. It used to drain
   // ~1%/3s to pressure players into hitting a 50% threshold before it decayed back down - but the 50%
   // exit gate is gone (see updateSpot), so that pressure had no payoff left, just friction: banked Cooked
@@ -2848,7 +2885,7 @@ function toResults() {
   save.stats.kills += me.kills; save.stats.bestCombo = Math.max(save.stats.bestCombo, me.best);
   let grade = null, isNewBest = false, livesLost = 0;
   if (made) {
-    livesLost = Math.max(0, (lvl.livesStart == null ? crewLives : lvl.livesStart) - crewLives);
+    livesLost = Math.max(0, (lvl.livesStart == null ? PLAYER_LIVES : lvl.livesStart) - me.lives);
     grade = computeGrade(lvl.n, { frames: frame - (lvl.startFrame || frame), livesLost, secretFound: !!lvl.secretFoundThisRun, coinsEarned: me.earned, bestCombo: me.best });
     const prevBest = save.grades && save.grades[lvl.n];
     saveBestGrade(lvl.n, grade);
@@ -2906,8 +2943,10 @@ function shareCard() {
 function playersList() {
   // v1.2 (Step 10.1): a Spectator (self or remote) never counts as a real crewmate here - excluded from
   // both entries below so they can't trigger zone fights, hazards, or crew-lives math just by being on screen.
-  const list = me.spectator ? [] : [{ id: Net.id, x: me.x, z: me.z, h: me.h, ok: state === 'play' && me.inv < 60 && !(me.down > 0) }];
-  for (const [id, r] of remotes) if (!r.spectate && r.l === lvl.n && r.tx > -500 && !(r.b & 12)) list.push({ id, x: r.x, z: r.z, h: r.h, ok: true });
+  const list = me.spectator ? [] : [{ id: Net.id, x: me.x, z: me.z, h: me.h, ok: state === 'play' && me.inv < 60 && !(me.down > 0) && !me.deadOut }];
+  // v1.3: bit 16 = deadOut (out of lives, sitting out) - excluded from zone-trigger/hazard math the same
+  // way sitting (4) and down-waiting-for-revive (8) already are.
+  for (const [id, r] of remotes) if (!r.spectate && r.l === lvl.n && r.tx > -500 && !(r.b & 28)) list.push({ id, x: r.x, z: r.z, h: r.h, ok: true });
   return list;
 }
 function bossAI(e, tgt, dx, dz, cloud) {
@@ -2951,6 +2990,14 @@ function summonAdds(e, k) {
 }
 function thiefFlee(e, k) { e.stolen += k; e.state = 6; e.t = 0; }
 function hostUpdate() {
+  // v1.3 (rebalance, requested 2026-09-26): the whole crew is out of lives (everyone deadOut) - restart the
+  // level for real, the same way an escort death or a solo knockout already does. Checked host-side since
+  // it needs to see every remote's own deadOut bit (synced on the 's' snapshot, see makePlayer/knockedOutFinal).
+  if (realRemotes() > 0 && me.deadOut) {
+    let allDown = true;
+    for (const r of remotes.values()) if (!r.spectate && r.l === lvl.n && !(r.b & 16)) { allDown = false; break; }
+    if (allDown) { banner = { t: 140, a: 'THE WHOLE CREW WENT DOWN!', b: '' }; SFX.bump(); restartLevelOutOfLives(); return; }
+  }
   const players = playersList();
   const wk = lvl.theme.base || lvl.themeKey; // v1.1 A6: which world's enemy tricks are active this mission
   // fight areas: start when someone walks in, clear when everyone's down
@@ -3884,7 +3931,11 @@ function drawHUD() {
   const mh = maxHp();
   for (let i = 0; i < mh; i++) ctx.drawImage(i < me.hp ? (i >= 4 ? HEART_A : HEART) : HEART_E, 3 + i * 8, 3);
   ctx.drawImage(COIN, 3, 10 - 1, 7, 6); text(save.coins, 12, 10, '#ffd84a');
-  text(crewLives + ' LIFE' + (crewLives === 1 ? '' : 'S'), 40, 10, crewLives <= 1 ? '#ff8a8a' : '#c8ffa0'); // v1.1 A5
+  // v1.3 (rebalance, requested 2026-09-26): HEARTS (top-left icons) are this fight's HP - lose them all and
+  // you're knocked out, which costs a LIFE (this readout) and respawns you at full hearts. Lose your last
+  // life and you're out until the next section (or the whole crew's out). Spelling "LIFE" -> "LIVES LEFT"
+  // and flagging OUT OF LIVES in red when deadOut, so the two numbers don't read as the same stat.
+  text(me.deadOut ? 'OUT OF LIVES' : me.lives + ' LIVES LEFT', 40, 10, me.deadOut ? '#ff5a6a' : me.lives <= 1 ? '#ff8a8a' : '#c8ffa0');
   // v1.2 (Step 6.1): GAUNTLET survive-timer readout
   { const gz = lvl.zones[lvl.zi]; if (gz && gz.gauntlet && gz.started && !gz.cleared && gz.timer != null) text('SURVIVE: ' + Math.ceil(gz.timer / 60) + 's', W - 4, 3, '#ffd84a', 1, 'right'); }
   // v1.3 (mechanic redesign, requested 2026-09-26): relabeled from a "SOBER-ISH/COOKED X%" progress-bar
@@ -5218,8 +5269,8 @@ function onNet(m) {
     case 'steal': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) thiefFlee(e, m.k); } break;
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
     // v1.1 A5: non-host crewmates follow the host's authoritative life count / wipe-restart so everyone agrees.
-    case 'lives': if (!isHost() && m.l === lvl.n) crewLives = m.n; break;
-    case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); crewLives = typeof m.n === 'number' ? m.n : (Net.online && realRemotes() > 0 ? 5 : 3); checkpoint = null; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
+    // v1.3: 'lives' is dead (no shared pool to sync anymore - each client tracks its own me.lives locally).
+    case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); checkpoint = null; lastZiSeen = -1; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
     case 'pass': if (m.who === Net.id) { addCooked(20); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); } break;
     // v1.2 (Step 9.1): "pass the plate" (brownie) - an AoE broadcast every client checks themselves against
     // (see useItem's comment), and GIVE - a targeted item hand-off (see giveItem's comment).
@@ -5440,7 +5491,10 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, get shopSel() { return shopSel; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost,
   // v1.2 fix (Step 1) debug hooks: crew-lives visibility + the real restart-out-of-lives path, for the
   // automated 2-browser tests that verify the host/non-host crewLives-sync fix.
-  get crewLives() { return crewLives; }, restartLevelOutOfLives, cycleWeapon, progressLabel,
+  get crewLives() { return me.lives; }, restartLevelOutOfLives, cycleWeapon, progressLabel,
+  // v1.3 (rebalance, requested 2026-09-26) debug hooks: per-player lives/deadOut, for the automated test.
+  get deadOut() { return me.deadOut; }, knockedOutFinal, get lastZiSeen() { return lastZiSeen; },
+  get frame() { return frame; }, get paused() { return paused; }, get invOpen() { return invOpen; },
   // v1.2 fix (Step 5) debug hooks: set the current homie's Core straight to a level (bypassing coreCap and
   // the coins/Resin/Seed cost) for the "screenshot every form" check, plus the tier/form-name helpers.
   setCoreLevel: lv => { save.cores[CORE_HOMIE[Net.color || 0]] = Math.max(1, Math.min(10, lv | 0)); save.coreCap = Math.max(save.coreCap || 3, lv | 0); },

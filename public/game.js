@@ -240,7 +240,7 @@ function startMusic() {
 const K = { left: false, right: false, up: false, down: false, jump: false, run: false, attack: false, enter: false };
 // ---- settings (saved in this browser): volumes, toggles, custom key bindings ----
 const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT', block: 'ControlLeft', give: 'KeyG', yoink: 'KeyY' };
-const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT', block: 'BLOCK (TAP=PARRY, HOLD+DIR=ROLL)', give: 'GIVE (HERE BRO) - HANDS A HOMIE YOUR QUICK ITEM', yoink: 'YOINK - YANKS THE NEAREST DROP TO YOU' };
+const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'CHECK WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT', block: 'BLOCK (TAP=PARRY, HOLD+DIR=ROLL)', give: 'GIVE (HERE BRO) - HANDS A HOMIE YOUR QUICK ITEM', yoink: 'YOINK - YANKS THE NEAREST DROP TO YOU' };
 let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, bigText: false, reduceFlash: false, colorblind: false, muteHidden: false, holdAttack: false, keys: { ...DEFAULT_KEYS } };
 try { const st = JSON.parse(localStorage.getItem('kq_settings')); if (st) settings = { ...settings, ...st, keys: { ...DEFAULT_KEYS, ...(st.keys || {}) } }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('kq_settings', JSON.stringify(settings)); } catch (e) {} if (master) master.gain.value = settings.sfx; }
@@ -822,16 +822,30 @@ const ENV_WEAPONS = {
   // mission - see the `ultimate` flag's special-case in attack().
   gravitybongcannon: { id: 'gravitybongcannon', name: 'GRAVITY BONG CANNON', dmg: 12, cd: 90, reach: 999, zr: 999, kb: 0, cost: 0, charge: 1, ultimate: true, desc: 'ONLY FIRES AT ULTRA (100% COOKED) - ONE HUGE SCREEN-CLEARING BLAST, THEN IT\'S SPENT' },
   applepipe: { id: 'applepipe', name: 'APPLE PIPE', dmg: 1, cd: 18, reach: 22, zr: 10, kb: 1, cost: 0, charge: 0, infiniteCharge: true, desc: 'CHEAP AND WEAK. NEVER RUNS OUT (ITS A JOKE, OKAY)' },
+  // v1.4 (user-directed, 2026-09-26): Wild weapons redesigned as real guns/flamethrowers/explosives, scoped
+  // to Park+Beach for now (see WILD_POOL_BY_THEME). No more Q-toggle - a picked-up Wild weapon REPLACES the
+  // Core weapon outright (see attack()'s pickup/reversion logic) until its `charge` (ammo) hits 0, at which
+  // point it auto-reverts to Core. Hit harder than the old melee Wilds, but `charge` is kept deliberately
+  // low so a pickup only lasts a short burst - "good, not OP" per the brief. Each fires through the `gun`
+  // spec below into a real projectile (see attack()'s `w.gun` branch + updateShots' kind 20/21/22/23).
+  budbustershotgun: { id: 'budbustershotgun', name: 'BUD BUSTER SHOTGUN', dmg: 2, cd: 32, reach: 60, zr: 24, kb: 2, cost: 1, charge: 6, gun: { kind: 20, n: 4, spreadZ: 9, speed: 5.4, life: 22 }, desc: 'PUMP-ACTION 4-PELLET SPREAD - HITS LIKE A TRUCK, ONLY 6 SHELLS' },
+  seaweedsmg: { id: 'seaweedsmg', name: 'SEAWEED SMG', dmg: 1, cd: 7, reach: 90, zr: 14, kb: 0.6, cost: 1, charge: 22, gun: { kind: 20, n: 1, speed: 6.8, life: 30 }, desc: 'FULL-AUTO KELP DARTS - MASH IT, THE MAG EMPTIES FAST' },
+  nuglauncher: { id: 'nuglauncher', name: 'NUG LAUNCHER', dmg: 5, cd: 55, reach: 999, zr: 999, kb: 2.5, cost: 1, charge: 4, gun: { kind: 21, speed: 3.2, arcVh: 3.4, life: 120, blastR: 34, blastZ: 20 }, desc: 'LOBS AN EXPLOSIVE NUG - BIG BOOM, ONLY 4 ROUNDS' },
+  cannonballbazooka: { id: 'cannonballbazooka', name: 'CANNONBALL BAZOOKA', dmg: 7, cd: 66, reach: 999, zr: 999, kb: 3, cost: 1, charge: 3, gun: { kind: 21, speed: 2.6, arcVh: 4.2, life: 140, blastR: 40, blastZ: 24 }, desc: 'ONE SHELL COULD CLEAR THE BEACH - JUST 3 IN THE TUBE' },
+  dankdragonflamer: { id: 'dankdragonflamer', name: 'DANK DRAGON FLAMER', dmg: 1, cd: 6, reach: 36, zr: 14, kb: 0.5, burn: 3, cost: 1, charge: 40, gun: { kind: 22, life: 16 }, desc: 'A GREEN FIRE STREAM THAT STACKS BURN FAST - TANK EMPTIES QUICK' },
+  tikitorcher: { id: 'tikitorcher', name: 'TIKI TORCHER', dmg: 1, cd: 6, reach: 36, zr: 14, kb: 0.5, burn: 3, cost: 1, charge: 36, gun: { kind: 23, life: 16 }, desc: 'COCONUT-OIL FLAMETHROWER - SHORT FUSE, SERIOUS HEAT' },
 };
 // v1.2 fix (Step 1.4): Wild weapons have no dedicated icon art of their own - reuse the closest-themed
 // existing MELEE/THROW icon so the Bag's WILD row always has a real image to draw (never a blank/crash).
-const WILD_ICON_ID = { bonghammer: 'bong', bluntbat: 'blunt', rollingpapers: 'papers', nugbombs: 'bombs', dabtorch: 'dab', hackysack: 'grinder', leafblower: 'lighter', zippoflick: 'lighter', hookahwhip: 'bong', lavalampmace: 'bong', gravitybongcannon: 'bong', applepipe: 'joint' };
+const WILD_ICON_ID = { bonghammer: 'bong', bluntbat: 'blunt', rollingpapers: 'papers', nugbombs: 'bombs', dabtorch: 'dab', hackysack: 'grinder', leafblower: 'lighter', zippoflick: 'lighter', hookahwhip: 'bong', lavalampmace: 'bong', gravitybongcannon: 'bong', applepipe: 'joint', budbustershotgun: 'papers', seaweedsmg: 'dab', nuglauncher: 'bombs', cannonballbazooka: 'bombs', dankdragonflamer: 'lighter', tikitorcher: 'lighter' };
 // v1.1 A3: per-world Wild-weapon pool (brief's table, minus Astral Plane which doesn't exist in this
 // codebase yet - Gravity Bong Cannon is just available in HQ per the task instructions). A pickup rolls
 // one random id from its theme's pool instead of always the same fixed weapon.
 const WILD_POOL_BY_THEME = {
-  park: ['bonghammer', 'bluntbat', 'rollingpapers', 'applepipe'],
-  beach: ['rollingpapers', 'nugbombs', 'dabtorch', 'hackysack'],
+  // v1.4: Park+Beach redone as guns/flamethrowers/explosives - see ENV_WEAPONS above. Other worlds
+  // untouched for now (scoped the same as the Park+Beach content pass).
+  park: ['budbustershotgun', 'nuglauncher', 'dankdragonflamer', 'applepipe'],
+  beach: ['seaweedsmg', 'cannonballbazooka', 'tikitorcher', 'applepipe'],
   suburb: ['bonghammer', 'hackysack', 'leafblower'],
   city: ['bluntbat', 'zippoflick', 'hookahwhip'],
   woods: ['nugbombs', 'leafblower', 'zippoflick', 'lavalampmace'],
@@ -1539,6 +1553,12 @@ function buildLevel(n, remix) {
     if (zi === secretZone) prop('secret', x0 + 40, ZMAX - 8, ['gold', 'nug']);
     if (hasWildChest && zi === wildChestZone) prop('chest', x0 + 280, rz(), ['envweapon']); // v1.2 (Step 9.2): special chest
     if (zi === 0) item('envweapon', x0 + 90, rz(), 0, pick(WILD_POOL_BY_THEME[themeKey] || WILD_POOL_BY_THEME.park)); // one Wild-weapon pickup per mission, randomly rolled from this world's pool
+    // v1.4 (user-directed, 2026-09-26): "a Wild weapon right before a bigger-than-usual horde" - an ambush
+    // zone (see hostUpdate's z.ambush - enemies converge from both sides, already the game's "horde" beat)
+    // gets its own guaranteed Wild-weapon pickup planted right at its entrance, before the fight triggers.
+    // Scoped to Park+Beach like the rest of this pass. zi !== 0 so it doesn't just double up the mission's
+    // guaranteed first pickup on levels where zone 0 happens to roll as the ambush zone too.
+    if (zi === ambushZone && zi !== 0 && (themeKey === 'park' || themeKey === 'beach' || theme.base === 'park' || theme.base === 'beach')) item('envweapon', x0 - 30, rz(), 0, pick(WILD_POOL_BY_THEME[themeKey] || WILD_POOL_BY_THEME.park));
     // the walk to the next fight: coins, nugs, rings, bonuses
     const gx = x0 + ZW + 10;
     coinArc(gx, rz(), 5);
@@ -1724,7 +1744,7 @@ function makePlayer() {
     hp: maxHp(), cooked: 0, combo: 0, comboT: 0, best: 0, atkCd: 0, atkT: 0, chain: 0, chainT: 0,
     earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0, crit: 0, dash: 0, ultra: 0 }, legendT: 0, tokeChain: 0, lastTokeFrame: -999,
     color: Net.color, name: Net.name, emote: null, stealCd: {},
-    wildOn: false, // v1.2 fix: true = the held Wild weapon (me.envWeapon) is the active weapon; false = the Core weapon is active. Q toggles this - see cycleWeapon().
+    wildOn: false, // v1.4: legacy field, always true while me.envWeapon is held (see attack()) - kept only so nothing that still reads it breaks. No more toggle.
     // v1.3 (rebalance, requested 2026-09-26): this player's OWN life count (was a shared crewLives pool).
     // deadOut = true once lives hit 0 - can't act, sits out until the next zone (fresh lives) or the whole
     // crew is deadOut too (level restart). See knockedOutFinal()/updatePlayer().
@@ -2068,14 +2088,12 @@ function yoink() {
 function useMunchies() {
   useItem('munchie');
 }
-// v1.2 fix (Step 1.1): Q used to just drop any held Wild weapon and cycle through the old, no-longer-used
-// 6-weapon `save.weapons` roster. It now just toggles which weapon is active - Core or the held Wild
-// weapon - and never drops anything. If no Wild weapon is held, Q is a no-op click (nothing to switch to).
+// v1.4 (user-directed, 2026-09-26): there's no more toggle to switch - a held Wild weapon is always the
+// active one, and it auto-reverts to Core the moment it runs dry (see attack()). This key/scroll action is
+// now purely informational: it just pops up whatever's currently equipped.
 function cycleWeapon() {
-  if (!me.envWeapon) { SFX.bump(); popup(me.x - 16, sy(me.z) - 34, weaponDef().name, '#fff6b0'); return; }
-  me.wildOn = !me.wildOn;
-  SFX.buy();
-  popup(me.x - 16, sy(me.z) - 34, me.wildOn ? ENV_WEAPONS[me.envWeapon.id].name + ' (WILD)' : weaponDef().name + ' (CORE)', '#fff6b0');
+  SFX.bump();
+  popup(me.x - 16, sy(me.z) - 34, me.envWeapon ? ENV_WEAPONS[me.envWeapon.id].name + ' (WILD)' : weaponDef().name + ' (CORE)', '#fff6b0');
 }
 
 // ============================================================
@@ -2329,7 +2347,11 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
 }
 function attack(charged) {
   if (me.spectator || me.deadOut || (me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
-  const wildActive = !!(me.envWeapon && me.wildOn);
+  // v1.4 (user-directed, 2026-09-26): no more Q-toggle - a held Wild weapon (me.envWeapon) is ALWAYS the
+  // active weapon; it auto-reverts to Core the instant its charge/ammo runs dry (see the gun branch and the
+  // charge-drain line below). me.wildOn is kept around only so the Bag/HUD's old on/off displays don't
+  // crash, but nothing ever sets it false anymore while a Wild weapon is held.
+  const wildActive = !!me.envWeapon;
   const w = wildActive ? ENV_WEAPONS[me.envWeapon.id] : weaponDef(), wi = wildActive ? 0 : WEAPONS.indexOf(w);
   if (me.puffed) { // exhale a smoke blast from the cloud
     me.puffed = false; me.flaps = 0; SFX.exhale(); me.atkCd = 16; me.atkT = 10;
@@ -2354,6 +2376,25 @@ function attack(charged) {
   // cleared) rather than breaking/dropping.
   if (wildActive && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge && me.envWeapon.charge < ENV_WEAPONS[me.envWeapon.id].cost) {
     SFX.bump(); me.atkCd = 14; popup(me.x - 14, sy(me.z) - 34, '*CLICK*', '#8a809a');
+    return;
+  }
+  // v1.4 (user-directed, 2026-09-26): Wild guns (Park+Beach's shotgun/SMG/launchers/flamethrowers) fire a
+  // real projectile instead of falling into the melee combo/reach logic below - see ENV_WEAPONS' `gun` spec.
+  if (wildActive && w.gun) {
+    const g = w.gun, n = g.n || 1;
+    me.atkCd = w.cd; me.atkT = 10;
+    for (let i = 0; i < n; i++) {
+      const dz = n > 1 ? (i - (n - 1) / 2) * (g.spreadZ || 8) : 0;
+      shots.push({ mine: true, kind: g.kind, x: me.x + me.face * 10, z: me.z + dz, h: me.h + 8, vx: me.face * (g.speed || 4.5), vh: g.arcVh || 0, life: g.life || 30, dmg: w.dmg + (ultra() ? 1 : 0), hit: new Set(), kb: w.kb || 1, burn: w.burn || 0, blastR: g.blastR || 0, blastZ: g.blastZ || 0 });
+    }
+    if (g.kind === 21) { SFX.boom(); shake = Math.max(shake, 3); }
+    else if (g.kind === 22 || g.kind === 23) SFX.exhale();
+    else SFX.attack(3);
+    Net.send({ t: 'fx', k: g.kind, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+    if (!ENV_WEAPONS[me.envWeapon.id].infiniteCharge) {
+      me.envWeapon.charge = Math.max(0, me.envWeapon.charge - w.cost);
+      if (me.envWeapon.charge <= 0) { const wname = w.name; me.envWeapon = null; me.wildOn = false; popup(me.x - 22, sy(me.z) - 34, wname + ' EMPTY - BACK TO CORE', '#ff9a3a'); }
+    }
     return;
   }
   const lunge = K.run && Math.abs(me.vx) > 1.5 && me.h === 0, air = me.h > 6;
@@ -2465,9 +2506,14 @@ function attack(charged) {
   if (w.id === 'puff' && tier >= 4 && strong && hits) lvl.clouds.push({ x: me.x + me.face * 22, z: me.z, r: tier >= 5 ? 22 : 16, t: 160, hot: true, by: Net.id });
   Net.send({ t: 'fx', k: wi, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
   // v1.1 A3: drain the Wild weapon's Resin charge on every swing that actually attacked (the click-check
-  // above already bailed out before this point if there wasn't enough charge), never below 0. It stays
-  // held at 0 charge - no more "BROKE!"/auto-drop; gainResin() (see onKill) tops it back up from kills.
-  if (wildActive && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge) me.envWeapon.charge = Math.max(0, me.envWeapon.charge - ENV_WEAPONS[me.envWeapon.id].cost);
+  // above already bailed out before this point if there wasn't enough charge), never below 0.
+  // v1.4 (user-directed, 2026-09-26): once it actually hits 0, auto-revert straight to Core (no more
+  // staying held at 0 charge just clicking - that was the old "does nothing until Resin tops it back up"
+  // behavior, replaced now that Wild always REPLACES Core rather than being a toggleable 2nd weapon).
+  if (wildActive && !ENV_WEAPONS[me.envWeapon.id].infiniteCharge) {
+    me.envWeapon.charge = Math.max(0, me.envWeapon.charge - ENV_WEAPONS[me.envWeapon.id].cost);
+    if (me.envWeapon.charge <= 0) { const wname = w.name; me.envWeapon = null; me.wildOn = false; popup(me.x - 22, sy(me.z) - 34, wname + ' EMPTY - BACK TO CORE', '#ff9a3a'); }
+  }
 }
 function updateShots() {
   for (const s of shots) {
@@ -2494,11 +2540,15 @@ function updateShots() {
     s.x += s.vx; s.life--; if (s.kind === 5) s.vx *= 0.95;
     if (s.kind === 8) { s.vh -= 0.18; s.h += s.vh; if (s.h <= 0) { s.life = 0; explode(s); } continue; }
     if (s.kind === 10) { s.vh -= 0.18; s.h += s.vh; if (s.h <= 0) { s.life = 0; landSmoke(s); } continue; }
+    // v1.4 (user-directed, 2026-09-26): the new Wild explosive-lob weapons (Nug Launcher, Cannonball
+    // Bazooka) - arcs up and down just like the thrown Nug Bomb (kind 8) above, but with its own blast
+    // radius (s.blastR/s.blastZ) instead of that one's fixed size - see explodeWild().
+    if (s.kind === 21) { s.vh -= 0.16; s.h += s.vh; if (s.h <= 0) { s.life = 0; explodeWild(s); } continue; }
     if (!s.mine) continue;
     for (const e of lvl.enemies) {
       if (!e.spawned || !e.alive || e.state === 5 || s.hit.has(e)) continue;
       if (Math.abs(e.x - s.x) < 12 && Math.abs(e.z - s.z) < 14) {
-        s.hit.add(e); hitEnemy(e, s.dmg + (ultra() ? 1 : 0), Math.sign(s.vx), s.kind === 5, { kb: s.kb, hr: s.hr, dragon: s.dragon });
+        s.hit.add(e); hitEnemy(e, s.dmg + (ultra() ? 1 : 0), Math.sign(s.vx), s.kind === 5, { kb: s.kb, hr: s.hr, dragon: s.dragon, burn: s.burn });
         if ((s.kind === 7 || s.kind === 13) && --s.pierce > 0) continue;
         s.life = 0;
       }
@@ -3993,6 +4043,13 @@ function drawScene() {
     else if (s.kind === 13) { const r = 6 + (s.pierce > 1 ? 3 : 0); ctx.fillStyle = P.k; circle(x, y, r + 1); ctx.fillStyle = '#bfe8ff'; circle(x, y, r); ctx.fillStyle = '#ffffff'; circle(x - 2, y - 2, 2); }
     // LIGHTER's Blowtorch/Dragon's Breath jet stream - a fatter, brighter flame once it's the Dragon's Breath form
     else if (s.kind === 14) { ctx.fillStyle = s.dragon ? '#e4b3ff' : '#ff9a3a'; circle(x, y, s.dragon ? 7 : 5); ctx.fillStyle = '#ffd84a'; circle(x, y, s.dragon ? 4 : 2); }
+    // v1.4 (user-directed, 2026-09-26): the new Wild guns. 20 = shotgun pellet/SMG dart (Bud Buster/Seaweed
+    // SMG), 21 = the explosive lob before it detonates (Nug Launcher/Cannonball Bazooka), 22/23 = the two
+    // flamethrowers' jets (Dank Dragon = green, Tiki Torcher = orange-red).
+    else if (s.kind === 20) { ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(0, s.vx)); ctx.fillStyle = '#2a1838'; ctx.fillRect(-4, -1.5, 8, 3); ctx.fillStyle = '#c8ffa0'; ctx.fillRect(-2, -1, 4, 2); ctx.restore(); }
+    else if (s.kind === 21) { shadow(s.x, s.z, s.h, 5); ctx.fillStyle = '#2a1838'; circle(x, y, 5); ctx.fillStyle = '#7fe07a'; circle(x, y, 4); ctx.fillStyle = '#c8ffa0'; circle(x - 1.5, y - 1.5, 1.5); if (frame % 3 === 0) puff(s.x, y - 4, 1, ['#ffffff', '#c8ffa0'], .3); }
+    else if (s.kind === 22) { ctx.fillStyle = '#3ac850'; circle(x, y, 6); ctx.fillStyle = '#c8ffa0'; circle(x, y, 3.5); }
+    else if (s.kind === 23) { ctx.fillStyle = '#ff6a2a'; circle(x, y, 6); ctx.fillStyle = '#ffd84a'; circle(x, y, 3.5); }
     else { ctx.globalAlpha = Math.min(1, s.life / 8); ctx.fillStyle = P.k; circle(x, y, 8); ctx.fillStyle = '#ffffff'; circle(x, y, 7); ctx.fillStyle = '#e8e4f4'; circle(x + 2, y + 2, 3); ctx.globalAlpha = 1; }
   } });
   list.sort((a, b) => a.z - b.z).forEach(o => o.d());
@@ -4076,13 +4133,16 @@ function drawHUD() {
   R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 30, 3, 1, 7); R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 54, 3, 1, 7);
   text(ultra() ? 'ULTRA COOKED!' : tooHigh() ? 'TOO HIGH ' + c + '%' : 'STASH ' + c + '%', mx + 9, 11, ultra() ? '#e4b3ff' : tooHigh() ? '#ff9a3a' : '#c8ffa0');
   // weapon + items
-  const wildOnHud = !!(me.envWeapon && me.wildOn), w = wildOnHud ? ENV_WEAPONS[me.envWeapon.id] : weaponDef();
+  // v1.4 (user-directed, 2026-09-26): a held Wild weapon is always the active one now (no more Q-toggle),
+  // so this is just "is a Wild weapon held" - and instead of the old on/off dot, show its remaining
+  // charge/ammo so the auto-revert-to-Core moment doesn't come as a surprise.
+  const wildOnHud = !!me.envWeapon, w = wildOnHud ? ENV_WEAPONS[me.envWeapon.id] : weaponDef();
   R(ctx, P.k, 146, 2, 14, 14); R(ctx, wildOnHud ? '#7a2fc0' : '#4a3a60', 147, 3, 12, 12);
   if (wildOnHud) { R(ctx, '#c0b0a0', 149, 5, 8, 8); text(w.name[0], 151, 10, '#2a1838'); } else ctx.drawImage(ICONS[w.icon], 148, 4);
   if (me.atkCd > 0) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(147, 3, 12, Math.round(12 * me.atkCd / w.cd)); }
-  if (me.envWeapon) { // Q swap indicator: a small dot shows whether Core or Wild is the currently-active weapon
-    R(ctx, wildOnHud ? '#4a3a60' : '#7a2fc0', 147, 16, 5, 3);
-    text(wildOnHud ? 'W' : 'C', 149, 18, '#ffffff', 1, 'center');
+  if (me.envWeapon && !w.infiniteCharge) {
+    R(ctx, '#4a3a60', 145, 16, 16, 5);
+    R(ctx, '#7a2fc0', 146, 17, Math.max(0, Math.round(14 * me.envWeapon.charge / w.charge)), 3);
   }
   if (save.munchie > 0) { ctx.drawImage(MUNCHIE, 164, 4); text('x' + save.munchie, 174, 3, '#ff9ab8'); text('E', 176, 10, '#b0a8c0'); }
   { const q = save.quick || 'brownie'; if (save[q] > 0) { ctx.drawImage(ICONS[ITEMS[q].icon], 250, 4); text('x' + save[q], 260, 3, '#fff6b0'); text('C', 262, 10, '#b0a8c0'); } }
@@ -4582,6 +4642,16 @@ function explode(s) {
   if (!s.mine) return;
   for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - s.x) < 30 && Math.abs(e.z - s.z) < 16) hitEnemy(e, s.dmg, Math.sign(e.x - s.x) || 1, true);
   for (const p of lvl.props) if (!p.broken && Math.abs(p.x - s.x) < 30 && Math.abs(p.z - s.z) < 16) breakProp(p);
+}
+// v1.4 (user-directed, 2026-09-26): explode(), but with its own blast radius (s.blastR/s.blastZ) instead of
+// that one's fixed 30x16 - used by the Wild explosive-lob weapons (Nug Launcher, Cannonball Bazooka).
+function explodeWild(s) {
+  shake = 10; hitstop = 4; SFX.boom(); if (AC) noise(0.4, 0.14, AC.currentTime, 260);
+  puff(s.x, sy(s.z, 4), 34, ['#ffffff', '#c8ffa0', '#7fe07a', '#ffd84a', '#ff9a3a'], 2.8, -0.03);
+  if (!s.mine) return;
+  const r = s.blastR || 30, rz2 = s.blastZ || 16;
+  for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - s.x) < r && Math.abs(e.z - s.z) < rz2) hitEnemy(e, s.dmg, Math.sign(e.x - s.x) || 1, true, { kb: s.kb });
+  for (const p of lvl.props) if (!p.broken && Math.abs(p.x - s.x) < r && Math.abs(p.z - s.z) < rz2) breakProp(p);
 }
 
 // ============================================================
@@ -5247,14 +5317,13 @@ function drawBrief() {
 //  INVENTORY (the bag)
 // ============================================================
 let invRow = 0, invCol = 0;
-// v1.2 fix (Step 1.4): MELEE (the old 6-weapon roster) and THROW (papers/bombs/smoke ammo, which nothing
-// has granted since the A1/A2 shop rework - see the old `save.weapon(s)`/`throwsel`/`throws` reads this
-// replaces) are gone. The Bag's weapon section is now exactly what the brief's A1/A2 model actually is:
-// one fixed CORE weapon per homie (display-only - it's always equipped, nothing to pick) and the one WILD
-// weapon currently held, if any (confirming toggles it active/inactive, same as pressing Q).
+// v1.4 (user-directed, 2026-09-26): no more Q-toggle between Core and a held Wild weapon - picking up a
+// Wild weapon now REPLACES Core outright until its charge runs out, then it auto-reverts. The Bag's CORE/
+// WILD rows are now purely informational (confirming either one is just a no-op "already equipped" click,
+// see invConfirm below) - "on" just reflects which one is actually active right now.
 const INV_ROWS = () => [
-  { label: 'CORE', items: [(() => { const w = weaponDef(), lv = coreLevel(); return { kind: 'core', def: { name: formName(w.id, lv) + ' - LV ' + lv, desc: w.desc, dmg: w.dmg + lv - 1, reach: w.reach }, icon: ICONS[w.icon], has: true, on: !(me.envWeapon && me.wildOn) }; })()] },
-  { label: 'WILD', items: [me.envWeapon ? { kind: 'wild', def: { ...ENV_WEAPONS[me.envWeapon.id], desc: ENV_WEAPONS[me.envWeapon.id].desc + ' - CHARGE ' + Math.round(me.envWeapon.charge) + '/' + ENV_WEAPONS[me.envWeapon.id].charge }, icon: ICONS[WILD_ICON_ID[me.envWeapon.id]] || ICONS.joint, has: true, on: !!me.wildOn } : { kind: 'wild', def: { name: 'NONE HELD', desc: 'PICK ONE UP OFF THE GROUND THIS MISSION, THEN PRESS ' + KL('weapon') + ' TO SWITCH TO IT' }, icon: ICONS.joint, has: false, on: false }] },
+  { label: 'CORE', items: [(() => { const w = weaponDef(), lv = coreLevel(); return { kind: 'core', def: { name: formName(w.id, lv) + ' - LV ' + lv, desc: w.desc, dmg: w.dmg + lv - 1, reach: w.reach }, icon: ICONS[w.icon], has: true, on: !me.envWeapon }; })()] },
+  { label: 'WILD', items: [me.envWeapon ? { kind: 'wild', def: { ...ENV_WEAPONS[me.envWeapon.id], desc: ENV_WEAPONS[me.envWeapon.id].desc + ' - CHARGE ' + Math.round(me.envWeapon.charge) + '/' + ENV_WEAPONS[me.envWeapon.id].charge }, icon: ICONS[WILD_ICON_ID[me.envWeapon.id]] || ICONS.joint, has: true, on: true } : { kind: 'wild', def: { name: 'NONE HELD', desc: 'PICK ONE UP OFF THE GROUND THIS MISSION - IT TAKES OVER FROM CORE UNTIL IT RUNS DRY' }, icon: ICONS.joint, has: false, on: false }] },
   { label: 'ARMOR', items: [...ARMORS.map(a => ({ kind: 'armor', def: a, icon: ICONS[a.icon], has: save.armor.includes(a.id), on: save.armor.includes(a.id) && maxHp() === 5 + a.hp })), { kind: 'armor', def: { name: 'STASH POUCH', desc: 'HALVES THEFT AMOUNT (THIEF GETS +1 BONUS COIN)' }, icon: ICONS.pouch, has: save.pouch, on: save.pouch }] },
   { label: 'ITEMS', items: Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, def: { name: d.name, desc: d.desc + '. SPACE: USE NOW. ' + KL('quick') + ': QUICK-USE' + (save.quick === id ? ' (SET)' : '') }, icon: ICONS[d.icon], has: save[id] > 0, count: save[id] || 0, on: save.quick === id })) },
 ];
@@ -5273,8 +5342,7 @@ function invConfirm() {
   {
     const it = row.items[invCol];
     if (!it.has) SFX.bump();
-    else if (it.kind === 'core') { if (me.envWeapon && me.wildOn) cycleWeapon(); else SFX.buy(); } // switches TO Core if Wild is active; otherwise it's already equipped
-    else if (it.kind === 'wild') { if (me.envWeapon && !me.wildOn) cycleWeapon(); else SFX.buy(); } // switches TO Wild if it's held but not active
+    else if (it.kind === 'core' || it.kind === 'wild') SFX.buy(); // informational only now - see INV_ROWS
     else if (it.kind === 'use') { save.quick = it.id; persist(); if (state === 'play') useItem(it.id); else SFX.buy(); }
   }
 }
@@ -5404,6 +5472,11 @@ function onNet(m) {
       if (m.k === 12) shots.push({ mine: false, kind: 12, x: m.x + m.f * 10, z: m.y, h: m.h + 8, vx: m.f * 4.2, life: 40 });
       if (m.k === 13) shots.push({ mine: false, kind: 13, x: m.x + m.f * 14, z: m.y, h: m.h + 6, vx: m.f * 3.6, life: 30, pierce: 1 });
       if (m.k === 14) shots.push({ mine: false, kind: 14, x: m.x + m.f * 8, z: m.y, h: m.h + 8, vx: m.f * 3, life: 14 });
+      // v1.4 (user-directed, 2026-09-26): cosmetic-only echoes of the new Wild guns, same pattern as above.
+      if (m.k === 20) shots.push({ mine: false, kind: 20, x: m.x + m.f * 10, z: m.y, h: m.h + 8, vx: m.f * 6, life: 26 });
+      if (m.k === 21) shots.push({ mine: false, kind: 21, x: m.x + m.f * 10, z: m.y, h: m.h + 8, vx: m.f * 3, vh: 3.6, life: 120 });
+      if (m.k === 22) shots.push({ mine: false, kind: 22, x: m.x + m.f * 8, z: m.y, h: m.h + 8, vx: m.f * 3, life: 14 });
+      if (m.k === 23) shots.push({ mine: false, kind: 23, x: m.x + m.f * 8, z: m.y, h: m.h + 8, vx: m.f * 3, life: 14 });
       break;
     }
     case 'es': if (!isHost()) applySnapshot(m); break;

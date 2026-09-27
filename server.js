@@ -188,7 +188,11 @@ function handle(client, m) {
       break;
     }
     case 's': // player state, relayed to the rest of the room
-      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0, hp: Math.max(0, Math.min(20, m.hp | 0)), mh: Math.max(1, Math.min(20, m.mh | 0)) }, client.id);
+      // v1.2 (Step 11 bugfix): `cl` (Core level) and the new `ar` (armor tier) were being sent by every
+      // client but silently DROPPED here - this whitelist relay never forwarded either field, so no
+      // remote's held-weapon tier visuals (added back in Step 5) ever actually worked online, only solo.
+      // Found while wiring up armor cosmetics for real online visibility.
+      if (room) broadcast(room, { t: 's', id: client.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 0, a: m.a | 0, f: m.f | 0, b: m.b | 0, l: m.l | 0, w: m.w | 0, c: m.c | 0, hp: Math.max(0, Math.min(20, m.hp | 0)), mh: Math.max(1, Math.min(20, m.mh | 0)), cl: Math.max(1, Math.min(10, m.cl | 0)) || 1, ar: Math.max(-1, Math.min(3, (m.ar | 0))) }, client.id);
       break;
     case 'fx': { // visual-only effects (attacks)
       if (!room) return;

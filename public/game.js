@@ -1632,6 +1632,9 @@ let finInfo = null, hurryT = 0, results = null, shopSel = 0, readyInfo = null;
 // the level's very start. At 0 lives the whole level restarts and the crew keeps half their coins/Resin.
 let crewLives = 3, checkpoint = null;
 const remotes = new Map();
+// v1.2 (Step 11.2): shared helper - ARMOR is an upgrade line, so only the single highest tier owned counts
+// (was previously computed inline just inside shopEntries(); drawPlayer's new hat overlay needs it too).
+const armorTier = () => Math.max(-1, ...save.armor.map(id => ARMORS.findIndex(a => a.id === id)));
 // v1.2 (Step 10.1): real (non-spectator) remote crewmates only - crew lives and boss HP scaling should
 // never count a 5th+ Spectator as a fighting player.
 const realRemotes = () => { let n = 0; for (const r of remotes.values()) if (!r.spectate) n++; return n; };
@@ -2511,7 +2514,9 @@ function update() {
   if (Net.online && frame % 3 === 0 && (state === 'play' || state === 'sitting')) {
     // v1.2 fix (Step 5): `cl` (Core level) rides along on the same snapshot so remotes' held-weapon visuals
     // can scale by tier too (see drawHeld/drawSlash), not just the local player's own.
-    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked), hp: me.hp, mh: maxHp(), cl: coreLevel() });
+    // v1.2 (Step 11.2): `ar` (armor tier, -1..3) rides along the same way `cl` does, so a crewmate's worn
+    // armor is actually visible to everyone, not just a stat only they can see in their own Bag.
+    Net.send({ t: 's', x: Math.round(me.x), y: Math.round(me.z), h: Math.round(me.h), l: lvl.n, a: animFrame(me), f: me.face, b: (me.star > 0 ? 1 : 0) | (ultra() ? 2 : 0) | (state === 'sitting' ? 4 : 0) | (me.down > 0 ? 8 : 0), w: WEAPONS.indexOf(weaponDef()), c: Math.round(me.cooked), hp: me.hp, mh: maxHp(), cl: coreLevel(), ar: armorTier() });
   }
 }
 function animFrame(p) {
@@ -3154,7 +3159,17 @@ function bubble(str, cx, y) {
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, 9);
   drawStr(str, x + 3, y + 2, '#3fae5a', 1);
 }
-function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting, wi = 0, atkT = 0, slash = null, down = 0, coreLv = 1) {
+// v1.2 (Step 11.2): "cosmetics shown online" - armor was a pure stat (+hearts) with NO visual anywhere,
+// even for the local player, so there was nothing for a crewmate to actually see. Draws the highest-tier
+// owned armor's shop icon as a small hat/badge, scaled up a little each tier so it also doubles as an
+// at-a-glance "who's got the good gear" readout in co-op.
+function drawArmorHat(x, y, face, tier) {
+  if (tier < 0) return;
+  const icon = ICONS[ARMORS[tier].icon], s = 1 + tier * 0.15;
+  const cx = Math.round(x - camX + 5), cy = Math.round(y - 3 - tier);
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s * (face < 0 ? -1 : 1), s); ctx.drawImage(icon, -icon.width / 2, -icon.height); ctx.restore();
+}
+function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, sitting, wi = 0, atkT = 0, slash = null, down = 0, coreLv = 1, armorTier = -1) {
   if (down) {
     const img = PLAYER[color][0], X = Math.round(x - camX + 5), Y = Math.round(y + 14);
     ctx.save(); ctx.translate(X, Y); ctx.rotate(Math.PI / 2 * (face > 0 ? -1 : 1)); ctx.drawImage(img, -8, -10); ctx.restore();
@@ -3179,6 +3194,7 @@ function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, si
   ctx.filter = 'none';
   if (!sitting) drawHeld(x, y, face, wi, atkT, anim, coreLv);
   if (slash && !sitting) drawSlash(x, y, face, slash, coreLv);
+  drawArmorHat(x, y, face, armorTier);
   if (sitting && frame % 40 < 30) text('Z', x + 12 - camX, y - 8 - (frame % 40) / 8, '#e4b3ff');
   if (emote) bubble(EMOTES[emote.e], x + 5, y - (name ? 24 : 14));
   if (drawPlayer.say) { const m = drawPlayer.say, w = Math.min(46, m.length) * 4 + 6, bx = Math.round(x + 5 - camX - w / 2), by = Math.round(y - (name ? 34 : 24)); R(ctx, P.k, bx - 1, by - 1, w + 2, 11); R(ctx, '#ffffff', bx, by, w, 9); text(m.slice(0, 46), bx + 3, by + 2, '#2a1838'); drawPlayer.say = null; }
@@ -3670,9 +3686,9 @@ function drawScene() {
   } }); }
   for (const r of remotes.values()) {
     if (r.tx < -500 || r.l !== lvl.n) continue;
-    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer.say = r.say && r.say.msg; drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash, r.b & 8 ? true : 0, r.cl || 1); } });
+    list.push({ z: r.z, d: () => { shadow(r.x, r.z, r.h); drawPlayer.say = r.say && r.say.msg; drawPlayer(r.x - 5, sy(r.z, r.h) - 17, r.f || 1, r.a, r.color, 0, 0, r.emote, r.name, r.b & 1, r.b & 2, r.b & 4, r.w, r.atkT || 0, r.slash, r.b & 8 ? true : 0, r.cl || 1, r.ar != null ? r.ar : -1); } });
   }
-  list.push({ z: me.z + 0.01, d: () => { drawPlayer.roll = me.roll > 0 ? 20 - me.roll : 0; if (me.holdT > 30) { ctx.fillStyle = 'rgba(255,216,74,' + (0.25 + Math.sin(frame / 3) * 0.15) + ')'; circle(Math.round(me.x - camX), sy(me.z, me.h) - 9, 12); } shadow(me.x, me.z, me.h); drawPlayer.say = me.say && me.say.msg; { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash, me.down || 0, coreLevel()); } });
+  list.push({ z: me.z + 0.01, d: () => { drawPlayer.roll = me.roll > 0 ? 20 - me.roll : 0; if (me.holdT > 30) { ctx.fillStyle = 'rgba(255,216,74,' + (0.25 + Math.sin(frame / 3) * 0.15) + ')'; circle(Math.round(me.x - camX), sy(me.z, me.h) - 9, 12); } shadow(me.x, me.z, me.h); drawPlayer.say = me.say && me.say.msg; { const X = Math.round(me.x - camX), Y = sy(me.z); ctx.strokeStyle = SHIRTS[me.color]; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + .5, Y + .5, 9, 3, 0, 0, TAU); ctx.stroke(); } drawPlayer(me.x - 5, sy(me.z, me.h) - 17, me.face, animFrame(me), me.color, me.sq, me.inv, me.emote, Net.online ? me.name : '', me.star > 0, ultra(), state === 'sitting', WEAPONS.indexOf(weaponDef()), me.atkT, me.slash, me.down || 0, coreLevel(), armorTier()); } });
   for (const s of lvl.eshots) list.push({ z: s.z, d: () => {
     const h = s.k === 'pinecone' ? (s.h || 0) : 5;
     shadow(s.x, s.z, h, 4); const x = Math.round(s.x - camX), y = sy(s.z, h);
@@ -3898,13 +3914,13 @@ function shopEntries(all) {
   const farmUps = FARM_UPGRADES.map(u => ({ kind: 'farmup', id: u.id, icon: u.id, name: u.name, price: u.price, desc: u.desc }));
   const cosmetics = FARM_COSMETICS.map(c => ({ kind: 'cosmetic', id: c.id, icon: c.id, name: c.name, price: c.price, desc: c.desc }));
   const nav = [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }];
-  const armorTier = Math.max(-1, ...save.armor.map(id => ARMORS.findIndex(a => a.id === id))); // ARMOR is an upgrade line now: only the highest tier owned counts (also migrates old saves that stacked several pieces)
+  const curArmorTier = armorTier(); // ARMOR is an upgrade line now: only the highest tier owned counts (also migrates old saves that stacked several pieces)
   const shopFixed = SHOP.map(g => {
     if (g.kind !== 'armor') return g;
     const idx = ARMORS.findIndex(a => a.id === g.id);
-    if (idx <= armorTier) return { ...g, owned: true };
-    const discount = armorTier >= 0 ? ARMORS[armorTier].price : 0;
-    return { ...g, price: Math.max(10, g.price - discount), desc: g.desc + (armorTier >= 0 ? ' (UPGRADE FROM ' + ARMORS[armorTier].name + ' - REPLACES IT)' : '') };
+    if (idx <= curArmorTier) return { ...g, owned: true };
+    const discount = curArmorTier >= 0 ? ARMORS[curArmorTier].price : 0;
+    return { ...g, price: Math.max(10, g.price - discount), desc: g.desc + (curArmorTier >= 0 ? ' (UPGRADE FROM ' + ARMORS[curArmorTier].name + ' - REPLACES IT)' : '') };
   });
   const goods = [...ups, ...uses, ...shopFixed, ...farmUps, ...cosmetics];
   const tab = SHOP_TABS[shopTab];
@@ -4994,10 +5010,10 @@ const Net = {
     setTimeout(attempt, 1000);
   }
 };
-function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, spectate: !!p.spectate, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null, hp: 5, mh: 5, cl: 1 }); }
+function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, spectate: !!p.spectate, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null, hp: 5, mh: 5, cl: 1, ar: -1 }); }
 function onNet(m) {
   switch (m.t) {
-    case 's': { const r = remotes.get(m.id); if (!r) return; if (r.tx < -500 || r.l !== m.l) { r.x = m.x; r.z = m.y; r.h = m.h; } Object.assign(r, { tx: m.x, tz: m.y, th: m.h, f: m.f, a: m.a, b: m.b, l: m.l, w: m.w, c: m.c, hp: m.hp, mh: m.mh, cl: m.cl || 1 }); break; }
+    case 's': { const r = remotes.get(m.id); if (!r) return; if (r.tx < -500 || r.l !== m.l) { r.x = m.x; r.z = m.y; r.h = m.h; } Object.assign(r, { tx: m.x, tz: m.y, th: m.h, f: m.f, a: m.a, b: m.b, l: m.l, w: m.w, c: m.c, hp: m.hp, mh: m.mh, cl: m.cl || 1, ar: m.ar != null ? m.ar : -1 }); break; }
     case 'fx': {
       const r = remotes.get(m.id); if (!r || r.l !== lvl.n) break;
       r.atkT = 12;

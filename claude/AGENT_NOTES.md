@@ -1173,3 +1173,34 @@ Pushed to `main`. Next: Step 11 (Replay and sharing) and Step 12 (Final full-gam
 scoped-out items (boss loot vote, Blunt Bat crewmate-launch + its secret, enemy chatter, per-homie voice
 bark tones, more background gags) remain open and can be picked up in a future pass whenever there's room
 for them; none of them block Step 11/12.
+
+## STEP 11 (FIX_STEPS.md): Replay and sharing — IN PROGRESS (first slice landed)
+
+**11.2 Cosmetics shown online (armor):**
+- **Real visual for armor, added for the first time.** Armor previously had zero on-screen representation
+  anywhere (a genuine pre-existing gap, not a regression) — equipping it only changed max HP. Added
+  `drawArmorHat(x, y, face, tier)`, which overlays the same icon already used in the ARMOR shop, scaled up
+  slightly per tier, above the player's head. `drawPlayer(...)` takes a new trailing `armorTier` param and
+  both call sites (local `me`, remote `r`) now pass it, so every equipped armor tier is visible on-screen —
+  solo AND online.
+- **Real bug found and fixed: `server.js`'s `case 's':` relay was silently dropping the `cl` (Core level)
+  field**, despite an existing code comment claiming Core-weapon-tier visuals "ride along" on the snapshot
+  for remotes. They never actually reached remotes online — solo-only, since forever. Also had no `ar`
+  (armor tier) field at all for the new hat visual. Fixed by adding both, clamped, to the server's whitelist
+  rebroadcast object (`cl: ...clamped 1-10, ar: ...clamped -1-3`). This is a real functional fix, not part
+  of this step's own scope on paper, but it silently broke the exact feature 11.2 asks for, so it had to be
+  fixed to make armor (and Core weapon tier) visuals real online rather than solo-only.
+- Shared `armorTier()` helper added at module scope (was previously computed inline, duplicated, inside
+  `shopEntries()` only) — `shopEntries()` renamed its own local copy to `curArmorTier` to avoid shadowing.
+
+**Testing:** `kq_step11_armor_online.js` (2 real tabs) — A equips the top armor tier and a high Core level,
+starts an online level; confirmed B's remote copy of A carries the real `ar`/`cl` values through the server
+relay (this is the exact path that was previously silently dropping them). Re-ran the full Step 10 suite
+(`kq_step10_test.js`, `kq_step10_online.js`, `kq_step10_teamchest.js`) — all still pass. `node --check`
+clean on both files.
+
+**Not yet done this step** (still open, tracked here so a future pass doesn't have to rediscover the list):
+Smoke Runs (strain picks/modifiers/daily seed), a real leaderboard on the server, weapon-skin cosmetics
+(only armor got a visual this slice — "hats/shirts/weapon skins" in the brief is broader), share card +
+farm snapshot (`canvas.toBlob`), public rooms / FIND A CREW, an animated title screen, the `/stats`
+analytics-lite report, and client error reporting. Continuing with these next in this same step.

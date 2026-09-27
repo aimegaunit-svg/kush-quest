@@ -1259,6 +1259,22 @@ const SPD_MUL = { jogger: 1.35, birdwatcher: 0.8, skateboarder: 1.3, beachbum: 0
   ENEMY_IMG.paranoia = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#160a28'], [P.D, '#0a0414'], [P.y, '#ff2af0']])); // THE PARANOIA's body - the giant eye is drawn on top of this in drawEnemyB
   for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot', 'badtrip', 'paranoia', 'scout', 'tourist', 'jogger', 'birdwatcher', 'yogamom', 'pigeonlady', 'skateboarder', 'patrol', 'influencer', 'beachbum', 'surfer', 'parrot']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
 }
+// v1.4 (World 1-2 content pack, requested 2026-09-26): real hand-drawn sprites for 14 new enemies, 6 unique
+// boss looks, and a handful of props/projectiles/icons/held-weapon sprites, delivered as pure data on
+// window.KQ_W12 (public/assets-w12.js). `jogger` and `crab` reuse ids already used by the tints above -
+// this REPLACES their art (ENEMY_IMG[k] overwritten below), which is intentional: saves/ENEMY_FAMILY/
+// save.met keep working off the same id. Everything else here is brand new.
+const W12 = window.KQ_W12 ? KQ_W12.build(sprite, P) : {};
+const W12_ENEMIES = ['jogger', 'pigeon', 'dog', 'dogwalker', 'parkranger', 'scout', 'goldsquirrel',
+  'crab', 'treasurecrab', 'seagull', 'beachbro', 'metaldetector', 'jellyfish', 'atv'];
+const W12_BOSSES = ['pete_cart', 'pete', 'rangerrick', 'rangerrick_atv', 'barb', 'lance'];
+for (const k of [...W12_ENEMIES, ...W12_BOSSES]) if (W12[k]) { ENEMY_IMG[k] = W12[k]; ENEMY_FLASH[k] = W12[k].map(flashOf); }
+// `scout`'s new art replaces the old squirrel-tint art (same id, still ai:'squirrel', still faces LEFT like
+// every squirrel - see the flip rule in drawEnemyB). `crab` gets a new dedicated AI, see BASE_AI below.
+if (W12.scout) ENEMY_IMG.scout = W12.scout, ENEMY_FLASH.scout = W12.scout.map(flashOf);
+// boss art is bigger than the 16x18 grunt sprites - draw at 1.5x (1.75x for Pete's on-foot phase 2)
+// instead of the usual e.mega ? 2.5 : 2, so the new sprites don't blow up to a silly size.
+const BOSS_SCALE = { pete_cart: 1.5, pete: 1.75, rangerrick: 1.5, rangerrick_atv: 1.5, barb: 1.5, lance: 1.5 };
 Object.assign(THEMES, {
   nightwoods: variantTheme('woods', 'MIDNIGHT WOODS', '#101a4a', 0.5, ['ranger', 'raccoon', 'squirrel', 'ranger', 'mouse']),
   swamp: variantTheme('woods', 'SKUNK SWAMP', '#4a6a10', 0.4, ['rat', 'raccoon', 'ranger', 'rat', 'karen']),
@@ -3643,12 +3659,38 @@ function drawSpot() {
   R(ctx, '#ff5a6a', x + 64, y - 9, 8, 6); R(ctx, '#ff9a3a', x + 65, y - (fl ? 12 : 11), 6, 8); R(ctx, '#ffd84a', x + 67, y - 8, 2, 3);
   if (frame % 10 === 0) puff(s.x + 68, y - 14, 1, ['#ffffff', '#e8e4f4', '#d4c8f8'], .3, -0.03);
 }
+// v1.4: per-kind frame pickers for the W12 art pack - each kind's frames aren't the fixed [idle, attack]
+// pair every older sprite uses (2-3 frames instead, see assets-w12.js's frameNames), and which one shows
+// is a pure function of (kind, state, frame) so remote clients animate correctly off the existing `es`
+// snapshot (state/dir/h) with no new net fields. See BRIEF_v1.4_W12.md Part 1.3/Part 2.
+const W12_FRAME = {
+  jogger: e => e.state === 62 ? 2 : (e.state === 60 || e.state === 63 ? 1 : 0),
+  pigeon: e => e.state === 65 ? 2 : (Math.floor(frame / 5) % 2),
+  seagull: e => e.state === 65 || e.state === 67 ? 2 : (Math.floor(frame / 8) % 2),
+  dog: e => e.state === 69 ? 2 : Math.floor(frame / 6) % 2,
+  dogwalker: e => e.state === 71 ? 1 : 0,
+  parkranger: e => e.state === 30 || e.state === 31 || e.whistleT > 0 ? 1 : 0,
+  scout: e => Math.floor(frame / 8) % 2, goldsquirrel: e => Math.floor(frame / 8) % 2,
+  crab: e => e.state === 2 ? 2 : Math.floor(frame / 6) % 2, treasurecrab: e => Math.floor(frame / 6) % 2,
+  beachbro: e => e.state === 73 ? 1 : (e.state >= 74 ? 2 : 0),
+  metaldetector: e => e.state === 78 ? 1 : 0,
+  jellyfish: e => e.state === 81 || e.state === 82 ? 2 : Math.floor(frame / 14) % 2,
+  atv: e => Math.floor(frame / 4) % 2,
+  // bosses
+  pete_cart: e => e.state === 90 && e.t < 40 && frame % 6 < 3 ? 1 : 0,
+  pete: e => e.state === 93 ? 1 : 0,
+  rangerrick: e => (e.state === 94 || e.state === 95) ? 1 : (e.state === 50 || e.state === 51) ? 2 : 0,
+  rangerrick_atv: e => Math.floor(frame / 4) % 2,
+  barb: e => (e.state === 100 || e.state === 101) ? 1 : (e.state === 102) ? 2 : 0,
+  lance: e => (e.state === 104 || e.state === 105 || e.state === 106) ? 1 : (e.state === 50 || e.state === 51) ? 2 : 0,
+};
 function drawEnemyB(e) {
   const imgs = e.flash > 0 && e.flash % 2 ? ENEMY_FLASH[e.kind] : ENEMY_IMG[e.kind];
   let f = Math.floor(frame / (e.state === 6 ? 5 : 10)) % 2;
   if ((e.ai === 'cop' && (e.state === 2)) || (e.ai === 'karen' && e.state === 1)) f = 1;
   if (e.ai === 'cop' && e.state === 1) f = 0;
-  const bs = e.boss ? (e.mega ? 2.5 : 2) : 1;
+  if (W12_FRAME[e.kind]) f = W12_FRAME[e.kind](e);
+  const bs = e.boss ? (BOSS_SCALE[e.kind] || (e.mega ? 2.5 : 2)) : 1;
   const img = imgs[f], x = e.x - img.width / 2, y = sy(e.z, e.h) - img.height;
   if (bs > 1) { const X = Math.round(e.x - camX - img.width * bs / 2), Y = Math.round(sy(e.z, e.h) - img.height * bs), fl = e.dir < 0;
     if (e.state === 5) { ctx.globalAlpha = Math.min(1, e.t / 40); } if (e.state === 1 && frame % 6 < 3) ctx.filter = 'brightness(1.8)';

@@ -670,6 +670,13 @@ const ICONS = {
   hoodie: sprite(['..kkkkk...', '.kgggggk..', 'kggkkkggk.', 'kgGgggGgk.', 'kgggggggk.', 'kgGGkGGgk.', 'kgggggggk.', '.kkkkkkk..']),
   vest: sprite(['.kk...kk..', 'kpok.kyrk.', 'kGyrkpGok.', 'kopGyroyk.', 'kyrpoGpok.', 'kGoyrpyGk.', '.kkkkkkk..']),
   crown: sprite(['k..k..k...', 'kk.k.kk...', 'krkkkykk..', 'kryyyGGk..', 'kGGrryyk..', '.kkkkkkk..']),
+  cloak: sprite(['..kkkk....', '.kppppk...', 'kpqpppqk..', 'kppwppwk..', 'kpqpppqk..', 'kppppppk..', '.kkkkkk...'], { ...P, p: '#7a2fc0', q: '#c070ff' }),
+  // v1.2 (Step 9.3): FARM_UPGRADES/FARM_COSMETICS shop icons.
+  hookah: sprite(['...kk.....', '..kvvk....', '..kvvk.kk.', '.kvvvkEk..', 'kvvvvkk...', 'kGGGGGk...', '.kkkkk....'], { ...P, v: '#3a8a6a' }),
+  rollingtray: sprite(['kkkkkkkkkk', 'kEEEEEEEEk', 'kEwwwwwwEk', 'kEwGGGGwEk', 'kEwwwwwwEk', 'kkkkkkkkkk'], { ...P, E: '#8a5024' }),
+  blacklight: sprite(['..kkkk....', '.kqqqqk...', 'kqqqqqqk..', 'kqPqqPqk..', 'kqqqqqqk..', '.kqqqqk...', '..kEEk....'], { ...P, q: '#7a2fc0', P: '#e4b3ff' }),
+  tapestry: sprite(['kkkkkkkkkk', 'kyGyGyGyGk', 'kGyGyGyGyk', 'kyGyGyGyGk', 'k.k..k..kk', 'k..k..k...'], { ...P, y: '#ffd84a' }),
+  lavalamp: sprite(['...kk.....', '..kGGk....', '.kGrrGk...', '.kGrrGk...', '..kGGk....', '..kEEk....', '.kEEEEk...'], { ...P, r: '#ff5a7a' }),
   pouch: sprite(['..kkkk....', '.kNkkNk...', 'kttttttk..', 'kttyyttk..', 'ktyOOytk..', 'kttyyttk..', '.kkkkkk...']),
   munchie: MUNCHIE,
   preroll: sprite(['........o.', '.......oy.', 'kkkkkkkkk.', 'kwwwwwwwk.', 'kkkkkkkkk.']),
@@ -795,7 +802,11 @@ const ENV_WEAPONS = {
   zippoflick: { id: 'zippoflick', name: 'ZIPPO FLICK', dmg: 2, cd: 24, reach: 48, zr: 8, kb: 1, burn: 3, cost: 2, charge: 18, desc: 'A THROWN FLAME - IGNITES SMOKE CLOUDS FROM RANGE' },
   hookahwhip: { id: 'hookahwhip', name: 'HOOKAH WHIP', dmg: 1, cd: 26, reach: 60, zr: 14, kb: 1, cost: 2, charge: 20, desc: 'HUGE REACH - PULLS ENEMIES IN CLOSE' },
   lavalampmace: { id: 'lavalampmace', name: 'LAVA LAMP MACE', dmg: 3, cd: 26, reach: 30, zr: 16, kb: 1.5, burn: 1, cost: 3, charge: 18, desc: 'HITS LEAVE HOT GOO PUDDLES BEHIND' },
-  gravitybongcannon: { id: 'gravitybongcannon', name: 'GRAVITY BONG CANNON', dmg: 4, cd: 50, reach: 26, zr: 30, kb: 2.5, spin: 1, cost: 6, charge: 18, desc: 'A SLOW, HUGE SMOKE BLAST' },
+  // v1.2 (Step 9.3): the brief's "gravity bong ultimate" - unlike every other Wild weapon it doesn't drain
+  // Resin per swing (cost:0, charge:1 so the existing CHARGE X/Y bag display always just reads "READY"),
+  // it can only be FIRED at Ultra (100% Cooked), and firing it spends the whole pickup for the rest of the
+  // mission - see the `ultimate` flag's special-case in attack().
+  gravitybongcannon: { id: 'gravitybongcannon', name: 'GRAVITY BONG CANNON', dmg: 12, cd: 90, reach: 999, zr: 999, kb: 0, cost: 0, charge: 1, ultimate: true, desc: 'ONLY FIRES AT ULTRA (100% COOKED) - ONE HUGE SCREEN-CLEARING BLAST, THEN IT\'S SPENT' },
   applepipe: { id: 'applepipe', name: 'APPLE PIPE', dmg: 1, cd: 18, reach: 22, zr: 10, kb: 1, cost: 0, charge: 0, infiniteCharge: true, desc: 'CHEAP AND WEAK. NEVER RUNS OUT (ITS A JOKE, OKAY)' },
 };
 // v1.2 fix (Step 1.4): Wild weapons have no dedicated icon art of their own - reuse the closest-themed
@@ -829,6 +840,9 @@ const ARMORS = [
   { id: 'hoodie', name: 'COMFY HOODIE', icon: 'hoodie', hp: 1, price: 70, desc: '+1 MAX HEART' },
   { id: 'vest', name: 'TIE-DYE VEST', icon: 'vest', hp: 2, price: 170, desc: '+2 MAX HEARTS' },
   { id: 'crown', name: 'RASTA CROWN', icon: 'crown', hp: 3, price: 300, desc: '+3 MAX HEARTS' },
+  // v1.2 (Step 9.3): the Smoke Cloak - top of the armor upgrade line. +4 hearts plus its own perk (see
+  // hurt()'s `cloaked` branch): a bigger cover-smoke puff and a longer invincibility window when you're hit.
+  { id: 'cloak', name: 'SMOKE CLOAK', icon: 'cloak', hp: 4, price: 450, desc: '+4 MAX HEARTS. GETTING HIT PUFFS YOU INTO COVER SMOKE FOR LONGER I-FRAMES' },
 ];
 // v1.1 B1: the Farm node now sits after the last world (Buzzkill HQ / Mr. Killjoy), matching the brief's
 // story beat ("then the Astral Plane after the ending") - so SPOTS_TO_FARM is now the full 49-level total,
@@ -886,6 +900,22 @@ function checkAchv() {
 }
 function farmHas(strainId) { return (save.farmPlots || []).includes(strainId); }
 const farmSpeedMul = () => (save.pet === 'zippy' ? 1.1 : 1);
+// v1.2 (Step 9.3): farm UPGRADES (a small permanent perk each, bought once with coins - unlike STRAINS'
+// plots, these aren't swappable) and pure-cosmetic farm decorations, both new Farm hub purchase lists.
+// "Secret rooms" from the brief's Blacklight line is scoped down to a real, visible perk - an on-screen
+// glow on any unbroken secret stash plus an off-screen compass hint (see drawProp/drawHUD) - rather than
+// a new hidden-room level-geometry system, which is out of scope for this pass.
+const FARM_UPGRADES = [
+  { id: 'hookah', name: 'HOOKAH', price: 400, desc: '+5% COOKED FROM EVERYTHING' },
+  { id: 'rollingtray', name: 'ROLLING TRAY', price: 350, desc: '+5% HASH COINS' },
+  { id: 'blacklight', name: 'BLACKLIGHT', price: 500, desc: 'SECRET STASHES GLOW ON SCREEN + AN OFF-SCREEN HINT' },
+];
+const FARM_COSMETICS = [
+  { id: 'tapestry', name: 'TAPESTRY', price: 150, desc: 'DECORATES THE FARM - PURELY FOR LOOKS' },
+  { id: 'lavalamp', name: 'LAVA LAMP', price: 150, desc: 'DECORATES THE FARM - PURELY FOR LOOKS' },
+];
+function farmUpgradeHas(id) { return !!(save.farmUpgrades && save.farmUpgrades[id]); }
+function farmCosmeticHas(id) { return !!(save.farmCosmetics && save.farmCosmetics[id]); }
 // v1.1 A1: weapons and throwable ammo are no longer sold here - your Core weapon is fixed per-homie and
 // levels with Resin (see the 'coreup' entry shopEntries() builds), and loose throwables are gone entirely
 // (Wild weapons, still to come in A3, cover that role instead).
@@ -1477,7 +1507,7 @@ try { const old = localStorage.getItem('kq_save_v2'); if (old && !localStorage.g
 // key used as the save.cores{} key; CORE_WEAPON_ID maps that key to the existing WEAPONS[] id it reuses/skins.
 const CORE_HOMIE = ['rasta', 'snapback', 'bucket', 'afro'];
 const CORE_WEAPON_ID = { rasta: 'puff', snapback: 'bong', bucket: 'grinder', afro: 'lighter' };
-function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [], grades: {}, killjoyBeaten: false, astralBeaten: false }; }
+function defaultSave() { return { coins: 0, spots: 0, weapons: ['puff'], armor: [], pouch: false, munchie: 1, preroll: 0, gold: 0, weapon: 'puff', farm: false, throws: { papers: 0, bombs: 0, smoke: 0 }, throwSel: 'papers', intro: false, wlv: {}, brownie: 1, soda: 0, quick: 'brownie', met: [], stats: { kills: 0, deaths: 0, playSec: 0, bestCombo: 0, bossesBeaten: 0 }, achv: [], farmPlots: [null, null, null, null], pet: null, dailyDate: '', cores: { rasta: 1, snapback: 1, bucket: 1, afro: 1 }, resin: 0, wild: null, seeds: 0, migratedV11: false, secretsFound: [], grades: {}, killjoyBeaten: false, astralBeaten: false, farmUpgrades: {}, farmCosmetics: {} }; }
 let save = defaultSave();
 function readSlot(i) { try { const s = JSON.parse(localStorage.getItem('kq_save_v2_s' + i)); return s && typeof s === 'object' ? s : null; } catch (e) { return null; } }
 function loadSlot(i) {
@@ -1509,6 +1539,8 @@ function loadSlot(i) {
   save.grades = save.grades && typeof save.grades === 'object' ? save.grades : {};
   if (save.killjoyBeaten == null) save.killjoyBeaten = (save.spots || 0) >= TOTAL_LEVELS;
   if (save.astralBeaten == null) save.astralBeaten = false;
+  save.farmUpgrades = save.farmUpgrades && typeof save.farmUpgrades === 'object' ? save.farmUpgrades : {};
+  save.farmCosmetics = save.farmCosmetics && typeof save.farmCosmetics === 'object' ? save.farmCosmetics : {};
   // v1.1 A2: save.coreCap is the per-save cap on how high ANY core can currently be leveled (separate from
   // save.cores[homie] itself - see coreLevel()/shopEntries()). Never lower it once set. A save that already
   // had migratedV11 (i.e. existed before this cap system landed, possibly with cores already leveled past
@@ -1652,7 +1684,7 @@ function addCombo(x, y) {
     const bonus = me.combo * (hasSkill('combo') ? 4 : 2); addCoins(bonus); popup(x, y - 10, 'COMBO BONUS +' + bonus, '#c8ffa0');
   }
 }
-function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; if (lvl && lvl.remix) k = Math.round(k * 1.3); if (farmHas('sunny')) k = Math.round(k * 1.1); if (save.pet === 'sproutly') k = Math.round(k * 1.05); save.coins += k; me.earned += k; save.stats.coinsEarned = (save.stats.coinsEarned || 0) + Math.max(0, k); }
+function addCoins(k) { if (Net.color === 2) k = Math.round(k * 1.15); if (me.buffs.magnet > 0) k *= 2; if (lvl && lvl.remix) k = Math.round(k * 1.3); if (farmHas('sunny')) k = Math.round(k * 1.1); if (save.pet === 'sproutly') k = Math.round(k * 1.05); if (farmUpgradeHas('rollingtray')) k = Math.round(k * 1.05); save.coins += k; me.earned += k; save.stats.coinsEarned = (save.stats.coinsEarned || 0) + Math.max(0, k); }
 // v1.1 A3: "Resin drops from knocked-out enemies" (brief) - onKill() calls this for the killer instead of
 // spawning a separate physical pickup entity (simplification, disclosed in AGENT_NOTES/commit message: no
 // new pickup-item type, network sync or animation for it - just an instant grant, same as addCoins()).
@@ -1674,6 +1706,7 @@ function gainResin(amt) {
 }
 function addCooked(k) {
   if (k > 0 && save.pet === 'puffball') k = Math.round(k * 1.05);
+  if (k > 0 && farmUpgradeHas('hookah')) k = Math.round(k * 1.05);
   if (k < 0 && farmHas('chill')) k = Math.round(k * 0.7); // CHILL KUSH: fades 30% slower
   const was = me.cooked; me.cooked = Math.max(0, Math.min(100, me.cooked + k));
   if (k > 0 && was < 50 && me.cooked >= 50) { banner = { t: 120, a: 'YOU ARE COOKED!', b: 'THE SMOKE SPOT IS OPEN - KEEP GOING FOR ULTRA' }; SFX.power(); }
@@ -1769,10 +1802,14 @@ function hurt(dmg = 1, cookedLoss = 0, fromX) {
     return;
   }
   if (K.block && dmg > 0) { dmg = Math.max(0, Math.floor(dmg / 2)); popup(me.x - 16, sy(me.z) - 34, 'BLOCKED', '#9ac8ff'); if (dmg <= 0) { me.inv = 30; SFX.bump(); return; } }
-  me.hp -= dmg; me.inv = 70; me.vx = (fromX !== undefined ? Math.sign(me.x - fromX) || -me.face : -me.face) * 2.2; me.vh = 2;
+  // v1.2 (Step 9.3): the SMOKE CLOAK's own perk, beyond its flat HP - a bigger puff of cover smoke and a
+  // longer invincibility window ("cloak" - you slip away in the smoke), on top of every other armor's
+  // plain +hearts.
+  const cloaked = save.armor.includes('cloak');
+  me.hp -= dmg; me.inv = cloaked ? 100 : 70; me.vx = (fromX !== undefined ? Math.sign(me.x - fromX) || -me.face : -me.face) * 2.2; me.vh = 2;
   me.puffed = false; me.combo = 0; shake = 10; hitstop = 4;
   if (cookedLoss) { addCooked(-cookedLoss); popup(me.x - 16, sy(me.z) - 34, 'BUZZKILL -' + cookedLoss + '%', '#ff8a8a'); }
-  SFX.hurt(); puff(me.x, sy(me.z, me.h) - 10, 5, ['#ffffff']); bleed(me.x, me.z, me.h, 5, me.vx > 0 ? 1 : -1);
+  SFX.hurt(); puff(me.x, sy(me.z, me.h) - 10, cloaked ? 14 : 5, cloaked ? ['#ffffff', '#e4b3ff', '#c070ff'] : ['#ffffff']); bleed(me.x, me.z, me.h, 5, me.vx > 0 ? 1 : -1);
   if (me.hp <= 0) knockedOut();
 }
 function knockedOut() {
@@ -2117,6 +2154,17 @@ function attack(charged) {
     me.puffed = false; me.flaps = 0; SFX.exhale(); me.atkCd = 16; me.atkT = 10;
     shots.push({ mine: true, x: me.x + me.face * 10, z: me.z, h: me.h + 8, vx: me.face * 3.6, life: 26, dmg: 2, kind: 5, hit: new Set() });
     Net.send({ t: 'fx', k: 5, x: Math.round(me.x), y: Math.round(me.z), f: me.face, h: Math.round(me.h) });
+    return;
+  }
+  // v1.2 (Step 9.3): the Gravity Bong Cannon (ENV_WEAPONS.gravitybongcannon, `ultimate: true`) - only
+  // usable at Ultra (100% Cooked), reuses the tested ultimateHigh() screen-wide blast, and is spent
+  // entirely (unequipped) the instant it fires rather than going back on cooldown like a normal weapon.
+  if (wildActive && w.ultimate) {
+    if (me.cooked < 100) { SFX.bump(); me.atkCd = 14; popup(me.x - 24, sy(me.z) - 34, 'NEEDS ULTRA (100% COOKED)', '#8a809a'); return; }
+    me.atkCd = w.cd; me.atkT = 14;
+    ultimateHigh();
+    banner = { t: 130, a: 'GRAVITY BONG BLAST!', b: 'ONE-TIME ULTIMATE - THE CANNON IS SPENT' };
+    me.envWeapon = null; me.wildOn = false;
     return;
   }
   // v1.1 A3: Wild-weapon charge bar. A held Wild weapon below its per-swing cost still "attacks" (so its
@@ -3210,6 +3258,9 @@ function drawProp(p) {
     R(ctx, P.k, x - 7, y - 18, 14, 18); R(ctx, '#9aa0b8', x - 6, y - 17, 12, 16); R(ctx, '#c8ccdc', x - 6, y - 17, 3, 16);
     R(ctx, P.k, x - 8, y - 20, 16, 3); R(ctx, '#7a8098', x - 7, y - 19, 14, 1); R(ctx, P.k, x - 4, y - 12, 8, 1);
   } else if (p.kind === 'secret') {
+    // v1.2 (Step 9.3): the BLACKLIGHT farm upgrade makes this glow purple and visible on screen at any
+    // distance, instead of only sparkling gold once you're basically on top of it.
+    if (farmUpgradeHas('blacklight')) { ctx.globalAlpha = 0.5 + 0.3 * Math.sin(frame / 10); ctx.fillStyle = '#c070ff'; ctx.beginPath(); ctx.arc(x, y - 8, 14, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
     R(ctx, P.k, x - 8, y - 16, 16, 16); R(ctx, '#d9a334', x - 7, y - 15, 14, 14); R(ctx, '#ffe6a0', x - 7, y - 15, 14, 2);
     R(ctx, P.k, x - 7, y - 9, 14, 1); R(ctx, P.k, x - 1, y - 15, 1, 14); R(ctx, '#8a5024', x - 7, y - 2, 14, 1);
     if (frame % 40 < 20) { ctx.fillStyle = '#ffd84a'; ctx.fillRect(x - 1, y - 24, 2, 6); ctx.fillRect(x - 2, y - 22, 4, 2); }
@@ -3620,6 +3671,15 @@ function drawHUD() {
     text(goal, W / 2, 22, lvl.locked ? '#ff8a8a' : '#fff6b0', gs, 'center');
     if (me.cooked >= 50 && !lvl.locked && lvl.spot.x > camX + W && frame % 30 < 20) { text('SMOKE SPOT', W - 44, 96, '#c8ffa0', 1, 'center'); R(ctx, '#c8ffa0', W - 10, 95, 4, 7); R(ctx, '#c8ffa0', W - 6, 97, 2, 3); }
   }
+  // v1.2 (Step 9.3): the BLACKLIGHT farm upgrade's perk - an off-screen compass hint toward this level's
+  // unbroken secret stash, same off-screen-arrow shape the SMOKE SPOT hint above already uses.
+  if (farmUpgradeHas('blacklight') && state === 'play') {
+    const secretProp = lvl.props.find(p => p.kind === 'secret' && !p.broken);
+    if (secretProp && frame % 20 < 14) {
+      const onL = secretProp.x < camX, onR = secretProp.x > camX + W;
+      if (onL || onR) { const hx = onL ? 8 : W - 8; text('SECRET', hx, 106, '#c070ff', 1, 'center'); R(ctx, '#c070ff', hx - 2, onL ? 112 : 112, 4, 4); }
+    }
+  }
   if (me.combo >= 3) {
     const col = me.combo >= 10 ? (settings.reduceFlash ? '#e4b3ff' : ['#c8ffa0', '#e4b3ff', '#ffd84a', '#ffffff'][Math.floor(frame / 4) % 4]) : '#fff';
     text(me.combo + 'x COMBO', W / 2, 22, col, 1, 'center');
@@ -3670,7 +3730,9 @@ function drawMap(y) {
 // ============================================================
 let shopTab = 0;
 const SHOP_TABS = ['ALL', 'WEAPONS', 'ARMOR', 'ITEMS', 'AMMO', 'UPGRADES'];
-const SHOP_TAB_OF = { armor: 'ARMOR', item: 'ITEMS', use: 'ITEMS', coreup: 'UPGRADES' };
+// v1.2 (Step 9.3): FARM_UPGRADES/FARM_COSMETICS are sold in the Head Shop's UPGRADES tab (see shopEntries()
+// below) rather than added as more fixed rows to the already-full-looking Farm hub screen.
+const SHOP_TAB_OF = { armor: 'ARMOR', item: 'ITEMS', use: 'ITEMS', coreup: 'UPGRADES', farmup: 'UPGRADES', cosmetic: 'UPGRADES' };
 function shopEntries(all) {
   // v1.1 A2: one Core-weapon upgrade entry for whichever homie you're playing, 1-10 levels instead of the
   // old flat 1-3, paid in coins + Resin (+ a Seed on odd target levels) per the brief's example cost curve
@@ -3684,6 +3746,10 @@ function shopEntries(all) {
     desc: capReached ? 'LOCKED UNTIL YOU BEAT THE NEXT WORLD MINI-BOSS/BOSS (CAP LV' + save.coreCap + ')' : lv === 2 ? WEAPON_LV3[w.id] : '+1 DAMAGE AND STRONGER EFFECTS. MAX LV10 (' + lv + '/10)',
   }];
   const uses = Object.entries(ITEMS).map(([id, d]) => ({ kind: 'use', id, ...d, desc: d.desc + '. SAVED IN YOUR BAG' }));
+  // v1.2 (Step 9.3): one-time permanent farm upgrades (a small perk each) and pure-cosmetic farm decorations,
+  // both sold here as ordinary coin-priced UPGRADES-tab goods - see farmUpgradeHas()/farmCosmeticHas().
+  const farmUps = FARM_UPGRADES.map(u => ({ kind: 'farmup', id: u.id, icon: u.id, name: u.name, price: u.price, desc: u.desc }));
+  const cosmetics = FARM_COSMETICS.map(c => ({ kind: 'cosmetic', id: c.id, icon: c.id, name: c.name, price: c.price, desc: c.desc }));
   const nav = [{ kind: 'ready', name: results && !results.shopOnly && Net.online ? 'READY - BACK TO THE MAP' : 'BACK TO THE MAP', icon: 'puff', price: 0, desc: 'PICK YOUR NEXT MISSION ON THE WORLD MAP. ESC WORKS TOO' }, { kind: 'quit', name: 'SAVE + MAIN MENU', icon: 'puff', price: 0, desc: 'YOUR COINS + GEAR ARE SAVED. COME BACK ANYTIME' }];
   const armorTier = Math.max(-1, ...save.armor.map(id => ARMORS.findIndex(a => a.id === id))); // ARMOR is an upgrade line now: only the highest tier owned counts (also migrates old saves that stacked several pieces)
   const shopFixed = SHOP.map(g => {
@@ -3693,7 +3759,7 @@ function shopEntries(all) {
     const discount = armorTier >= 0 ? ARMORS[armorTier].price : 0;
     return { ...g, price: Math.max(10, g.price - discount), desc: g.desc + (armorTier >= 0 ? ' (UPGRADE FROM ' + ARMORS[armorTier].name + ' - REPLACES IT)' : '') };
   });
-  const goods = [...ups, ...uses, ...shopFixed];
+  const goods = [...ups, ...uses, ...shopFixed, ...farmUps, ...cosmetics];
   const tab = SHOP_TABS[shopTab];
   return [...nav, ...(all || tab === 'ALL' ? goods : goods.filter(g => SHOP_TAB_OF[g.kind] === tab))];
 }
@@ -3703,6 +3769,8 @@ function itemStatus(it) {
   if (it.kind === 'use' && save[it.id] >= itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0)) return 'MAX ' + (itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0));
   if (it.kind === 'coreup') { if (coreLevel() >= 10) return 'MAXED'; if (it.capReached) return 'LOCKED'; }
   if (it.kind === 'farm') { if (save.farm) return 'YOURS!'; if (!save.killjoyBeaten) return 'LOCKED'; } // v1.2 (Step 7.5)
+  if (it.kind === 'farmup' && farmUpgradeHas(it.id)) return 'OWNED';
+  if (it.kind === 'cosmetic' && farmCosmeticHas(it.id)) return 'OWNED';
   if (it.kind === 'ready') return readyInfo && readyInfo.me ? 'WAITING ' + readyInfo.n + '/' + readyInfo.of : '';
   return null;
 }
@@ -3810,6 +3878,8 @@ function shopConfirm() {
   else if (it.kind === 'item') save.pouch = true;
   else if (it.kind === 'use') save[it.id] = Math.min(itemCap(it.id) + (Net.color === 3 && it.id === 'munchie' ? 1 : 0), save[it.id] + 1);
   else if (it.kind === 'farm') { save.farm = true; results.farmScene = true; SFX.flag(); }
+  else if (it.kind === 'farmup') { save.farmUpgrades[it.id] = true; }
+  else if (it.kind === 'cosmetic') { save.farmCosmetics[it.id] = true; }
   persist(); SFX.buy(); results.msg = 'BOUGHT ' + it.name + '!';
 }
 function drawShop() {
@@ -3839,6 +3909,10 @@ function drawShop() {
     R(g, '#4a2a5a', 0, 118, W, 74);
     for (let i = 0; i < 14; i++) g.drawImage(PLANT, 8 + i * 22, 110 + (i % 2) * 8);
     g.drawImage(ICONS.farm, W / 2 - 6, 60);
+    // v1.2 (Step 9.3): the two purely-cosmetic farm decorations, shown here once bought (see farmCosmeticHas()) -
+    // this sunset scene is the most visible "your farm" backdrop in the game, so it's where they show up.
+    if (farmCosmeticHas('tapestry')) g.drawImage(ICONS.tapestry, 16, 66);
+    if (farmCosmeticHas('lavalamp')) g.drawImage(ICONS.lavalamp, W - 26, 96);
     hot(0, 0, W, H, () => shopConfirm());
     text('YOU BOUGHT THE POT FARM!', W / 2, 20, '#2a1838', 2, 'center');
     text('THE CREW NEVER HAS TO WORRY AGAIN', W / 2, 40, '#2a1838', 1, 'center');
@@ -4972,5 +5046,8 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   // v1.2 (Step 7) debug hooks: grades, Killjoy-beaten, Astral-unlock, for the automated seeded-save check.
   computeGrade, saveBestGrade, astralUnlocked, get crewLivesStart() { return lvl && lvl.livesStart; },
   ASTRAL_LEVEL, isAstralLevel, farmHubEntries, get slowmo() { return slowmo; }, set slowmo(v) { slowmo = v; },
-  ITEMS, useItem, giveItem, itemCap };
+  ITEMS, useItem, giveItem, itemCap,
+  // v1.2 (Step 9.3) debug hooks: Gravity Bong Cannon / Smoke Cloak / farm upgrades+cosmetics, for the
+  // automated same-page test.
+  FARM_UPGRADES, FARM_COSMETICS, farmUpgradeHas, farmCosmeticHas };
 })();

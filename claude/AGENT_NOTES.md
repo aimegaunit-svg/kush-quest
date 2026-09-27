@@ -1023,3 +1023,47 @@ still pass. `node --check` clean on both `game.js` and `server.js`.
 Pushed to `main`. Next: Step 9 item 3 (gravity bong ultimate charging, hookah/blacklight/rolling-tray farm
 upgrades, tapestry/lava-lamp cosmetics, Smoke Cloak armor) - deferred, not started - then Step 10 (Co-op
 and personality), Step 11 (Replay and sharing), Step 12 (Final full-game test).
+
+## Step 9 item 3 (Gear) - Gravity Bong Cannon, Smoke Cloak, farm upgrades/cosmetics
+
+**Gravity Bong Cannon** (`ENV_WEAPONS.gravitybongcannon`, marked `ultimate: true`): unlike every other Wild
+weapon it doesn't drain Resin per swing (`cost:0, charge:1`, so the bag's CHARGE X/Y readout always just
+says "READY"). It can only be FIRED at Ultra (100% Cooked) - swinging it below that plays a bump sound +
+"NEEDS ULTRA" popup and does nothing else. Firing it reuses the existing, already-tested `ultimateHigh()`
+screen-wide blast (same one the Ultimate High skill uses), then the cannon is entirely spent: `me.envWeapon
+= null; me.wildOn = false` right in `attack()`'s new early-return branch, so it doesn't go back on cooldown
+like a normal weapon - it's gone, matching the brief's "one-time ultimate" framing. Still obtainable via
+the normal rack/rare-drop/special-chest sources from item 2 (`WILD_POOL_BY_THEME.hq`).
+
+**Smoke Cloak** (new top armor tier, `ARMORS`, +4 hearts, 450 coins, replaces Rasta Crown same as every
+prior tier upgrade): its own perk beyond flat hearts - `hurt()` now checks `save.armor.includes('cloak')`
+and, when true, extends invincibility frames 70->100 and swaps the on-hit puff for a bigger, purple-tinted
+one. New `ICONS.cloak` sprite.
+
+**Farm upgrades/cosmetics**: `FARM_UPGRADES` (Hookah +5% Cooked from everything, Rolling Tray +5% Hash
+Coins, Blacklight - secret stashes glow on screen + an off-screen compass hint) and `FARM_COSMETICS`
+(Tapestry, Lava Lamp - pure decoration, no gameplay effect), each a one-time coin purchase tracked in new
+`save.farmUpgrades`/`save.farmCosmetics` plain-object maps (added to `defaultSave()` + migrated in
+`loadSlot()` for old saves). Decided mid-implementation to sell these through the Head Shop's existing
+scrollable UPGRADES tab (`shopEntries()`/`itemStatus()`/`shopConfirm()`/`SHOP_TAB_OF`, new `kind: 'farmup'`
+/`kind: 'cosmetic'` entries slotting into the exact same generic kind-dispatch pattern as `armor`/`item`/
+`use`/`coreup`) rather than adding more fixed rows to `drawFarmHub()`, which was already visually packed
+(4 plots + 5 pets + astral entry + back button, no scroll mechanism, close to the fixed 192px canvas
+height). Wired the actual effects: `hookah` into `addCooked()`, `rollingtray` into `addCoins()`,
+`blacklight`'s on-screen stash glow into `drawProp()`'s `secret` branch and its off-screen compass hint
+into `drawHUD()` (same off-screen-arrow shape the existing SMOKE SPOT hint already uses). The two cosmetics
+are drawn, when owned, in the Step 8 sunset `farmScene` screen (the game's most visible "your farm"
+backdrop) - new `ICONS.hookah`/`rollingtray`/`blacklight`/`tapestry`/`lavalamp` sprites.
+
+**Scope trim, called out explicitly in code**: the brief's Blacklight "secret rooms" language is scoped
+down to a real, visible perk (on-screen glow + off-screen hint) rather than a new hidden-room level-geometry
+system, which is out of scope for this pass.
+
+**Testing:** `kq_step9b_test.js` (same-page, no online/2-tab need - nothing here is a new networked
+message) - Gravity Bong Cannon can't fire below 100% Cooked and does fire + self-unequip at 100%; Smoke
+Cloak extends hit invincibility 70->100; farm upgrades/cosmetics show up as real UPGRADES-tab shop entries,
+are buyable, and read back as OWNED via `farmUpgradeHas`/`farmCosmeticHas` after purchase. Re-ran every
+prior regression script (1/2/6/7/8/9/9online) - all still pass. `node --check` clean on `game.js`.
+
+Pushed to `main`. Next: Step 10 (Co-op and personality), Step 11 (Replay and sharing), Step 12 (Final
+full-game test).

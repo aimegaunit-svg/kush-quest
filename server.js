@@ -313,7 +313,13 @@ function handle(client, m) {
       const out = { t: m.t, id: client.id, i: m.i | 0, l: m.l | 0, d: Math.max(0, Math.min(12, m.d | 0)), dir: Math.sign(+m.dir || 0), s: m.s ? 1 : 0, k: Math.max(0, Math.min(20, m.k | 0)), who: String(m.who || '').slice(0, 12),
         b: Math.max(0, Math.min(8, m.b | 0)), sp: m.sp ? 1 : 0, st: Math.max(0, Math.min(150, m.st | 0)), bl: Math.max(0, Math.min(8, m.bl | 0)), kb: Math.max(0, Math.min(5, +m.kb || 1)), hr: m.hr ? 1 : 0,
         // v1.4 (Part 2.7): 'steal' widened with `item` - the seagull's stolen quick-item id (see game.js's seagullSteal()).
-        item: String(m.item || '').slice(0, 16) };
+        item: String(m.item || '').slice(0, 16),
+        // bugfix 2026-09-27: `a` (air-hit flag, e.g. Owl Narc's air-hit-required full-damage rule) and `dr`
+        // (dragon burn-mark flag) were being sent by the client (game.js's Net.send for 'hit') but silently
+        // dropped here, so non-host players could never properly air-hit an Owl or trigger a dragon-mark
+        // kill explosion online - only the host's own locally-applied hits worked. Now relayed like every
+        // other flag on this message.
+        a: m.a ? 1 : 0, dr: m.dr ? 1 : 0 };
       if (m.t === 'rev' || m.t === 'pass') broadcast(room, out, client.id);
       else { const h = room.players.get(room.host); if (h && room.host !== client.id) h.client.send(out); }
       break;

@@ -349,7 +349,7 @@ function start(opts) {
   if (opts.spectate && online) S.mode = 'wait';
   else {
     if (opts.vehicle && !online) { S.mode = 'card'; soloSeats(); }
-    if (!online && !save.testDrive && !opts.noTestDrive) { S.afterPractice = S.mode; S.car = 'van'; soloSeats(); S.practice = true; setupDrive(); }
+    if (opts.vehicle && !online && !save.testDrive && !opts.noTestDrive) beginPractice(); // ride already chosen -> straight to the test drive
     if (opts.vehicle && online && isNetHost()) hostStart(opts.vehicle);
   }
   makeCanvas(opts.mount, opts.scale);
@@ -371,6 +371,7 @@ function garageOf(save) {
   const paint = save && ['tiedye', 'flames', 'leaf'].includes(save.vanPaint) ? save.vanPaint : null;
   return { up: { tires: lv(u.tires), engine: lv(u.engine), stash: lv(u.stash) }, paint, deco: { dice: !!d.dice, fresh: !!d.fresh } };
 }
+function beginPractice() { S.afterPractice = 'card'; soloSeats(); S.practice = true; setupDrive(); }
 function soloSeats() { S.seats = [S.me, null, null, null]; S.seed = (Math.random() * 1e9) | 0; }
 function hostStart(forceCar) {
   let car = forceCar;
@@ -396,15 +397,26 @@ function setupDrive() {
   const up = S.look.up;
   const shit = S.car === 'shitbox';
   const len = S.practice ? 700 : S.solo ? 1400 : 1900;
+  // GAS MONEY: every real drive costs coins up front (paid from the save, so a bad drive is a net loss).
+  // A clean run earns it back and a bit more; a messy one doesn't.
+  if (!S.practice && S.gas == null) {
+    const tier = Math.max(0, ['park', 'beach', 'suburb', 'city', 'downtown', 'woods', 'hq'].indexOf(S.world));
+    const cost = 12 + tier * 3, have = Math.max(0, Math.floor(+S.save.coins || 0));
+    S.gas = Math.min(cost, have); S.gasCost = cost;
+    if (S.gas > 0) { S.save.coins = have - S.gas; try { if (typeof S.save.__persist === 'function') S.save.__persist(); } catch (e) {} }
+  }
   S.segs = buildRoad(len);
   S.trackLen = S.segs.length * SEG;
   S.forkAt = Math.floor(S.segs.length * 0.25);
   S.swapAt = Math.floor(S.segs.length * (0.4 + rng() * 0.2));
   S.theme = THEMES[S.world] || THEMES.park;
   for (const sg of S.segs) {
+    if (sg.i % 4 === 2) sg.props.push({ k: 'post', x: rng() < 0.5 ? -1.22 : 1.22 });
+    if (sg.i % 3 === 1) sg.props.push({ k: ['tuft', 'tuft', 'flower', 'rock'][rng() * 4 | 0], x: (rng() < 0.5 ? -1 : 1) * (1.5 + rng() * 2) });
+    if (sg.i % 97 === 50) sg.props.push({ k: 'mile', x: 1.35, n: 42 - Math.floor(sg.i / 97) });
     if (sg.i % 8 === 0) sg.props.push({ k: S.theme.props[rng() * S.theme.props.length | 0], x: (rng() < 0.5 ? -1 : 1) * (1.4 + rng() * 1.2), sign: SIGNS[rng() * SIGNS.length | 0] });
     if (!S.practice && sg.i > 60 && sg.i < S.segs.length - 60) {
-      if (sg.i % 70 === 0) { const lx = rng() * 1.4 - 0.7; for (let j = 0; j < 5; j++) S.segs[sg.i + j * 3].items.push({ k: 'coin', x: lx }); }
+      if (sg.i % 120 === 0) { const lx = rng() * 1.4 - 0.7; for (let j = 0; j < 4; j++) S.segs[sg.i + j * 3].items.push({ k: 'coin', x: lx }); }
       else if (sg.i % 173 === 0) sg.items.push({ k: 'snacks', x: rng() * 1.4 - 0.7 });
       else if (sg.i % 211 === 0) sg.items.push({ k: rng() < 0.5 ? 'incense' : 'fresh', x: rng() * 1.4 - 0.7 });
       else if (sg.i % 257 === 0) sg.items.push({ k: 'nug', x: rng() * 1.4 - 0.7 });
@@ -456,7 +468,7 @@ function takeItem(seg, idx) { const it = S.segs[seg].items[idx]; if (!it || it.g
 const segAt = z => S.segs[Math.floor(z / SEG) % S.segs.length];
 function avgCooked() { const v = Object.values(S.pc || {}); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : S.cooked0; }
 function bakedLevel() { const c = avgCooked(); return c >= 99.5 ? 3 : c >= 90 ? 2 : c >= 40 ? 1 : 0; }
-const coinMul = () => [1, 1.5, 2, 3][bakedLevel()];
+const coinMul = () => [1, 1, 1.5, 2][bakedLevel()];
 const BAKED = ['SOBER-ISH', 'BAKED', 'COOKED', 'ASTRAL HIGHWAY'];
 function addHeat(n) { S.heat = Math.max(0, Math.min(100, S.heat + n)); }
 function half() { return S.swapped ? 1 : 0; }
@@ -505,7 +517,7 @@ function updatePick(dt) {
   if (prev !== S.pickSel) SFX.sel();
   const car = S.pickSel ? 'shitbox' : 'van';
   if (!S.net) {
-    if (go) { S.car = car; S.save.lastRide = car; soloSeats(); S.mode = 'card'; SFX.pickup(); }
+    if (go) { S.car = car; S.save.lastRide = car; soloSeats(); S.mode = 'card'; SFX.pickup(); if (!S.save.testDrive && !S.opts.noTestDrive) beginPractice(); }
     return;
   }
   // online: everyone votes, 5 second timer, host tallies (no votes / tie -> van)
@@ -729,7 +741,7 @@ function updateDrive(rdt) {
     banner(S.route === 'fast' ? 'FAST ROUTE' : 'SCENIC ROUTE', S.route === 'fast' ? 'SHORTER. MORE COPS.' : 'LONGER. MORE COINS.', '#8ef0b0', 2);
     if (S.route === 'fast') S.trackLen = Math.floor(S.segs.length * 0.88) * SEG;
     else {
-      for (let i = segIdx + 20; i < S.segs.length - 60; i += 45) { const lx = Math.random() * 1.4 - 0.7; for (let j = 0; j < 6; j++) addItem(i + j * 3, 'coin', lx); }
+      for (let i = segIdx + 20; i < S.segs.length - 60; i += 100) { const lx = Math.random() * 1.4 - 0.7; for (let j = 0; j < 4; j++) addItem(i + j * 3, 'coin', lx); }
       addItem(Math.floor(S.segs.length * 0.7), 'secret', 0);
     }
   }
@@ -751,7 +763,7 @@ function updateDrive(rdt) {
       else if (it.k === 'incense') { addHeat(-25); sfx('pickup'); banner('INCENSE: HEAT DOWN', '', '#b45cff', 1, true); }
       else if (it.k === 'fresh') { addHeat(-15); sfx('pickup'); banner('AIR FRESHENER', '', '#8ef0b0', 1, true); }
       else if (it.k === 'nug') { for (const id in S.pc) S.pc[id] = Math.min(100, S.pc[id] + 15); sfx('pickup'); }
-      else if (it.k === 'secret') { S.coins += 25; S.secret = true; sfx('banner'); banner('SECRET STASH!', '+25 COINS', '#ffd23f', 2); }
+      else if (it.k === 'secret') { S.coins += 15; S.secret = true; sfx('banner'); banner('SECRET STASH!', '+15 COINS', '#ffd23f', 2); }
     });
   }
   // hazards: roadblocks, cones, potholes, oil
@@ -759,14 +771,14 @@ function updateDrive(rdt) {
     const si = i % S.segs.length;
     S.segs[si].items.forEach((c, j) => {
       const hz = HAZ[c.k]; if (!hz || c.got || Math.abs(c.x - S.x) > hz.w || !takeItem(si, j)) return;
-      if (c.k === 'block') { crash(null, 'ROADBLOCK!'); loseCoins(5); addHeat(10); }
-      else if (c.k === 'cone') { S.shake = Math.max(S.shake, 2); S.speed *= 0.85; loseCoins(1); sfx('splat'); for (let k = 0; k < 6; k++) S.fx.push({ x: W / 2 + Math.random() * 20 - 10, y: 150, vx: Math.random() * 160 - 80, vy: -80 - Math.random() * 60, g: 260, t: 0.9, col: k % 2 ? '#f80' : '#fff', r: 4 }); }
-      else if (c.k === 'pothole') { S.shake = 5; S.speed *= 0.6; S.damage++; loseCoins(2); sfx('crash'); banner('POTHOLE!', '', '#ff6b6b', 0.8, true); }
+      if (c.k === 'block') { crash(null, 'ROADBLOCK!'); loseCoins(6); addHeat(10); }
+      else if (c.k === 'cone') { S.shake = Math.max(S.shake, 2); S.speed *= 0.85; loseCoins(2); sfx('splat'); for (let k = 0; k < 6; k++) S.fx.push({ x: W / 2 + Math.random() * 20 - 10, y: 150, vx: Math.random() * 160 - 80, vy: -80 - Math.random() * 60, g: 260, t: 0.9, col: k % 2 ? '#f80' : '#fff', r: 4 }); }
+      else if (c.k === 'pothole') { S.shake = 5; S.speed *= 0.6; S.damage++; loseCoins(3); sfx('crash'); banner('POTHOLE!', '', '#ff6b6b', 0.8, true); }
       else if (c.k === 'oil') { S.spin = 1.1; sfx('horn'); banner('OIL SLICK!', 'HOLD ON...', '#b45cff', 1, true); }
     });
   }
   // off-road: trees, lamps, houses hurt
-  if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of sg.props) if (pr.k !== 'bush' && Math.abs(pr.x - S.x) < 0.35) { crash(null, 'OUCH! STAY ON THE ROAD'); loseCoins(3); S.x *= 0.8; }
+  if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of sg.props) if (!SOFT[pr.k] && Math.abs(pr.x - S.x) < 0.35) { crash(null, 'OUCH! STAY ON THE ROAD'); loseCoins(3); S.x *= 0.8; }
   S.nextHaz -= dt;
   if (!S.practice && S.nextHaz <= 0 && segIdx < S.segs.length - 100) {
     S.nextHaz = 2.5 + Math.random() * 3 / (1 + 0.3 * bakedLevel());
@@ -782,8 +794,8 @@ function updateDrive(rdt) {
     c.z += c.sp * dt;
     c.rel = c.z - S.pos;
     const dx = Math.abs(c.x - S.x);
-    if (c.rel > -SEG * 0.3 && c.rel < SEG * 0.8 && dx < 0.38) { crash(c, 'CRASH!'); loseCoins(3 + Math.floor(S.coins * 0.1)); }
-    else if (!c.passed && c.rel < 0 && dx < 0.7 && S.speed > S.maxSp * 0.6) { c.passed = true; S.coins += 1; sfx('sel'); pop('CLOSE CALL +1', '#8ef0b0'); }
+    if (c.rel > -SEG * 0.3 && c.rel < SEG * 0.8 && dx < 0.38) { crash(c, 'CRASH!'); loseCoins(4 + Math.floor(S.coins * 0.15)); }
+    else if (!c.passed && c.rel < 0 && dx < 0.7 && S.speed > S.maxSp * 0.6) { c.passed = true; if ((S.ccCd || 0) <= S.t) { S.ccCd = S.t + 4; S.coins += 1; sfx('sel'); pop('CLOSE CALL +1', '#8ef0b0'); } }
     if (c.rel < -SEG) c.passed = true;
   }
   S.traffic = S.traffic.filter(c => c.rel > -SEG * 4 && c.rel < SEG * DRAW);
@@ -819,7 +831,7 @@ function updateDrive(rdt) {
       addHeat(dt * 2);
       if (c.t > (S.solo ? 5 : 3.5)) { c.stage = 'ram'; c.t = 0; }
     } else if (c.stage === 'ram') {
-      if (c.t > 0.4 && !c.rammed) { c.rammed = true; S.shake = 5; S.damage++; loseCoins(4); addHeat(8); pop('RAMMED!', '#ff3b3b'); sfx('crash'); S.x += c.side * -0.4; }
+      if (c.t > 0.4 && !c.rammed) { c.rammed = true; S.shake = 5; S.damage++; loseCoins(5); addHeat(8); pop('RAMMED!', '#ff3b3b'); sfx('crash'); S.x += c.side * -0.4; }
       if (c.t > 1.5) { c.stage = 'side'; c.t = 0; c.rammed = false; }
     }
     S.siren = Math.max(S.siren, Math.max(0, 1 + c.rel / 900));
@@ -850,7 +862,7 @@ function updateDrive(rdt) {
     S.lockT -= dt;
     if (!S.cops.length) { S.lockT = 0; S.heat = 60; banner('SHOOK THEM!', '', '#8ef0b0', 1.5); }
     else if (S.lockT <= 0) {
-      S.caught++; loseCoins(10 + Math.floor(S.coins * 0.15)); S.sirensSlow = 3; S.heat = 50; S.cops.length = 0;
+      S.caught++; loseCoins(10 + Math.floor(S.coins * 0.3)); S.sirensSlow = 3; S.heat = 50; S.cops.length = 0;
       sfx('caught'); banner('BUSTED!', 'COINS CONFISCATED. SIRENS...', '#ff3b3b', 2.5);
     }
   }
@@ -863,6 +875,7 @@ function updateDrive(rdt) {
   if (S.practice) { if (S.pos >= S.trackLen - SEG * 60) S.pos = SEG * 40; }
   else if (S.pos >= S.trackLen - SEG * 40) endDrive(false);
 }
+const SOFT = { bush: 1, tuft: 1, flower: 1, rock: 1, post: 1, mile: 1 };
 const HAZ = { block: { w: 0.4 }, cone: { w: 0.3 }, pothole: { w: 0.3 }, oil: { w: 0.35 } };
 // floating text popup above the car
 function pop(txt, col) { S.fx.push({ x: W / 2 + Math.random() * 16 - 8, y: 130, vx: 0, vy: -30, t: 1, col, txt }); if (S.auth && S.net) S.out.push(['pop', txt, col]); }
@@ -871,7 +884,7 @@ function loseCoins(n) {
   n = Math.min(Math.floor(S.coins), n); if (n <= 0) return;
   S.coins -= n; S.lost += n; pop('-' + n + ' COINS', '#ff6b6b');
   for (let i = 0; i < Math.min(14, n * 2); i++) S.fx.push({ x: W / 2 + Math.random() * 30 - 15, y: 150, vx: Math.random() * 200 - 100, vy: -90 - Math.random() * 80, g: 300, t: 1.1, col: '#ffd23f', r: 4 });
-  if (!S.practice) { const si = Math.floor(S.pos / SEG) + 25, lx = Math.random() * 1.2 - 0.6; for (let j = 0; j < Math.ceil(n / 2); j++) addItem(si + j * 3, 'coin', lx + Math.sin(j) * 0.2); }
+  if (!S.practice) { const si = Math.floor(S.pos / SEG) + 25, lx = Math.random() * 1.2 - 0.6; for (let j = 0; j < Math.floor(n / 3); j++) addItem(si + j * 3, 'coin', lx + Math.sin(j) * 0.2); }
 }
 function crash(car, why) {
   if (S.crashCd > S.t) return;
@@ -928,7 +941,7 @@ function endPractice() {
   Object.assign(S, keep, { handle, heard: {}, solo: true });
   S.car = keep.opts.vehicle || keep.save.lastRide || 'van'; S.pickSel = S.car === 'shitbox' ? 1 : 0;
   try { if (typeof keep.save.__persist === 'function') keep.save.__persist(); } catch (e) {}
-  if (back === 'card') { S.mode = 'card'; soloSeats(); } else S.mode = 'pick';
+  S.mode = 'card'; soloSeats();
 }
 
 // ---------------- end / results ----------------
@@ -952,7 +965,7 @@ function computeResults(quit) {
   return {
     score, awards: awards.slice(0, 4), coins: Math.floor(S.coins), caught: S.caught, shaken: S.shaken, crashes: S.crashes, route: S.route || 'fast',
     snacks: S.snacks, munchies: Math.min(2, Math.floor(S.snacks / 5)), buff: score >= 800 ? (Math.random() < 0.5 ? 'cooked10' : 'soda10') : null,
-    drivers: S.drivers.map(id => id == null ? '' : nameOf(id)), secret: !!S.secret,
+    drivers: S.drivers.map(id => id == null ? '' : nameOf(id)), secret: !!S.secret, gas: S.gas || 0, lost: S.lost || 0,
   };
 }
 function endDrive(quit, res) {
@@ -986,6 +999,7 @@ function project(p, camX, camY, camZ) {
   const sc = CAMD / cz;
   return { x: Math.round(W / 2 + sc * cx * W / 2), y: Math.round(H / 2 - sc * cy * H / 2), w: Math.round(sc * ROADW * W / 2), sc };
 }
+function shade(hex, k) { const n = parseInt(hex.slice(1, 7).padEnd(6, '0'), 16); const f = v => Math.max(0, Math.min(255, Math.round(v * k))); if (hex.length === 4) { const r = parseInt(hex[1] + hex[1], 16), g = parseInt(hex[2] + hex[2], 16), b = parseInt(hex[3] + hex[3], 16); return 'rgb(' + f(r) + ',' + f(g) + ',' + f(b) + ')'; } return 'rgb(' + f(n >> 16) + ',' + f(n >> 8 & 255) + ',' + f(n & 255) + ')'; }
 function poly(x1, y1, w1, x2, y2, w2, col) {
   ctx.fillStyle = col; ctx.beginPath();
   ctx.moveTo(x1 - w1, y1); ctx.lineTo(x2 - w2, y2); ctx.lineTo(x2 + w2, y2); ctx.lineTo(x1 + w1, y1); ctx.closePath(); ctx.fill();
@@ -1011,6 +1025,17 @@ function draw() {
   // parallax hills
   const cur = segAt(S.pos);
   S.bgX = (S.bgX || 0) + cur.curve * (S.speed / MAXSP) * 0.8;
+  // clouds (slow parallax) + far skyline
+  if (!S.night) { ctx.fillStyle = ultra ? hue(S.t * 60 + 200, 60, 85) : '#ffffffcc'; for (let i = 0; i < 6; i++) { const cx = ((i * 71 - S.bgX * 0.3 - S.t * 3) % (W + 80) + W + 80) % (W + 80) - 40, cy = 14 + (i * 37) % 40; ctx.fillRect(cx, cy, 34, 6); ctx.fillRect(cx + 6, cy - 4, 20, 5); ctx.fillRect(cx + 14, cy - 7, 10, 4); } }
+  const city = ['city', 'downtown', 'hq'].includes(S.world);
+  ctx.fillStyle = city ? (S.night ? '#140a24' : '#3a3050') : shade(th.hill, 0.55);
+  if (!city) for (let x = -4; x < W + 4; x += 2) { const u = x + S.bgX * 0.5, hh = 26 + Math.sin(u * 0.02) * 12 + Math.sin(u * 0.047) * 5; ctx.fillRect(x, H / 2 - hh + wob, 2, hh + 4); }
+  else for (let x = -12; x < W + 12; x += 12) {
+    const off = ((S.bgX * 0.5) % 12 + 12) % 12, k = Math.floor((x + S.bgX * 0.5) / 12);
+    const hh = 18 + (Math.abs(Math.sin(k * 12.9898) * 43758) % 1) * 30;
+    ctx.fillRect(x - off, H / 2 - hh + wob, 11, hh + 4);
+    if (S.night && k % 2) { ctx.fillStyle = '#ffd84a'; ctx.fillRect(x - off + 3, H / 2 - hh + 6 + wob, 2, 2); ctx.fillStyle = '#140a24'; }
+  }
   ctx.fillStyle = th.hill;
   for (let x = -4; x < W + 4; x += 2) { const hh = 14 + Math.sin((x + S.bgX) * 0.03) * 8 + Math.sin((x + S.bgX) * 0.011) * 10; ctx.fillRect(x, H / 2 - hh + wob, 2, hh + 4); }
 
@@ -1032,9 +1057,18 @@ function draw() {
     const alt = Math.floor(s.i / RUMBLE) % 2;
     const y1 = p1.y + wob, y2 = p2.y + wob;
     ctx.fillStyle = ultra ? hue(s.i * 8 + S.t * 90, 70, alt ? 35 : 30) : th.grass[alt]; ctx.fillRect(-4, y2, W + 8, y1 - y2 + 1);
+    if (!ultra) poly(p1.x, y1, p1.w * 1.4, p2.x, y2, p2.w * 1.4, shade(th.grass[alt], 0.8)); // dirt shoulder
     poly(p1.x, y1, p1.w * 1.15, p2.x, y2, p2.w * 1.15, ultra ? hue(s.i * 12, 90, 70) : th.rumble[alt]);
     poly(p1.x, y1, p1.w, p2.x, y2, p2.w, ultra ? hue(s.i * 5 + S.t * 40, 50, alt ? 32 : 28) : th.road[alt]);
-    if (alt) for (const lx of [-1 / 3, 1 / 3]) poly(p1.x + p1.w * lx, y1, p1.w * 0.02, p2.x + p2.w * lx, y2, p2.w * 0.02, th.lane);
+    const hs = (Math.imul(s.i, 2654435761) >>> 0);
+    if (!ultra) {
+      for (const ex of [-0.94, 0.94]) poly(p1.x + p1.w * ex, y1, p1.w * 0.018, p2.x + p2.w * ex, y2, p2.w * 0.018, '#eee'); // edge lines
+      if (hs % 17 === 0) poly(p1.x + p1.w * ((hs >> 8) % 100 / 100 - 0.5), y1, p1.w * 0.22, p2.x + p2.w * ((hs >> 8) % 100 / 100 - 0.5), y2, p2.w * 0.22, shade(th.road[0], 0.78)); // tar patch
+      if (hs % 29 === 3) { const cx = (hs >> 5) % 120 / 100 - 0.6; poly(p1.x + p1.w * cx, y1, p1.w * 0.01, p2.x + p2.w * (cx + 0.05), y2, p2.w * 0.01, shade(th.road[0], 0.55)); } // crack
+      if (hs % 53 === 7) for (const o of [-0.08, 0.08]) poly(p1.x + p1.w * (o + 0.2), y1, p1.w * 0.03, p2.x + p2.w * (o + 0.22), y2, p2.w * 0.03, shade(th.road[0], 0.6)); // skid marks
+      if (s.i % 60 === 30) poly(p1.x, y1, p1.w * 0.8, p2.x, y2, p2.w * 0.8, alt ? '#ddd' : th.road[alt]); // crosswalk-ish stripe band
+    }
+    if (Math.floor(s.i / 3) % 2) for (const lx of [-1 / 3, 1 / 3]) poly(p1.x + p1.w * lx, y1, p1.w * 0.02, p2.x + p2.w * lx, y2, p2.w * 0.02, th.lane);
     if (!S.route && s.i > S.forkAt - 5 && s.i < S.forkAt) poly(p1.x, y1, p1.w * 0.03, p2.x, y2, p2.w * 0.03, '#ff3b3b');
     maxY = p2.y;
     list.push(s);
@@ -1089,7 +1123,12 @@ function drawProp(pr, x, y, sc, clip) {
   else if (k === 'pine') { box(-3, 0, 6, 20, '#5a3a20'); box(-18, 15, 36, 20, '#1d5a28'); box(-12, 32, 24, 18, '#236a30'); box(-6, 48, 12, 14, '#2a7a38'); }
   else if (k === 'palm') { box(-3, 0, 6, 50, '#8a6a3a'); box(-22, 44, 44, 8, '#2a9a4a'); box(-14, 50, 28, 8, '#3fbf5a'); }
   else if (k === 'house') { box(-34, 0, 68, 36, '#e8d8b0'); box(-38, 34, 76, 14, '#a33'); box(-8, 0, 14, 20, '#6a4'); box(-26, 14, 12, 10, '#9cf'); box(14, 14, 12, 10, '#9cf'); }
-  else if (k === 'bush') { box(-16, 0, 32, 14, '#2d8a3e'); }
+  else if (k === 'bush') { box(-16, 0, 32, 14, '#2d8a3e'); box(-10, 10, 20, 8, '#3fae5a'); }
+  else if (k === 'tuft') { box(-6, 0, 3, 7, '#2a7a38'); box(-1, 0, 3, 10, '#36994e'); box(4, 0, 3, 6, '#2a7a38'); }
+  else if (k === 'flower') { box(-1, 0, 2, 8, '#2a7a38'); box(-3, 8, 6, 4, ['#ff6bb0', '#ffd23f', '#fff'][Math.abs(Math.round(pr.x * 10)) % 3]); }
+  else if (k === 'rock') { box(-8, 0, 16, 7, '#8a8a8a'); box(-5, 7, 9, 3, '#a8a8a8'); }
+  else if (k === 'post') { box(-1.5, 0, 3, 14, '#eee'); box(-1.5, 11, 3, 3, pr.x < 0 ? '#f33' : '#ffa000'); }
+  else if (k === 'mile') { box(-1, 0, 2, 18, '#555'); box(-7, 16, 14, 12, '#1d6b2c'); if (s > 0.5) { const yy = y - 26 * s; if (yy < clip) text(String(pr.n), x, yy, '#fff', 1, 'center'); } }
   else if (k === 'lamp') { box(-2, 0, 4, 70, '#555'); box(-8, 66, 16, 4, '#ffd23f'); }
   else if (k === 'bldg') { box(-40, 0, 80, 120, '#2a1f3a'); for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) if ((i + j) % 3) box(-32 + i * 18, 10 + j * 18, 8, 8, '#ffd84a'); }
   else if (k === 'fence') { box(-30, 0, 60, 20, '#444'); box(-30, 18, 60, 2, '#888'); }
@@ -1209,7 +1248,8 @@ function bar(x, y, w, h, pct, col, bg = '#1a1026') {
 function drawHUD() {
   // top-left: snacks + coins
   text('SNACKS ' + S.snacks, 4, 4, '#ffd23f');
-  text('COINS ' + Math.floor(S.coins), 4, 12, '#ffd23f');
+  const netc = Math.floor(S.coins) - (S.gas || 0);
+  text('COINS ' + Math.floor(S.coins) + (S.gas != null ? '  NET ' + (netc >= 0 ? '+' : '') + netc : ''), 4, 12, netc >= 0 || S.gas == null ? '#ffd23f' : '#ff9a6b');
   const hc = ((S.stats[S.me] || {}).hitCd || 0) - S.t; text('H: HIT ' + (hc > 0 ? Math.ceil(hc) : 'READY'), 4, 20, hc > 0 ? '#888' : '#8ef0b0');
   // heat
   text('HEAT', 4, 32, '#ff6b6b'); bar(22, 32, 50, 5, S.heat / 100, S.heat >= 100 ? (Math.floor(S.t * 8) % 2 ? '#f00' : '#fff') : '#ff6b6b');
@@ -1300,7 +1340,7 @@ function drawCard() {
     'H  TAKE A HIT (+COOKED, WOBBLIER, COINS WORTH MORE)',
     'ESC  PAUSE',
     '',
-    "DON'T LET HEAT HIT 100. PELT COPS. FIND THE GAP.",
+    'GAS MONEY: ' + (12 + 3 * Math.max(0, ['park', 'beach', 'suburb', 'city', 'downtown', 'woods', 'hq'].indexOf(S.world))) + ' COINS. EARN IT BACK OR LOSE OUT.',
   ] : [
     'YOU: ' + SEAT_NAMES[seat] + '   DRIVER: ' + nameOf(S.seats[0]),
     'J OR CLICK  THROW SNACKS AT COPS ON YOUR SIDE',
@@ -1318,14 +1358,14 @@ function drawResults() {
   ctx.fillStyle = '#1e1030'; ctx.fillRect(0, 0, W, H);
   text('DRIVE COMPLETE', W / 2, 8, '#8ef0b0', 3, 'center');
   const rows = [
-    ['CREW SCORE', r.score], ['COINS (EACH)', r.coins], ['COPS SHAKEN', r.shaken[0] + r.shaken[1]], ['TIMES BUSTED', r.caught],
+    ['CREW SCORE', r.score], ['GAS MONEY', '-' + (r.gas || 0)], ['EARNED (EACH)', '+' + r.coins + (r.lost ? '  (SPILLED ' + r.lost + ')' : '')], ['NET', ((r.coins - (r.gas || 0)) >= 0 ? '+' : '') + (r.coins - (r.gas || 0))], ['COPS SHAKEN', r.shaken[0] + r.shaken[1]], ['TIMES BUSTED', r.caught],
     ['ROUTE', r.route.toUpperCase() + (r.secret ? ' + SECRET' : '')], ['SNACKS LEFT', r.snacks + ' -> ' + r.munchies + ' MUNCHIES'],
   ];
-  rows.forEach((x, i) => { text(x[0], 40, 36 + i * 10, '#c8c8e0'); text(String(x[1]), 180, 36 + i * 10, '#fff'); });
+  rows.forEach((x, i) => { const net = x[0] === 'NET'; text(x[0], 40, 30 + i * 9, '#c8c8e0'); text(String(x[1]), 180, 30 + i * 9, net ? (String(x[1])[0] === '+' ? '#8ef0b0' : '#ff6b6b') : '#fff'); });
   const d0 = r.drivers[0] ? ' (' + r.drivers[0] + ')' : '', d1 = r.drivers[1] ? ' (' + r.drivers[1] + ')' : '';
-  text('1ST HALF' + d0 + '  CRASH ' + r.crashes[0] + '  SHAKEN ' + r.shaken[0], 40, 100, '#9f8fc0');
-  text('2ND HALF' + d1 + '  CRASH ' + r.crashes[1] + '  SHAKEN ' + r.shaken[1], 40, 108, '#9f8fc0');
-  r.awards.forEach((a, i) => text('* ' + a, W / 2, 122 + i * 9, '#ffd23f', 1, 'center'));
+  text('1ST HALF' + d0 + '  CRASH ' + r.crashes[0] + '  SHAKEN ' + r.shaken[0], 40, 106, '#9f8fc0');
+  text('2ND HALF' + d1 + '  CRASH ' + r.crashes[1] + '  SHAKEN ' + r.shaken[1], 40, 114, '#9f8fc0');
+  r.awards.forEach((a, i) => text('* ' + a, W / 2, 126 + i * 8, '#ffd23f', 1, 'center'));
   if (r.buff) text('HIGH SCORE BUFF: ' + (r.buff === 'cooked10' ? '+10% COOKED' : '10S SODA SPEED'), W / 2, 162, '#8ef0b0', 1, 'center');
   if (S.t - S.resT > 1) text('SPACE TO CONTINUE', W / 2, 180, '#fff', 1, 'center');
 }

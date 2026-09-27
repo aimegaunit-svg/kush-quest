@@ -3966,17 +3966,89 @@ function drawPlayer(x, y, face, anim, color, sq, inv, emote, name, star, ult, si
   else draw_(img, x - 3, y - 2, face < 0);
   ctx.filter = 'none';
   if (!sitting) drawHeld(x, y, face, wi, atkT, anim, coreLv);
-  if (slash && !sitting) drawSlash(x, y, face, slash, coreLv);
+  if (slash && !sitting) drawSlash(x, y, face, slash, coreLv, color);
   drawArmorHat(x, y, face, armorTier);
   if (sitting && frame % 40 < 30) text('Z', x + 12 - camX, y - 8 - (frame % 40) / 8, '#e4b3ff');
   if (emote) bubble(EMOTES[emote.e], x + 5, y - (name ? 24 : 14));
   if (drawPlayer.say) { const m = drawPlayer.say, w = Math.min(46, m.length) * 4 + 6, bx = Math.round(x + 5 - camX - w / 2), by = Math.round(y - (name ? 34 : 24)); R(ctx, P.k, bx - 1, by - 1, w + 2, 11); R(ctx, '#ffffff', bx, by, w, 9); text(m.slice(0, 46), bx + 3, by + 2, '#2a1838'); drawPlayer.say = null; }
   if (name) text(name, x + 5 - camX, y - 10, SHIRTS[color], 1, 'center');
 }
-// sword slash: a big white crescent in front of the homie
+// --- per-character Core-melee attack VFX (user-directed, 2026-09-27) ---
+// Each of the 4 playable homies (LOOKS/CORE_HOMIE, indexed by `color` = Net.color/me.color/r.color) gets a
+// genuinely distinct attack SHAPE + color palette instead of the one shared white/yellow slash arc, and a
+// dramatically bigger/busier "tier 2" version of that SAME shape (not a size multiplier alone - extra rings/
+// streaks/spikes are added, see drawCharSlash below) once that homie's Core level reaches CHAR_ATK_TIER2_LV.
+// Homie index lines up 1:1 with a FIXED Core weapon (rasta->puff, snapback->bong, bucket->grinder,
+// afro->lighter - CORE_WEAPON_ID), so this table can be keyed by `color` alone, same as CORE_HOMIE/CORE_FORMS.
+// Only replaces the CORE-weapon slash (CORE_FORMS[sl.kind] true, i.e. sl.kind is puff/bong/grinder/lighter).
+// Wild-weapon guns never set me.slash at all (attack()'s w.gun branch returns before reaching that line),
+// and any legacy melee Wild weapon (an ENV_WEAPONS entry with no .gun) keeps the OLD generic SLASH_COL
+// rendering below untouched - this pass deliberately never touches the Wild-weapon branch, per the brief.
+const CHAR_ATK_TIER2_LV = 6; // Core level 6 of 10 - just past the midpoint, and lines up with coreTier()'s own tier>=2 bracket (lv 5-6), which is already where the held weapon's OWN glow/size ramp visibly steps up - so the character's signature move levels up in step with the weapon's evolution instead of on some unrelated schedule
+const CHAR_ATK = [
+  // 0 RASTA (puff/doobie): a spinning reggae vortex - green/gold/red tri-color arcs
+  { name: 'IRIE SPIN', t2: 'RASTA CYCLONE', cols: ['#3fae5a', '#ffd84a', '#ff5a4a', '#ffffff'] },
+  // 1 SNAPBACK (bong): a straight icy lunge streak - blue/cyan/white
+  { name: 'ICE JAB', t2: 'DEEP FREEZE LUNGE', cols: ['#3a6ad8', '#9ae8ff', '#ffffff'] },
+  // 2 BUCKET (grinder): an expanding shockwave stomp ring - purple/pink
+  { name: 'GRIND PULSE', t2: 'MEGA GRIND SHOCKWAVE', cols: ['#c070ff', '#ff9ab8', '#ffffff'] },
+  // 3 AFRO (lighter): a radial fire aura burst - orange/red/gold
+  { name: 'BLAZE BURST', t2: 'INFERNO NOVA', cols: ['#ff9a3a', '#ff5a6a', '#ffd84a'] },
+];
+function drawCharSlash(px, pyTop, face, sl, coreLv, color) {
+  const big = coreLv >= CHAR_ATK_TIER2_LV;
+  const def = CHAR_ATK[color] || CHAR_ATK[0], cols = def.cols;
+  const p = 1 - sl.t / sl.max;
+  const reach = (REACH[sl.kind] || 30) * (sl.heavy ? 1.15 : 1) * (big ? 1.9 : 1);
+  const cx = Math.round(px - camX + 5), cy = Math.round(pyTop + 10);
+  // fire the particle burst (+ screen shake at tier 2) once per swing, not every render frame - sl is a
+  // fresh object per attack() call (and per net 'k' message for remote players), so this flag never sticks
+  if (!sl._vfx) {
+    sl._vfx = 1;
+    const wx = px + 5, wy = pyTop + 10;
+    if (color === 0) puff(wx, wy, big ? 26 : 10, cols, big ? 2.6 : 1.4, -0.02);
+    else if (color === 1) puff(wx + face * reach * 0.5, wy, big ? 22 : 8, cols, big ? 2.2 : 1.2, 0.01);
+    else if (color === 2) puff(wx, wy + 4, big ? 30 : 12, cols, big ? 2 : 1.1, -0.01);
+    else puff(wx, wy, big ? 34 : 14, cols, big ? 2.4 : 1.3, -0.04);
+    if (big) { shake = Math.max(shake, 9); hitstop = Math.max(hitstop, 4); }
+  }
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(face, 1);
+  ctx.globalAlpha = Math.max(0, 1 - p * 0.85);
+  if (color === 0) { // RASTA: spinning tri-color vortex arcs - tier 2 adds two more nested spinning rings
+    const rings = big ? 3 : 1;
+    for (let r = 0; r < rings; r++) {
+      const a0 = p * Math.PI * (big ? 4 : 2.4) - 1 + r * 0.9, a1 = a0 + (big ? 3.2 : 2.2);
+      ctx.strokeStyle = cols[r % cols.length]; ctx.lineWidth = (big ? 8 : 5) - r;
+      ctx.beginPath(); ctx.arc(0, 0, reach * (0.55 + r * 0.18), a0, a1); ctx.stroke();
+    }
+  } else if (color === 1) { // SNAPBACK: a straight ice-blue lunge streak - tier 2 adds a screen-spanning double-wide ghost trail
+    const len = reach * (big ? 1.6 : 1);
+    ctx.strokeStyle = cols[0]; ctx.lineWidth = big ? 10 : 6; ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(4 + len * Math.min(1, p * 2.6), 0); ctx.stroke();
+    ctx.strokeStyle = cols[1]; ctx.lineWidth = big ? 5 : 3; ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(4 + len * Math.min(1, p * 2.6), 0); ctx.stroke();
+    if (big) { ctx.save(); ctx.globalAlpha *= 0.3; ctx.strokeStyle = cols[2]; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(4, -4); ctx.lineTo(4 + len, -4); ctx.moveTo(4, 4); ctx.lineTo(4 + len, 4); ctx.stroke(); ctx.restore(); }
+  } else if (color === 2) { // BUCKET: an expanding shockwave ring - tier 2 adds a second, wider trailing ring
+    const rN = big ? 2 : 1;
+    for (let r = 0; r < rN; r++) {
+      const rp = Math.min(1, p * 1.6 + r * 0.3), rad = reach * (0.3 + rp * (big ? 1.1 : 0.7));
+      ctx.strokeStyle = cols[r % 2]; ctx.lineWidth = big ? 7 : 4; ctx.globalAlpha = Math.max(0, (1 - rp) * (1 - p * 0.6));
+      ctx.beginPath(); ctx.ellipse(0, 4, rad, rad * 0.45, 0, 0, TAU); ctx.stroke();
+    }
+  } else { // AFRO: a radial fire-spike aura burst - tier 2 nearly doubles the spike count and radius
+    const spikes = big ? 14 : 8, rad = reach * (0.5 + p * (big ? 0.9 : 0.5));
+    for (let i = 0; i < spikes; i++) {
+      const a = i / spikes * TAU + p * 2;
+      ctx.strokeStyle = cols[i % cols.length]; ctx.lineWidth = big ? 4 : 2;
+      ctx.beginPath(); ctx.moveTo(Math.cos(a) * rad * 0.3, Math.sin(a) * rad * 0.3 * 0.5); ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad * 0.5); ctx.stroke();
+    }
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+// sword slash: a big white crescent in front of the homie (Wild-weapon melee fallback + legacy path - see
+// drawCharSlash above, which now handles every CORE-weapon swing)
 const SLASH_COL = { puff: '#ffffff', lighter: '#ffb84a', dab: '#9ae8ff', bong: '#bfe8ff', grinder: '#c8ffa0', blunt: '#ffd84a' };
-function drawSlash(px, pyTop, face, sl, coreLv = 1) {
+function drawSlash(px, pyTop, face, sl, coreLv = 1, color = 0) {
   if (!sl || sl.t <= 0) return;
+  if (CORE_FORMS[sl.kind]) return drawCharSlash(px, pyTop, face, sl, coreLv, color);
   // v1.2 fix (Step 5): the swing trail grows with the Core's tier (see coreTier()) - a bigger, brighter
   // arc at each named form, since this game has no room for 24 hand-drawn sprites (4 Cores x 6 forms).
   const tier = CORE_FORMS[sl.kind] ? coreTier(coreLv) : 0;

@@ -1498,3 +1498,32 @@ precisely. Two things looked wrong on first glance but weren't, on closer inspec
 
 No code changes from this sweep - the earlier Step 15 popup/banner fix was re-confirmed visually in the
 process (popups correctly stay clear of an active boss banner at all 3 tested widths).
+
+## Cursor hidden during gameplay (user-directed, 2026-09-26)
+
+Small, focused fix: the mouse cursor stayed visible (`default`/`pointer`) over the game canvas even
+during active `play`, sitting on top of the action for no reason - the user asked for it to disappear
+while playing but stay visible everywhere else (menus, map, inventory, dialogue, results).
+
+`draw()`'s per-frame cursor logic now checks `state === 'play' && !menu && !dialog && !invOpen`
+("actually playing, nothing overlaid") and sets `cv.style.cursor = 'none'` only then; every other case
+falls through to the original pointer/default hover logic. Caught and fixed one real edge case while
+testing: the old code only ever set the cursor style inside `if (mouseG) {...}`, so if the mouse hadn't
+moved yet in a given screen (`mouseG` still `null`/`undefined`), the cursor could get stuck on whatever
+it was last set to - harmless for a real player (mice move constantly) but made an automated check of
+"cursor visible in the menu" flaky. Now the cursor is set unconditionally on every frame regardless of
+`mouseG`.
+
+Tested: new `/tmp/kq_cursor_test.js` (not committed) confirms `none` during play, and `default` in both
+the pause menu and the map screen. Full regression suite (Steps 10/11/12/15 + the cooked-meter redesign
+test) still passes with zero errors. `node --check` clean.
+
+## WASD-vs-mouse facing: investigated, left as-is (user-directed, 2026-09-26)
+
+The user also asked whether WASD should control facing/look direction, since the mouse currently
+overrides it almost every frame during normal play and felt "weird" coming from other games. Checked
+`claude/PLAN.md`, which explicitly lists "WASD move, mouse-aim facing" as core, load-bearing behavior
+that survives every brief revision (v0.8 through v1.1) - not an oversight, a deliberate twin-stick-style
+choice that also drives precise throw/ranged aiming. Presented the trade-off (keep mouse-aim / switch to
+WASD-only facing / a hybrid that only lets the mouse override while aiming a throw) - the user chose to
+keep the current mouse-aim behavior as-is. No code change.

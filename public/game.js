@@ -3660,7 +3660,15 @@ function drawHazard() {
     if (X > -30 && X < W + 30) { ctx.fillStyle = 'rgba(255,40,60,.4)'; ctx.fillRect(X - 4, FLOOR_Y - 44, 6, ZMAX + 44); ctx.fillStyle = 'rgba(255,120,60,.5)'; for (let k = 0; k < 5; k++) ctx.fillRect(X - 2, FLOOR_Y - 8 - k * 8, 2, 6); }
   }
 }
-function draw() { if (state === 'transit') return; TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText(); if (mouseG) { const r = hotAt(mouseG.x, mouseG.y); cv.style.cursor = r ? 'pointer' : 'default'; } }
+function draw() {
+  if (state === 'transit') return; TQ.length = 0; HOT = []; drawScene(); if (menu) { HOT = []; drawMenu(); } if (dialog) { HOT = []; draw320(drawDialogue); } drawTrans(); flushText();
+  // v1.3 (requested 2026-09-26): the mouse cursor is only for aiming while actually playing, and just
+  // sits there covering the action - hide it during real gameplay (no menu/bag/dialog open), but keep it
+  // visible everywhere it's an actual pointer: menus, the map, the bag, dialogue, results, the farm hub.
+  const playingLive = state === 'play' && !menu && !dialog && !invOpen;
+  if (playingLive) cv.style.cursor = 'none';
+  else cv.style.cursor = (mouseG && hotAt(mouseG.x, mouseG.y)) ? 'pointer' : 'default';
+}
 function drawTransitWait() {
   ctx.fillStyle = '#1e122c'; ctx.fillRect(0, 0, W, H);
   text('CREW IS DRIVING...', W / 2, H / 2 - 6, '#e4b3ff', 2, 'center');

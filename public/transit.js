@@ -136,7 +136,13 @@
   // while a swap is in progress (game should skip normal simulation / render banner on top).
   function makeSwapRunner() {
     let active = false, t = 0, total = 0, banner = '', sub = '', reseated = false, onReseat = null, onDone = null;
+    let warnT = 0, warnLabel = '', warnCb = null, warnBeep = -1;
     return {
+      // Countdown shown before an event lands (Hotbox Highway rule: nothing big happens without ~5s warning).
+      // warn(seconds, label, cb): shows "<label> IN n" in the message slot, beeps each second, then calls cb.
+      warn(sec, label, cb) { warnT = sec * 1000; warnLabel = label || 'SWAP'; warnCb = cb || null; warnBeep = -1; },
+      get warning() { return warnT > 0; },
+      get warnLeft() { return Math.ceil(warnT / 1000); },
       trigger(bannerText, opts) {
         opts = opts || {};
         active = true; t = 0; total = opts.freezeMs || 1400; banner = bannerText; sub = '';
@@ -146,6 +152,11 @@
       get banner() { return banner; },
       setSub(x) { sub = x || ''; },
       tick(dtMs) {
+        if (warnT > 0) {
+          warnT -= dtMs; const n = Math.ceil(Math.max(0, warnT) / 1000);
+          if (n !== warnBeep && n > 0) { warnBeep = n; tone(n <= 2 ? 880 : 660, 0.08, 'square', 0.05); }
+          if (warnT <= 0) { warnT = 0; const cb = warnCb; warnCb = null; if (cb) cb(); }
+        }
         if (!active) return false;
         t += dtMs;
         if (!reseated && t >= total / 2) { reseated = true; if (onReseat) onReseat(); }
@@ -153,6 +164,7 @@
         return true;
       },
       draw(ctx, slowmoLabel) {
+        if (warnT > 0 && !active) { const n = Math.ceil(warnT / 1000); hudMsg(ctx, warnLabel + ' IN ' + n, 'GET READY', n <= 2 ? '#ff3b3b' : '#ffd23f'); return; }
         if (!active) return;
         const p = Math.min(1, t / total);
         const flash = Math.sin(p * Math.PI) * 0.5;
@@ -198,11 +210,19 @@
         ctx.fillText(opts.title || 'MADE IT!', BASE_W / 2, 30);
         ctx.font = '9px monospace';
         ctx.fillStyle = '#fff';
-        ctx.fillText('Coins +' + (opts.coins | 0), BASE_W / 2, 50);
-        ctx.fillText('Score ' + (opts.score | 0), BASE_W / 2, 62);
+        if (opts.gas != null) {
+          const net = (opts.coins | 0) - (opts.gas | 0);
+          ctx.fillText('Gas -' + (opts.gas | 0) + '   Earned +' + (opts.coins | 0), BASE_W / 2, 48);
+          ctx.fillStyle = net >= 0 ? '#8ef0b0' : '#ff6b6b'; ctx.font = 'bold 11px monospace';
+          ctx.fillText('NET ' + (net >= 0 ? '+' : '') + net, BASE_W / 2, 62); ctx.font = '9px monospace'; ctx.fillStyle = '#fff';
+          ctx.fillText('Score ' + (opts.score | 0), BASE_W / 2, 72);
+        } else {
+          ctx.fillText('Coins +' + (opts.coins | 0), BASE_W / 2, 50);
+          ctx.fillText('Score ' + (opts.score | 0), BASE_W / 2, 62);
+        }
         const awards = opts.awards || [];
         ctx.fillStyle = '#a0e8ff';
-        awards.slice(0, 5).forEach((a, i) => ctx.fillText(a, BASE_W / 2, 78 + i * 10));
+        awards.slice(0, 5).forEach((a, i) => ctx.fillText(a, BASE_W / 2, (opts.gas != null ? 88 : 78) + i * 10));
         ctx.fillStyle = '#9fff9f';
         ctx.font = '8px monospace';
         ctx.fillText('press any key / click to continue', BASE_W / 2, BASE_H - 10);
@@ -427,13 +447,21 @@
     return {
       history, events,
       fire() {
-        const ev = byId[pool.next()];
-        const order = reorder(seats, ev.reseat).map(pid);
-        if (net) net.send({ type: 'swap', id: ev.id, order });
-        run(ev, order);
-        return ev;
+        if (runner.warning || runner.active) return null;
+        const go = () => {
+          const ev = byId[pool.next()];
+          const order = reorder(seats, ev.reseat).map(pid);
+          if (net) net.send({ type: 'swap', id: ev.id, order });
+          run(ev, order);
+        };
+        const sec = o.warnSec == null ? 5 : o.warnSec;
+        if (!sec) { go(); return true; }
+        if (net) net.send({ type: 'swapWarn', sec });
+        runner.warn(sec, seats.length > 1 ? 'SEAT SWAP' : 'SOMETHING', go);
+        return true;
       },
       handle(p) {
+        if (p && p.type === 'swapWarn') { runner.warn(p.sec || 5, seats.length > 1 ? 'SEAT SWAP' : 'SOMETHING', null); return true; }
         if (!p || p.type !== 'swap' || !byId[p.id]) return false;
         run(byId[p.id], p.order || seats.map(pid));
         return true;
@@ -469,7 +497,146 @@
   // seat helpers: is this seat mine? what is its current input?
   function seatIsMine(seat, net) { return !net || (seat && seat.player && seat.player.id === net.id); }
 
+  // ---------------------------------------------------------------------
+  // SHARED HUD (same layout as Hotbox Highway so every ride reads the same):
+  //   top strip = trip progress (+ optional event marker), top-left = coins + break-even line,
+  //   ONE message slot near the top for banners/countdowns. Keep everything else at the edges.
+  // ---------------------------------------------------------------------
+  function hudText(ctx, str, x, y, col, size, align) {
+    ctx.save(); hudText0(ctx, str, x, y, col, size, align); ctx.restore();
+  }
+  function hudText0(ctx, str, x, y, col, size, align) {
+    ctx.font = (size >= 2 ? 'bold 12px' : '8px') + ' monospace'; ctx.textAlign = align || 'left'; ctx.textBaseline = 'top';
+    ctx.fillStyle = '#000'; ctx.fillText(str, x + 1, y + 1); ctx.fillStyle = col || '#fff'; ctx.fillText(str, x, y);
+  }
+  function hudMsg(ctx, t1, t2, col, y) {
+    y = y == null ? 30 : y;
+    ctx.save(); ctx.font = 'bold 12px monospace';
+    const w = Math.max(ctx.measureText(t1).width, t2 ? t2.length * 5 : 0) + 14;
+    ctx.fillStyle = 'rgba(20,12,30,0.8)'; ctx.fillRect(Math.round(BASE_W / 2 - w / 2), y - 3, Math.round(w), t2 ? 26 : 17);
+    hudText(ctx, t1, BASE_W / 2, y, col || '#fff', 2, 'center');
+    if (t2) hudText(ctx, t2, BASE_W / 2, y + 14, '#e8e0ff', 1, 'center');
+    ctx.restore();
+  }
+  function hudProgress(ctx, pct, eventPct) {
+    pct = Math.max(0, Math.min(1, pct || 0));
+    ctx.save();
+    ctx.fillStyle = 'rgba(20,12,30,0.7)'; ctx.fillRect(0, 0, BASE_W, 5);
+    ctx.fillStyle = '#8ef0b0'; ctx.fillRect(0, 1, Math.round(BASE_W * pct), 3);
+    if (eventPct != null && eventPct > pct) { ctx.fillStyle = '#ffd23f'; ctx.fillRect(Math.round(BASE_W * eventPct) - 1, 0, 3, 5); }
+    ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(BASE_W * pct) - 2, 0, 4, 5);
+    ctx.fillStyle = '#ff3b3b'; ctx.fillRect(BASE_W - 4, 0, 4, 5);
+    ctx.restore();
+  }
+  function hudCoins(ctx, coins, gas, x, y) {
+    x = x == null ? 4 : x; y = y == null ? 8 : y;
+    const c = Math.floor(coins || 0);
+    ctx.save();
+    ctx.fillStyle = '#ffd23f'; ctx.fillRect(x + 1, y, 6, 8); ctx.fillRect(x, y + 1, 8, 6); ctx.fillStyle = '#d99a12'; ctx.fillRect(x + 3, y + 2, 2, 4);
+    hudText(ctx, String(c), x + 11, y - 2, '#ffd23f', 2);
+    if (gas != null) { const net = c - gas, line = net < 0 ? 'GAS ' + gas + ' - NEED ' + (-net) + ' MORE' : 'PROFIT +' + net; ctx.font = '8px monospace'; ctx.fillStyle = 'rgba(20,12,30,0.55)'; ctx.fillRect(x - 2, y + 11, ctx.measureText(line).width + 4, 10); hudText(ctx, net < 0 ? 'GAS ' + gas + ' - NEED ' + (-net) + ' MORE' : 'PROFIT +' + net, x, y + 12, net < 0 ? '#c8a0a0' : '#8ef0b0', 1); }
+    ctx.restore();
+  }
+  // A banner queue for the message slot: say(text, sub, col, secs). Only one shows at a time;
+  // 'soft' messages are dropped if something is already showing.
+  function makeMessages() {
+    let cur = null;
+    return {
+      say(t1, t2, col, secs, soft) { if (soft && cur) return; cur = { t1, t2: t2 || '', col: col || '#fff', t: (secs || 1.5) * 1000 }; },
+      tick(dtMs) { if (cur) { cur.t -= dtMs; if (cur.t <= 0) cur = null; } },
+      draw(ctx, y) { if (cur) { ctx.save(); ctx.globalAlpha = Math.min(1, cur.t / 250); hudMsg(ctx, cur.t1, cur.t2, cur.col, y); ctx.restore(); } },
+      get busy() { return !!cur; }
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // GAS MONEY: every ride costs coins up front (paid from the save) so a sloppy run is a net loss.
+  // Call once when the ride actually starts (not on SKIP). Returns what was paid.
+  // ---------------------------------------------------------------------
+  const WORLD_TIER = ['park', 'beach', 'suburb', 'city', 'downtown', 'woods', 'hq'];
+  function gasCost(world) { return 12 + 3 * Math.max(0, WORLD_TIER.indexOf(world)); }
+  function payGas(save, world) {
+    if (!save) return 0;
+    const have = Math.max(0, Math.floor(+save.coins || 0)), g = Math.min(gasCost(world), have);
+    if (g > 0) { save.coins = have - g; try { if (typeof save.__persist === 'function') save.__persist(); } catch (e) {} }
+    return g;
+  }
+
+  // ---------------------------------------------------------------------
+  // WEATHER + TIME OF DAY (same rules as Hotbox Highway, for every world).
+  //   const wx = Transit.makeWeather(seed, world, night)
+  //   wx.at(pct) -> { k, grip (0.65..1), fog (0..0.65), dark, wet, snow, mix, pct, wind (-1..1) }
+  //   wx.sky(pct) -> [topColor, bottomColor]   (day -> golden hour -> sunset; night -> deeper)
+  //   wx.drawOverlay(ctx, pct, tSec, opts)  rain/snow/fog/lightning/dusk tint, drawn over the world, under the HUD.
+  //      opts.horizon: y where fog is thickest (default 60). opts.topDown: true for overhead games (fog is even).
+  //   wx.changed(pct) -> name string the first frame the weather changes (feed it to the message slot), else null
+  // Games decide what grip/wind/fog MEAN for their own controls (slide, drift, current, gusts...).
+  // ---------------------------------------------------------------------
+  const WX_POOL = {
+    park: ['clear', 'clear', 'cloudy', 'rain', 'fog'], beach: ['clear', 'clear', 'cloudy', 'rain', 'storm'],
+    suburb: ['clear', 'cloudy', 'rain', 'fog', 'storm'], city: ['clear', 'cloudy', 'rain', 'storm', 'fog'],
+    woods: ['cloudy', 'fog', 'rain', 'snow', 'snow'], hq: ['cloudy', 'storm', 'storm', 'fog', 'rain'],
+  };
+  WX_POOL.downtown = WX_POOL.city;
+  const WX = {
+    clear: { grip: 1, fog: 0, dark: 0, name: '' }, cloudy: { grip: 1, fog: 0.1, dark: 0.15, name: 'CLOUDS ROLLING IN' },
+    rain: { grip: 0.8, fog: 0.2, dark: 0.25, name: 'RAIN! IT GETS SLIPPERY' }, storm: { grip: 0.7, fog: 0.3, dark: 0.4, name: 'STORM! HOLD ON' },
+    fog: { grip: 0.95, fog: 0.65, dark: 0.1, name: 'FOG BANK. EYES UP' }, snow: { grip: 0.65, fog: 0.35, dark: 0.1, name: 'SNOW! TAKE IT EASY' },
+  };
+  const hex6 = c => c.length === 4 ? '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3] : c;
+  const lerpC = (a, b, t) => { a = hex6(a); b = hex6(b); const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16)); return 'rgb(' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(',') + ')'; };
+  const SKY_DAY = { park: ['#6ec6ff', '#bfe9ff'], beach: ['#5ac8ff', '#bff0ff'], suburb: ['#8ab8ff', '#d8e8ff'], woods: ['#ff9a5a', '#ffd08a'], city: ['#150a2a', '#3a1a5a'], hq: ['#0a0a14', '#2a0a1a'] };
+  function makeWeather(seed, world, night) {
+    const R = rng(((seed | 0) ^ 0x5eed) >>> 0);
+    const pool = WX_POOL[world] || WX_POOL.park;
+    if (night == null) night = ['city', 'downtown', 'hq'].includes(world);
+    const plan = [{ at: 0, k: pool[R() * 2 | 0] }];
+    for (const at of [0.25 + R() * 0.1, 0.55 + R() * 0.1, 0.82]) plan.push({ at, k: pool[R() * pool.length | 0] });
+    const windDir = R() < 0.5 ? -1 : 1;
+    let lastK = null, boltT = 0, bolt = 0;
+    function at(pct) {
+      pct = Math.max(0, Math.min(1, pct || 0));
+      let i = 0; while (i + 1 < plan.length && pct >= plan[i + 1].at) i++;
+      const cur = plan[i], prev = i ? plan[i - 1] : cur, mix = i ? Math.min(1, (pct - cur.at) / 0.04) : 1;
+      const a = WX[prev.k], b = WX[cur.k], L = (x, y) => x + (y - x) * mix;
+      const isWet = k => k === 'rain' || k === 'storm';
+      const wet = (isWet(cur.k) ? mix : 0) + (isWet(prev.k) ? 1 - mix : 0), snow = (cur.k === 'snow' ? mix : 0) + (prev.k === 'snow' ? 1 - mix : 0);
+      return { k: cur.k, mix, pct, grip: L(a.grip, b.grip), fog: L(a.fog, b.fog), dark: L(a.dark, b.dark), wet, snow, wind: windDir * (cur.k === 'storm' ? 1 : wet * 0.5 + snow * 0.3) };
+    }
+    function sky(pct) {
+      const base = SKY_DAY[world] || SKY_DAY[world === 'downtown' ? 'city' : 'park'];
+      const keys = night ? [base, ['#0a0618', '#3a1440'], ['#05030c', '#1a0a2a']] : [base, ['#4a8ad8', '#ffc07a'], ['#3a2a6a', '#ff7a4a']];
+      const seg = pct < 0.55 ? 0 : 1, t = Math.max(0, Math.min(1, seg ? (pct - 0.55) / 0.45 : pct / 0.55));
+      const w = at(pct);
+      return [0, 1].map(j => lerpC(keys[seg][j], keys[seg + 1][j], t)).map(c => w.dark > 0 ? c : c);
+    }
+    function changed(pct) { const k = at(pct).k; if (k !== lastK) { const first = lastK === null; lastK = k; if (!first && WX[k].name) return WX[k].name; } return null; }
+    function drawOverlay(ctx, pct, tSec, opts) {
+      opts = opts || {};
+      const w = at(pct), W = BASE_W, H = BASE_H, hz = opts.horizon == null ? 60 : opts.horizon;
+      ctx.save();
+      if (w.dark > 0) { ctx.globalAlpha = w.dark * 0.35; ctx.fillStyle = '#2a2a3a'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+      if (w.fog > 0) {
+        const fc = w.snow > 0.5 ? '232,236,245' : '190,195,205';
+        if (opts.topDown) { ctx.fillStyle = 'rgba(' + fc + ',' + (w.fog * 0.55) + ')'; ctx.fillRect(0, 0, W, H); }
+        else { const g = ctx.createLinearGradient(0, hz - 20, 0, H); g.addColorStop(0, 'rgba(' + fc + ',' + Math.min(0.9, w.fog * 1.2) + ')'); g.addColorStop(1, 'rgba(' + fc + ',' + w.fog * 0.2 + ')'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+      }
+      if (w.wet > 0) { ctx.strokeStyle = 'rgba(180,200,255,0.55)'; ctx.lineWidth = 1; ctx.beginPath(); const n = Math.round(60 * w.wet), sl = 3 + w.wind * 3; for (let i = 0; i < n; i++) { const rx = (i * 53 + tSec * 400 * (1 + i % 3)) % (W + 20) - 10, ry = (i * 97 + tSec * 520) % H; ctx.moveTo(rx, ry); ctx.lineTo(rx - sl, ry + 9); } ctx.stroke(); }
+      if (w.snow > 0) { ctx.fillStyle = '#fff'; const n = Math.round(70 * w.snow); for (let i = 0; i < n; i++) { const fx = ((i * 61 + Math.sin(tSec + i) * 14 + tSec * 20 * (1 + w.wind)) % W + W) % W, fy = (i * 89 + tSec * (40 + i % 4 * 15)) % H; ctx.fillRect(fx, fy, i % 3 ? 1 : 2, i % 3 ? 1 : 2); } }
+      if (w.k === 'storm' && w.mix > 0.5) {
+        if (tSec > boltT) { boltT = tSec + 3 + Math.random() * 5; bolt = 0.25; noise(0.6, 0.08); }
+        if (bolt > 0) { bolt -= 1 / 60; ctx.globalAlpha = Math.min(0.6, bolt * 3); ctx.fillStyle = '#eef'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+      }
+      const dusk = night ? 0 : Math.max(0, pct - 0.55) / 0.45;
+      if (dusk > 0) { ctx.globalAlpha = dusk * 0.18; ctx.fillStyle = pct > 0.85 ? '#2a1a50' : '#ff8a4a'; ctx.fillRect(0, 0, W, H); }
+      ctx.restore();
+    }
+    return { plan, at, sky, changed, drawOverlay, night };
+  }
+
   window.Transit = {
+    hudText, hudMsg, hudProgress, hudCoins, makeMessages,
+    gasCost, payGas, makeWeather, WX,
     BASE_W, BASE_H,
     makeCanvas, autoScale,
     assignSeats,

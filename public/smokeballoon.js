@@ -36,8 +36,16 @@
       choppers: [], wires: [], towers: [], birds: []
     };
 
+    // World name for gas + weather (this ride runs Downtown -> Woods).
+    const worldName = typeof opts.world === 'string' ? opts.world : (opts.from || 'downtown');
     let seed = T.newSeed(), R = T.rng(seed);
-    function reseed(sd) { seed = sd; R = T.rng(sd); st.notes = []; st.choppers = []; st.wires = []; st.towers = []; st.birds = []; seedNotes(); seedHazards(); }
+    let weather = T.makeWeather(seed, worldName);
+    const msgs = T.makeMessages();
+    let gas = null, tSec = 0, coinFlash = 0, heatWarned = false;
+    // ECONOMY (tuned so a clean run nets ~+5..+20 over gas; sloppy runs go negative):
+    const PAY = { hit: 0.4, comboEvery: 10, comboBonus: 2, finish: 8, wire: 3, tower: 3, descent: 5 };
+    function earn(n) { st.coins = Math.max(0, st.coins + n); if (n >= 1 || n < 0) coinFlash = 0.4; }
+    function reseed(sd) { seed = sd; R = T.rng(sd); weather = T.makeWeather(sd, worldName); st.notes = []; st.choppers = []; st.wires = []; st.towers = []; st.birds = []; seedNotes(); seedHazards(); }
     function seedNotes() {
       let t = 60; // beat time in "distance units"
       while (t < st.finishDist - 100) {
@@ -113,7 +121,7 @@
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
       if (intro.handle(fromId, payload)) return;
-      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
+      if (payload && (payload.type === 'swap' || payload.type === 'swapWarn')) { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
@@ -147,7 +155,10 @@
         'B/SHIFT drops a sandbag for a quick climb.',
         "Don't get lit up by chopper lights!"
       ]
-    }, () => { running = true; }, () => finish(true));
+    }, () => {
+      running = true; gas = T.payGas(save, worldName);
+      msgs.say(nLanes > 1 ? 'TAP YOUR LANE ON THE BEAT' : 'SPACE ON THE BEAT', 'B = SANDBAG  -  DODGE SEARCHLIGHTS', '#ffd23f', 6);
+    }, () => finish(true));
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;
@@ -157,16 +168,22 @@
       ctx.clearRect(0, 0, W, H);
       drawSky();
       if (!running) { intro.draw(); return; }
-      if (swap.tick(dt * 1000)) { st.dist += 12 * dt; draw(); swap.draw(ctx); drawHud(); touchTaps.clear(); return; }
+      tSec += dt;
+      const pct = Math.min(1, st.dist / st.finishDist);
+      if (swap.tick(dt * 1000)) { st.dist += 12 * dt; draw(); weather.drawOverlay(ctx, pct, tSec, { horizon: 40 }); drawHud(); swap.draw(ctx); touchTaps.clear(); return; }
       if (st.ended) {
-        results.draw(ctx, { canvas, title: 'RIDE OVER!', coins: st.coins, score: st.score, awards: st.wonAwards });
+        results.draw(ctx, { canvas, title: 'RIDE OVER!', coins: Math.floor(st.coins), score: st.score, awards: st.wonAwards, gas: gas || 0 });
         if (results.dismissed()) finish();
         touchTaps.clear();
         return;
       }
       if (isHost || !net) step(dt);
+      const wn = weather.changed(pct); if (wn) msgs.say(wn, weatherHint(), '#aee4ff', 2.5);
+      msgs.tick(dt * 1000); coinFlash = Math.max(0, coinFlash - dt);
       draw();
+      weather.drawOverlay(ctx, pct, tSec, { horizon: 40 });
       drawHud();
+      swap.draw(ctx);
       touchTaps.clear();
       if (isHost && net) {
         st._bT = (st._bT || 0) + dt;
@@ -200,7 +217,8 @@
           n.hit = true; remoteTapT[n.lane] = 0; if (n.lane === myLane()) localTapT = 0; st.combo++; st.bestCombo = Math.max(st.bestCombo, st.combo);
           const lift = 0.06 + Math.min(0.12, st.combo * 0.01);
           st.lung = Math.min(1, st.lung + lift);
-          st.coins += 1;
+          earn(PAY.hit);
+          if (st.combo % PAY.comboEvery === 0) { earn(PAY.comboBonus); msgs.say('COMBO x' + st.combo, '+' + PAY.comboBonus, '#8ef0b0', 1.2, true); }
           T.tone(500 + st.combo * 15, 0.06, 'square', 0.08);
         } else if (n.t < st.dist - 8) {
           n.missed = true; st.combo = 0; st.lung = Math.max(0, st.lung - 0.05);
@@ -212,10 +230,12 @@
       }
       if (!sandbagPressed()) st._sbLock = false;
 
-      st.lung = Math.max(0, st.lung - dt * 0.05); // natural drift down
+      // WEATHER: wet/snowy canvas is heavier (lung drains a bit faster); wind gives a gentle bob.
+      const wx = weather.at(st.dist / st.finishDist);
+      st.lung = Math.max(0, st.lung - dt * (0.05 + (1 - wx.grip) * 0.12)); // natural drift down
       const targetVy = (st.lung - 0.5) * -80; // more lung -> rise
       st.vy += (targetVy - st.vy) * Math.min(1, dt * 3);
-      st.y += st.vy * dt;
+      st.y += (st.vy + Math.sin(tSec * 1.3) * wx.wind * 6) * dt;
       st.y = Math.max(10, Math.min(H - 12, st.y));
 
       for (const c of st.choppers) {
@@ -223,16 +243,18 @@
         if (lit) { st.heat = Math.min(1, st.heat + dt * 0.4); }
       }
       st.heat = Math.max(0, st.heat - dt * 0.1);
+      if (st.heat > 0.6 && !heatWarned) { heatWarned = true; msgs.say('SEARCHLIGHT ON YOU!', 'CHANGE ALTITUDE OR GET FORCED DOWN', '#ff3b3b', 2); }
+      if (st.heat < 0.3) heatWarned = false;
       if (st.heat >= 1) forcedDescent();
 
-      for (const w of st.wires) if (!w.hit && Math.abs(w.p - st.dist) < 6 && Math.abs(w.y - st.y) < 8) { w.hit = true; st.vy += 40; T.noise(0.15, 0.15); }
-      for (const t of st.towers) if (!t.hit && Math.abs(t.p - st.dist) < 8 && st.y > H - t.h) { t.hit = true; st.vy += 30; T.noise(0.15, 0.15); }
+      for (const w of st.wires) if (!w.hit && Math.abs(w.p - st.dist) < 6 && Math.abs(w.y - st.y) < 8) { w.hit = true; st.vy += 40; T.noise(0.15, 0.15); earn(-PAY.wire); msgs.say('POWER LINE!', '-' + PAY.wire + ' COINS SPILLED', '#ff7a4a', 1.2); }
+      for (const t of st.towers) if (!t.hit && Math.abs(t.p - st.dist) < 8 && st.y > H - t.h) { t.hit = true; st.vy += 30; T.noise(0.15, 0.15); earn(-PAY.tower); msgs.say('SCRAPED A TOWER!', '-' + PAY.tower + ' COINS SPILLED', '#ff7a4a', 1.2); }
 
-      st.score = Math.floor(st.dist) + st.coins * 2;
+      st.score = Math.floor(st.dist) + Math.floor(st.coins) * 2;
       nextSwapAt -= dt * 60;
       if (nextSwapAt <= 0 && st.dist > 400 && st.dist < st.finishDist - 300) {
         nextSwapAt = 99999;
-        deck.fire();
+        if (!deck.fire()) nextSwapAt = 60; // a warning/event is already pending: try again shortly
       }
       if (st.dist >= st.finishDist) endRun();
     }
@@ -240,10 +262,13 @@
     function forcedDescent() {
       st.forcedDescents++; st.heat = 0; st.vy += 70; st.y = Math.min(H - 12, st.y + 20);
       T.tone(100, 0.4, 'sawtooth', 0.2);
+      earn(-PAY.descent); msgs.say('FORCED DOWN!', '-' + PAY.descent + ' COINS (BRIBE)', '#ff3b3b', 1.6);
     }
+    function weatherHint() { const w = weather.at(st.dist / st.finishDist); return w.grip < 0.9 ? 'WET BALLOON SINKS FASTER' : (w.fog > 0.4 ? 'HARD TO SEE' : ''); }
 
     function endRun() {
       st.ended = true; st.wonAwards = [];
+      earn(PAY.finish); st.coins = Math.floor(st.coins);
       if (st.forcedDescents === 0) st.wonAwards.push('COOL AS ICE — no heat descents');
       if (st.bestCombo >= 8) st.wonAwards.push('IN THE POCKET x' + st.bestCombo);
       st.score += st.coins * 2;
@@ -251,8 +276,9 @@
     }
 
     function drawSky() {
+      const sk = weather.sky(Math.min(1, st.dist / st.finishDist));
       const g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, '#2a2a44'); g.addColorStop(1, '#5a4a70');
+      g.addColorStop(0, sk[0]); g.addColorStop(1, sk[1]);
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     }
 
@@ -283,16 +309,24 @@
     }
     function i2x(lane, laneW) { return lane * laneW + laneW / 2; }
 
-    function drawHud() {
-      ctx.fillStyle = '#fff'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
-      ctx.fillText('Progress ' + Math.min(100, Math.floor(100 * st.dist / st.finishDist)) + '%', 4, 10);
-      ctx.fillText('Coins ' + st.coins + '  Combo ' + st.combo, 4, 20);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = st.heat > 0.6 ? '#f55' : '#ffd';
-      ctx.fillText('Heat ' + Math.floor(st.heat * 100) + '%  Bags ' + st.sandbags, W - 4, 10);
-      // lung meter bar
-      ctx.fillStyle = '#333'; ctx.fillRect(4, H - 30, 60, 5);
-      ctx.fillStyle = '#7fdc6a'; ctx.fillRect(4, H - 30, 60 * st.lung, 5);
+    function drawHud() { ctx.save(); drawHudInner(); ctx.restore(); }
+    function drawHudInner() {
+      T.hudProgress(ctx, st.dist / st.finishDist);
+      if (coinFlash > 0 && ((coinFlash * 20) | 0) % 2) { ctx.fillStyle = 'rgba(255,210,63,0.35)'; ctx.fillRect(2, 6, 40, 12); }
+      T.hudCoins(ctx, st.coins, gas);
+      if (!swap.warning && !swap.active) msgs.draw(ctx, 30);
+      // bottom-left: lung meter (tagged icon), above the beat lanes
+      const by = H - 30;
+      T.hudText(ctx, 'LUNG', 4, by - 1, '#7fdc6a', 1);
+      ctx.fillStyle = 'rgba(20,12,30,0.7)'; ctx.fillRect(26, by, 50, 6);
+      ctx.fillStyle = '#7fdc6a'; ctx.fillRect(27, by + 1, 48 * st.lung, 4);
+      if (st.combo >= 3) T.hudText(ctx, 'x' + st.combo, 80, by - 1, '#ffd23f', 1);
+      // bottom-right: heat meter + sandbag pips
+      ctx.fillStyle = 'rgba(20,12,30,0.7)'; ctx.fillRect(W - 54, by, 50, 6);
+      ctx.fillStyle = st.heat > 0.6 ? '#ff3b3b' : '#ffb04a'; ctx.fillRect(W - 53, by + 1, 48 * st.heat, 4);
+      T.hudText(ctx, 'HEAT', W - 56, by - 1, st.heat > 0.6 ? '#ff3b3b' : '#ffd', 1, 'right');
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = i < st.sandbags ? '#c9a46a' : 'rgba(255,255,255,0.15)'; ctx.fillRect(W - 12 - i * 8, by - 10, 6, 6); }
+      T.hudText(ctx, 'B', W - 31, by - 12, '#ccc', 1, 'right');
       if (T.isTouchDevice) {
         const lw = W / nLanes;
         const zones = [{ x: 0, y: 0, w: W, h: SANDBAG_ZONE_H, label: 'SANDBAG', active: touchSandbag }];
@@ -316,7 +350,7 @@
 
     raf = requestAnimationFrame(loop);
     // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
-    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
+    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running, weather: () => weather, msgs, gas: () => gas } };
   }
 
   window.SmokeBalloon = { start, needsPlay: (save) => T.needsPlay(save, 'sb') };

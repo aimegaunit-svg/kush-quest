@@ -40,8 +40,17 @@
       bullets: []
     };
 
+    const world = typeof opts.world === 'string' ? opts.world : (typeof opts.to === 'string' ? opts.to : 'hq');
+    // Economy (v1.2 transit rework): gas paid up front, payouts tuned so a clean run nets ~+5..+20.
+    const PAY = { drone: 2, sat: 3, bubble: 1, boss: 8, clean: 5, hitCost: 3 };
+    let gas = 0, gasPaid = false;
+    const msg = T.makeMessages();
     let seed = T.newSeed(), R = T.rng(seed);
-    function reseed(sd) { seed = sd; R = T.rng(sd); st.drones = []; st.sats = []; st.bubbles = []; seedWave(); }
+    let weather = T.makeWeather(seed, world);
+    // space flavour for the shared weather kinds (same plan/timing as every other ride)
+    const WX_NAME = { cloudy: ['DUST CLOUD', 'SLIGHT DRIFT'], rain: ['METEOR SHOWER', 'SHIP DRIFTS MORE'], storm: ['ION STORM!', 'SOLAR WIND PUSHES YOU'],
+      fog: ['NEBULA', 'SHORT VISION'], snow: ['ICE FIELD', 'SHIP SLIDES A LOT'], clear: ['CLEAR SPACE', ''] };
+    function reseed(sd) { seed = sd; R = T.rng(sd); weather = T.makeWeather(sd, world); st.drones = []; st.sats = []; st.bubbles = []; seedWave(); }
     function seedWave() {
       let p = 200;
       while (p < st.finishDist - 400) {
@@ -100,7 +109,7 @@
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
       if (intro.handle(fromId, payload)) return;
-      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
+      if (payload && (payload.type === 'swap' || payload.type === 'swapWarn')) { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'fire' && isHost) doFire(payload.turret, payload.angle);
@@ -136,24 +145,34 @@
       lines: soloMode
         ? ['WASD/arrows to fly freely, hold', 'SHIFT/SPACE to boost (burns fuel).', 'Auto-gun fires — press to fire manually.', 'Collect fuel bubbles, dodge drones!']
         : ['Pilot: free 8-way flight + boost.', 'Gunners: aim turret with MOUSE,', 'click to fire at drones & satellites.']
-    }, () => { running = true; }, () => finish(true));
+    }, () => {
+      running = true;
+      if (!gasPaid) { gasPaid = true; gas = T.payGas(save, world); }
+      msg.say(soloMode ? 'WASD FLY  SHIFT BOOST' : 'PILOT FLIES  GUNNERS CLICK', soloMode ? 'E / CLICK = FIRE (AUTO-AIM)' : (T.isTouchDevice ? 'LEFT: DRAG FLY  RIGHT: TAP AIM' : 'SHOOT DRONES, GRAB FUEL'), '#fff', 6);
+    }, () => finish(true));
     const results = T.makeResultsScreen();
 
-    let last = performance.now(), raf = 0;
+    let last = performance.now(), raf = 0, tSec = 0;
     function loop(now) {
       raf = requestAnimationFrame(loop);
       let dt = Math.min(0.05, (now - last) / 1000); last = now;
       ctx.clearRect(0, 0, W, H);
       drawSpace();
       if (!running) { intro.draw(); return; }
-      if (swap.tick(dt * 1000)) { st.dist += 20 * dt; draw(); swap.draw(ctx); drawHud(); return; }
+      tSec += dt;
+      msg.tick(dt * 1000);
+      if (st.flash > 0) st.flash -= dt;
+      const pct = Math.min(1, st.dist / st.finishDist);
+      if (!st.ended) { const ch = weather.changed(pct); if (ch) { const k = weather.at(pct).k, n = WX_NAME[k] || [ch, '']; msg.say(n[0], n[1], '#a0e8ff', 2.5); } }
+      if (swap.tick(dt * 1000)) { st.dist += 20 * dt; draw(); weather.drawOverlay(ctx, pct, tSec, { topDown: true }); drawHud(); return; }
       if (st.ended) {
-        results.draw(ctx, { canvas, title: 'DOCKED AT HQ!', coins: st.coins, score: st.score, awards: st.wonAwards });
+        results.draw(ctx, { canvas, title: st.hits >= 5 && st.fuel <= 0 ? 'LIMPED INTO HQ' : 'DOCKED AT HQ!', coins: st.coins, score: st.score, awards: st.wonAwards, gas });
         if (results.dismissed()) finish();
         return;
       }
       if (isHost || !net) step(dt);
       draw();
+      weather.drawOverlay(ctx, pct, tSec, { topDown: true });
       drawHud();
       if (isHost && net) {
         st._bT = (st._bT || 0) + dt;
@@ -170,6 +189,10 @@
         b: st.bullets.map(b => [Math.round(b.x), Math.round(b.y)]) };
     }
     function applyRemoteState(p) {
+      if (p.coins > st.coins) st.flash = 0.3;
+      if (p.hits > st.hits) msg.say('HIT!', 'COINS SPILLED', '#ff6b6b', 1.2);
+      if (p.bd && st.boss && !st.boss.defeated) msg.say('CARRIER DOWN!', '', '#8ef0b0', 2);
+      if (st.boss && !st.bossWarned && p.dist > st.boss.p - 420) { st.bossWarned = true; msg.say('CARRIER AHEAD!', 'SHOOT IT TO DOCK', '#ff6b6b', 3); }
       st.x = p.x; st.y = p.y; st.dist = p.dist; st.fuel = p.fuel; st.coins = p.coins; st.hits = p.hits;
       T.applyFlags(st.drones, 'dead', p.dr); T.applyFlags(st.sats, 'dead', p.sa); T.applyFlags(st.bubbles, 'got', p.bu);
       if (st.boss) { st.boss.hp = p.bh; st.boss.defeated = p.bd; }
@@ -187,7 +210,11 @@
       const ACC = 90;
       st.vx += dx * ACC * dt * (boost ? 1.6 : 1);
       st.vy += dy * ACC * dt * (boost ? 1.6 : 1);
-      st.vx *= 0.94; st.vy *= 0.94;
+      // weather effect (fair + readable): low "grip" = less damping (ship drifts), wind = gentle sideways push
+      const wx = weather.at(Math.min(1, st.dist / st.finishDist));
+      const damp = 0.94 + (1 - wx.grip) * 0.1;
+      st.vx += wx.wind * 14 * dt;
+      st.vx *= damp; st.vy *= damp;
       if (boost && st.fuel > 0) st.fuel = Math.max(0, st.fuel - dt * 0.25);
       st.x += st.vx * dt; st.y += st.vy * dt;
       st.x = Math.max(10, Math.min(W - 10, st.x));
@@ -203,21 +230,21 @@
       // ram damage: an enemy that touches the ship is destroyed (so one collision = one hit, not one per frame)
       for (const d of st.drones) if (!d.dead && Math.abs(enemyY(d.p) - st.y) < 9 && Math.abs(d.x - st.x) < 9) { d.dead = true; hitPlayer(); }
       for (const s of st.sats) if (!s.dead && Math.abs(enemyY(s.p) - st.y) < 9 && Math.abs(s.x - st.x) < 11) { s.dead = true; hitPlayer(); }
-      for (const b of st.bubbles) if (!b.got && Math.abs(enemyY(b.p) - st.y) < 10 && Math.abs(b.x - st.x) < 10) { b.got = true; st.fuel = Math.min(1, st.fuel + 0.25); st.coins += 2; T.tone(900, 0.06, 'square', 0.08); }
+      for (const b of st.bubbles) if (!b.got && Math.abs(enemyY(b.p) - st.y) < 10 && Math.abs(b.x - st.x) < 10) { b.got = true; st.fuel = Math.min(1, st.fuel + 0.25); addCoins(PAY.bubble); T.tone(900, 0.06, 'square', 0.08); }
 
       checkBulletHits();
 
       if (st.boss && !st.boss.defeated && Math.abs(st.boss.p - st.dist) < 12 && st.dist < st.boss.p + 5) {
         // hold position near boss until defeated
         st.dist = Math.min(st.dist, st.boss.p + 4);
-        if (st.boss.hp <= 0) { st.boss.defeated = true; T.tone(200, 0.5, 'sawtooth', 0.25); }
+        if (st.boss.hp <= 0) { st.boss.defeated = true; addCoins(PAY.boss); msg.say('CARRIER DOWN!', '+' + PAY.boss + ' COINS', '#8ef0b0', 2); T.tone(200, 0.5, 'sawtooth', 0.25); }
       }
 
       st.score = Math.floor(st.dist) + st.coins * 2;
       nextSwapAt -= dt * 60;
-      if (nextSwapAt <= 0 && st.dist > 500 && st.dist < st.boss.p - 200) {
-        nextSwapAt = 99999;
-        deck.fire();
+      if (!st.bossWarned && st.boss && st.dist > st.boss.p - 420) { st.bossWarned = true; msg.say('CARRIER AHEAD!', 'SHOOT IT TO DOCK', '#ff6b6b', 3); }
+      if (nextSwapAt <= 0 && st.dist > 500 && st.dist < st.boss.p - 400 && !swap.warning && !swap.active) {
+        if (deck.fire()) nextSwapAt = 99999; // fire() starts a 5s countdown; onDone re-arms
       }
       if ((!st.boss || st.boss.defeated) && st.dist >= st.finishDist) endRun();
       if (st.fuel <= 0 && st.hits >= 5) endRun();
@@ -264,25 +291,34 @@
     function checkBulletHits() {
       for (const b of st.bullets) {
         if (b.life <= 0) continue;
-        for (const d of st.drones) if (!d.dead && b.life > 0 && Math.abs(enemyY(d.p) - b.y) < 7 && Math.abs(d.x - b.x) < 7) { d.dead = true; d.hp = 0; st.coins += 1; b.life = 0; }
-        for (const s of st.sats) if (!s.dead && b.life > 0 && Math.abs(enemyY(s.p) - b.y) < 6 && Math.abs(s.x - b.x) < 8) { s.hp--; if (s.hp <= 0) { s.dead = true; st.coins += 2; } b.life = 0; }
+        for (const d of st.drones) if (!d.dead && b.life > 0 && Math.abs(enemyY(d.p) - b.y) < 7 && Math.abs(d.x - b.x) < 7) { d.dead = true; d.hp = 0; addCoins(PAY.drone); b.life = 0; }
+        for (const s of st.sats) if (!s.dead && b.life > 0 && Math.abs(enemyY(s.p) - b.y) < 6 && Math.abs(s.x - b.x) < 8) { s.hp--; if (s.hp <= 0) { s.dead = true; addCoins(PAY.sat); } b.life = 0; }
         if (st.boss && !st.boss.defeated && b.life > 0 && Math.abs(enemyY(st.boss.p) - b.y) < 12 && Math.abs(st.boss.x - b.x) < 22) { st.boss.hp--; b.life = 0; }
       }
     }
 
-    function hitPlayer() { st.hits++; st.fuel = Math.max(0, st.fuel - 0.1); T.noise(0.12, 0.15); }
+    function addCoins(n) { st.coins += n; st.flash = 0.3; }
+    function hitPlayer() {
+      st.hits++; st.fuel = Math.max(0, st.fuel - 0.1); T.noise(0.12, 0.15);
+      const lost = Math.min(st.coins, PAY.hitCost); st.coins -= lost;
+      if (lost > 0) msg.say('HIT! -' + lost + ' COINS', 'SPILLED OUT THE HATCH', '#ff6b6b', 1.2);
+    }
 
     function endRun() {
       st.ended = true; st.wonAwards = [];
-      if (st.hits === 0) st.wonAwards.push('CLEAN DOCKING — no hits');
+      if (st.hits === 0 && !(st.fuel <= 0)) { st.wonAwards.push('CLEAN DOCKING +' + PAY.clean); st.coins += PAY.clean; }
       if (st.fuel > 0.5) st.wonAwards.push('FUEL EFFICIENT');
       st.score += st.coins * 2;
       if (net && isHost) net.send({ type: 'end', coins: st.coins, score: st.score, awards: st.wonAwards, state: snapshot() });
     }
 
     function drawSpace() {
-      ctx.fillStyle = astral ? '#1a0a2e' : '#05070f';
-      ctx.fillRect(0, 0, W, H);
+      // time of day: the shared sky palette (day -> golden hour -> sunset), pushed deep toward space-black
+      const sk = weather.sky(Math.min(1, st.dist / st.finishDist));
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, astral ? '#1a0a2e' : '#05070f'); g.addColorStop(1, sk[1]);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = astral ? 'rgba(26,10,46,0.75)' : 'rgba(5,7,15,0.78)'; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = astral ? '#7a4ad6' : '#fff';
       for (let i = 0; i < 20; i++) { const sx = (i * 53 + 7) % W; const sy = ((i * 97 - st.dist * 2) % H + H) % H; ctx.fillRect(sx, sy, 1, 1); }
     }
@@ -292,7 +328,7 @@
       for (const d of st.drones) if (!d.dead) { const y = sy(d.p); if (y > -10 && y < H + 10) { ctx.fillStyle = '#c33'; ctx.fillRect(d.x - 4, y - 4, 8, 8); } }
       for (const s of st.sats) if (!s.dead) { const y = sy(s.p); if (y > -10 && y < H + 10) { ctx.fillStyle = '#aaa'; ctx.fillRect(s.x - 5, y - 3, 10, 6); } }
       for (const b of st.bubbles) if (!b.got) { const y = sy(b.p); if (y > -10 && y < H + 10) { ctx.strokeStyle = '#5cf'; ctx.beginPath(); ctx.arc(b.x, y, 4, 0, 7); ctx.stroke(); } }
-      if (st.boss && !st.boss.defeated) { const y = sy(st.boss.p); if (y > -20 && y < H + 20) { ctx.fillStyle = '#822'; ctx.fillRect(st.boss.x - 20, y - 10, 40, 20); ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillText('HP ' + st.boss.hp, st.boss.x, y - 14); } }
+      if (st.boss && !st.boss.defeated) { const y = sy(st.boss.p); if (y > -20 && y < H + 20) { ctx.fillStyle = '#822'; ctx.fillRect(st.boss.x - 20, y - 10, 40, 20); } }
       for (const b of st.bullets) { ctx.fillStyle = '#ff5'; ctx.fillRect(b.x - 1, b.y - 3, 2, 6); }
       ctx.fillStyle = astral ? '#c9a0ff' : '#7fdc6a';
       ctx.beginPath(); ctx.moveTo(st.x, st.y - 8); ctx.lineTo(st.x - 6, st.y + 6); ctx.lineTo(st.x + 6, st.y + 6); ctx.closePath(); ctx.fill();
@@ -300,23 +336,27 @@
     }
 
     function drawHud() {
-      ctx.fillStyle = '#fff'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
-      ctx.fillText('Progress ' + Math.min(100, Math.floor(100 * st.dist / st.finishDist)) + '%', 4, 10);
-      ctx.fillText('Coins ' + st.coins, 4, 20);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = st.fuel < 0.3 ? '#f55' : '#ffd';
-      ctx.fillText('Fuel ' + Math.floor(st.fuel * 100) + '%', W - 4, 10);
-      ctx.fillText('Hits ' + st.hits, W - 4, 20);
+      T.hudProgress(ctx, st.dist / st.finishDist, st.boss && !st.boss.defeated ? st.boss.p / st.finishDist : null);
+      if (st.flash > 0) { ctx.fillStyle = 'rgba(255,240,150,' + (st.flash * 1.5) + ')'; ctx.fillRect(2, 6, 34, 12); }
+      T.hudCoins(ctx, st.coins, gasPaid ? gas : null);
+      // bottom-left: fuel gauge (drop icon + bar); bottom-right: hull hits (pips)
+      const fy = H - 10, low = st.fuel < 0.3;
+      ctx.fillStyle = '#5cf'; ctx.beginPath(); ctx.moveTo(7, fy - 3); ctx.lineTo(4, fy + 3); ctx.lineTo(10, fy + 3); ctx.closePath(); ctx.fill(); ctx.fillRect(4, fy + 3, 6, 2);
+      ctx.fillStyle = 'rgba(20,12,30,0.7)'; ctx.fillRect(13, fy - 1, 42, 6);
+      ctx.fillStyle = low && (tSec * 4 | 0) % 2 ? '#ff3b3b' : (low ? '#f88' : '#5cf'); ctx.fillRect(14, fy, Math.round(40 * st.fuel), 4);
+      T.hudText(ctx, 'HULL', W - 46, fy - 2, '#ccc', 1);
+      for (let i = 0; i < 5; i++) { ctx.fillStyle = i < st.hits ? '#ff3b3b' : 'rgba(255,255,255,0.3)'; ctx.fillRect(W - 24 + i * 4, fy, 3, 5); }
+      if (st.boss && !st.boss.defeated && Math.abs(st.boss.p - st.dist) < 200) {
+        ctx.fillStyle = 'rgba(20,12,30,0.7)'; ctx.fillRect(W / 2 - 31, fy - 1, 62, 6);
+        ctx.fillStyle = '#ff6b6b'; ctx.fillRect(W / 2 - 30, fy, Math.round(60 * Math.max(0, st.boss.hp) / 8), 4);
+      }
       if (T.isTouchDevice) {
         ctx.save();
-        ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(0, 0, W / 2, H);
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); ctx.setLineDash([]);
-        ctx.textAlign = 'center'; ctx.font = 'bold 8px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        ctx.fillText('DRAG TO FLY', W / 4, H - 6);
-        ctx.fillText('TAP+DRAG TO AIM/FIRE', W * 0.75, H - 6);
-        if (joy) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.arc(joy.cx, joy.cy, 16, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(joy.cx + joy.dx * 16, joy.cy + joy.dy * 16, 5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(W / 2, 20); ctx.lineTo(W / 2, H - 16); ctx.stroke(); ctx.setLineDash([]);
+        if (joy) { ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff'; ctx.lineWidth = 1; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.arc(joy.cx, joy.cy, 16, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(joy.cx + joy.dx * 16, joy.cy + joy.dy * 16, 5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
         ctx.restore();
       }
+      if (swap.warning || swap.active) swap.draw(ctx); else msg.draw(ctx);
     }
 
     function finish(skipped) {
@@ -335,7 +375,7 @@
 
     raf = requestAnimationFrame(loop);
     // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
-    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
+    return { cleanup, _debug: { st, seats, deck, swap, msg, fireSwap: () => deck.fire(), running: () => running, weather: () => weather, gas: () => gas } };
   }
 
   window.BongRocket = { start, needsPlay: (save) => T.needsPlay(save, 'br') };

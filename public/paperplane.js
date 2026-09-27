@@ -34,8 +34,15 @@
       updrafts: [], gusts: [], gulls: [], pelicans: [], coinsArr: [], caught: null
     };
 
-    let seed = T.newSeed(), R = T.rng(seed);
-    function reseed(sd) { seed = sd; R = T.rng(sd); st.updrafts = []; st.gusts = []; st.gulls = []; st.pelicans = []; st.coinsArr = []; seedWorld(); }
+    const world = typeof opts.world === 'string' ? opts.world : 'beach';
+    // Economy (Hotbox Highway rules): gas is paid up front; a clean landing pays LAND_BONUS, coins
+    // are worth COIN_VAL each, every bird hit / pelican grab spills coins, a dunk forfeits the bonus.
+    const GAS = T.gasCost(world), COIN_VAL = 2, LAND_BONUS = GAS + 2, DRY_BONUS = 3;
+    const GULL_COST = 2, PELICAN_COST = 3;
+    let gas = 0, flashT = 0, tSec = 0, hintT = 6, lastPct = 0;
+    const msg = T.makeMessages();
+    let seed = T.newSeed(), R = T.rng(seed), weather = T.makeWeather(seed, world);
+    function reseed(sd) { seed = sd; R = T.rng(sd); weather = T.makeWeather(sd, world); st.updrafts = []; st.gusts = []; st.gulls = []; st.pelicans = []; st.coinsArr = []; seedWorld(); }
     function seedWorld() {
       let p = 200;
       while (p < st.finishDist - 150) {
@@ -80,7 +87,7 @@
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
       if (intro.handle(fromId, payload)) return;
-      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
+      if (payload && (payload.type === 'swap' || payload.type === 'swapWarn')) { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
@@ -134,7 +141,7 @@
       lines: soloMode
         ? ['Hold SPACE/click to DIVE (gain speed).', 'Release to PULL UP (gain height).', 'Ride updrafts, dodge gulls & pelicans!']
         : ['Pilot: hold to dive, release to climb.', 'Others: A/D to lean & grab coins —', "don't all lean the same way!"]
-    }, () => { running = true; }, () => finish(true));
+    }, () => { running = true; gas = T.payGas(save, world); }, () => finish(true));
     const results = T.makeResultsScreen();
 
     let last = performance.now(), raf = 0;
@@ -142,21 +149,42 @@
       raf = requestAnimationFrame(loop);
       let dt = Math.min(0.05, (now - last) / 1000); last = now;
       ctx.clearRect(0, 0, W, H);
+      ctx.textBaseline = 'alphabetic';
       drawSky();
       if (!running) { intro.draw(); return; }
-      if (swap.tick(dt * 1000)) { st.dist += 15 * dt; draw(); swap.draw(ctx); drawHud(); return; }
       if (st.ended) {
-        results.draw(ctx, { canvas, title: st.dunked ? 'DUNKED!' : 'LANDED SAFE!', coins: st.coins, score: st.score, awards: st.wonAwards });
+        draw();
+        ctx.textBaseline = 'alphabetic'; // hud helpers leave 'top' set
+        results.draw(ctx, { canvas, title: st.dunked ? 'DUNKED!' : 'LANDED SAFE!', coins: st.coins, score: st.score, awards: st.wonAwards, gas });
         if (results.dismissed()) finish();
         return;
       }
+      tSec += dt; hintT -= dt; flashT = Math.max(0, flashT - dt);
+      msg.tick(dt * 1000);
+      const wxName = weather.changed(pct());
+      if (wxName) msg.say(wxName, weatherHint(), '#a0e8ff', 3);
+      if (swap.tick(dt * 1000)) { st.dist += 15 * dt; draw(); drawHud(); swap.draw(ctx); return; }
       if (isHost || !net) step(dt);
       draw();
       drawHud();
+      swap.draw(ctx); // countdown pill while a swap warning is pending (gameplay keeps running)
       if (isHost && net) {
         st._bT = (st._bT || 0) + dt;
         if (st._bT > 0.1) { st._bT = 0; net.send(snapshot()); }
       } else if (net) sendInput({ type: 'input', dive: diving(), lean: leanInput(), free: freeing() });
+    }
+
+    function pct() { return Math.max(0, Math.min(1, st.dist / st.finishDist)); }
+    function weatherHint() {
+      const w = weather.at(pct());
+      if (w.k === 'rain' || w.k === 'storm') return 'PAPER SOAKS UP - STAY HIGH';
+      if (w.k === 'fog') return 'CAN\'T SEE FAR AHEAD';
+      if (w.k === 'snow') return 'HEAVY FLAKES - STAY HIGH';
+      return '';
+    }
+    function spill(n, why) {
+      const lost = Math.min(st.coins, n); st.coins -= lost; flashT = 0.6;
+      msg.say(why, lost ? '-' + lost + ' COINS' : '', '#ff6b6b', 1.4);
     }
 
     function snapshot() {
@@ -184,6 +212,11 @@
       if (dive) { st.vy += 70 * dt; st.vx = Math.min(160, st.vx + 40 * dt); }
       else { st.vy -= 55 * dt / heavy; st.vx = Math.max(30, st.vx - 25 * dt); }
       st.vy += 20 * dt * heavy; // gravity
+      // weather: wind is a gentle tail/headwind + slight push down; rain/snow slowly soaks the paper
+      const w = weather.at(pct());
+      st.vx = Math.max(30, Math.min(160, st.vx + w.wind * 6 * dt));
+      st.vy += Math.abs(w.wind) * 4 * dt;
+      if (st.y > 45) st.wet = Math.min(1, st.wet + dt * 0.12 * (w.wet + w.snow * 0.7));
       st.y += st.vy * dt + lean * 6 * dt;
       st.dist += st.vx * dt;
 
@@ -200,17 +233,17 @@
       if (st.y < 5) st.y = 5;
       if (st.y > H - 8) { crash(); return; }
 
-      for (const g of st.gulls) if (!g.hit && Math.abs(g.p - st.dist) < 8 && Math.abs(g.y - st.y) < 8) { g.hit = true; st.vy += 30; st.wonAwardsHit = true; T.noise(0.1, 0.15); }
-      for (const p of st.pelicans) if (!p.hit && !st.caught && Math.abs(p.p - st.dist) < 8 && Math.abs(p.y - st.y) < 10) { p.hit = true; st.caught = { t: 0 }; T.tone(180, 0.3, 'square', 0.2); }
+      for (const g of st.gulls) if (!g.hit && Math.abs(g.p - st.dist) < 8 && Math.abs(g.y - st.y) < 8) { g.hit = true; st.vy += 30; st.hits = (st.hits || 0) + 1; T.noise(0.1, 0.15); spill(GULL_COST, 'GULL HIT!'); }
+      for (const p of st.pelicans) if (!p.hit && !st.caught && Math.abs(p.p - st.dist) < 8 && Math.abs(p.y - st.y) < 10) { p.hit = true; st.caught = { t: 0 }; st.hits = (st.hits || 0) + 1; T.tone(180, 0.3, 'square', 0.2); spill(PELICAN_COST, 'PELICAN GRAB!'); msg.say('PELICAN GRAB!', 'MASH E / CLICK TO BREAK FREE', '#ff6b6b', 2); }
       if (st.caught) { st.caught.t += dt; st.y -= 10 * dt; if (anyFreeing()) st.caught.freeT = (st.caught.freeT || 0) + dt; if ((st.caught.freeT || 0) > 0.6 || st.caught.t > 2.5) st.caught = null; }
 
-      for (const c of st.coinsArr) if (!c.got && Math.abs(c.p - st.dist) < 8 && Math.abs(c.y - st.y) < 10) { c.got = true; st.coins += 2; T.tone(900, 0.06, 'square', 0.08); }
+      for (const c of st.coinsArr) if (!c.got && Math.abs(c.p - st.dist) < 8 && Math.abs(c.y - st.y) < 10) { c.got = true; st.coins += COIN_VAL; st.flashGood = 0.3; T.tone(900, 0.06, 'square', 0.08); }
 
       st.score = Math.floor(st.dist);
       nextSwapAt -= dt * 60;
-      if (nextSwapAt <= 0 && st.dist > 400 && st.dist < st.finishDist - 300) {
-        nextSwapAt = 99999;
-        deck.fire();
+      // fire() starts a 5s countdown (returns null if one is already pending); the event lands after it
+      if (nextSwapAt <= 0 && !swap.warning && !swap.active && st.dist > 400 && st.dist < st.finishDist - 600) {
+        if (deck.fire()) nextSwapAt = 99999;
       }
       if (st.dist >= st.finishDist) endRun(false);
     }
@@ -218,17 +251,21 @@
     function crash() { endRun(true); }
     function endRun(dunked) {
       st.dunked = dunked; st.ended = true;
-      if (dunked) st.coins = Math.max(0, st.coins - 4);
       st.wonAwards = [];
-      if (st.wet < 0.2) st.wonAwards.push('BONE DRY — stayed high & dry');
-      if (st.coins >= 10) st.wonAwards.push('COIN GLIDER');
+      if (dunked) { st.coins = Math.floor(st.coins / 2); st.wonAwards.push('DUNKED - half your coins sank'); }
+      else {
+        st.coins += LAND_BONUS; st.wonAwards.push('LANDING FEE +' + LAND_BONUS);
+        if (st.wet < 0.2) { st.coins += DRY_BONUS; st.wonAwards.push('BONE DRY +' + DRY_BONUS); }
+        if (!st.hits) st.wonAwards.push('NO BIRD STRIKES');
+      }
       st.score += st.coins * 2;
       if (net && isHost) net.send({ type: 'end', dunked, coins: st.coins, score: st.score, awards: st.wonAwards, state: snapshot() });
     }
 
     function drawSky() {
+      const sk = weather.sky(pct());
       const g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, '#7fd0ff'); g.addColorStop(1, '#1a6fae');
+      g.addColorStop(0, sk[0]); g.addColorStop(0.75, sk[1]); g.addColorStop(1, '#1a6fae');
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
       for (let i = 0; i < 4; i++) { const x = ((i * 90 - st.dist * 0.3) % (W + 40) + W + 40) % (W + 40) - 20; ctx.fillRect(x, 20 + i * 15, 24, 6); }
@@ -250,17 +287,35 @@
       ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-10, -6); ctx.lineTo(-4, 0); ctx.lineTo(-10, 6); ctx.closePath(); ctx.fill();
       ctx.restore();
       ctx.restore();
-      if (st.y > 150) { ctx.fillStyle = 'rgba(0,80,160,0.35)'; ctx.fillRect(0, 150, W, H - 150); }
+      // sea at the bottom (touch it = dunked): always visible so the danger line is clear
+      ctx.fillStyle = 'rgba(0,70,150,0.55)'; ctx.fillRect(0, H - 8, W, 8);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      for (let i = 0; i < 12; i++) ctx.fillRect(((i * 30 - st.dist * 0.8) % W + W) % W, H - 8, 6, 1);
+      if (st.y > 150) { ctx.fillStyle = 'rgba(0,80,160,0.25)'; ctx.fillRect(0, 150, W, H - 150); }
+      weather.drawOverlay(ctx, pct(), tSec, { horizon: 40 });
     }
 
     function drawHud() {
-      ctx.fillStyle = '#fff'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
-      ctx.fillText('Progress ' + Math.min(100, Math.floor(100 * st.dist / st.finishDist)) + '%', 4, 10);
-      ctx.fillText('Coins ' + st.coins, 4, 20);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = st.wet > 0.6 ? '#88f' : '#ffd';
-      ctx.fillText('Wet ' + Math.floor(st.wet * 100) + '%', W - 4, 10);
-      if (st.caught) { ctx.fillStyle = '#f55'; ctx.textAlign = 'center'; ctx.fillText('CAUGHT! tap E/click to free', W / 2, H - 20); }
+      T.hudProgress(ctx, pct());
+      if (flashT > 0 && Math.floor(flashT * 10) % 2) { ctx.fillStyle = 'rgba(255,60,60,0.35)'; ctx.fillRect(0, 6, 90, 24); }
+      if (st.flashGood > 0) { st.flashGood -= 1 / 60; ctx.fillStyle = 'rgba(255,230,80,0.3)'; ctx.fillRect(0, 6, 40, 14); }
+      T.hudCoins(ctx, st.coins, gas);
+      // bottom-right: wetness meter (droplet icon + bar)
+      const bx = W - 46, by = H - (T.isTouchDevice ? 38 : 20);
+      ctx.fillStyle = 'rgba(20,12,30,0.7)'; ctx.fillRect(bx - 10, by - 2, 52, 10);
+      ctx.fillStyle = '#6ab8ff'; ctx.fillRect(bx - 7, by + 2, 4, 4); ctx.fillRect(bx - 6, by, 2, 2);
+      ctx.fillStyle = '#333'; ctx.fillRect(bx, by + 1, 38, 5);
+      ctx.fillStyle = st.wet > 0.6 ? '#4a7aff' : '#a0d8ff'; ctx.fillRect(bx, by + 1, Math.round(38 * st.wet), 5);
+      // bottom-left: my role tag in crew mode
+      if (!soloMode) {
+        const mine = seats.find(x => T.seatIsMine(x, net)) || seats[0];
+        T.hudText(ctx, mine.role === 'pilot' ? 'PILOT' : 'WING', 4, by - 1, '#ffe98a', 1);
+      }
+      if (hintT > 0 && !msg.busy && !swap.warning) {
+        msg.say(soloMode || (seats[0] && T.seatIsMine(seats[0], net)) ? 'HOLD = DIVE' : 'A/D = LEAN',
+          soloMode ? 'LET GO = CLIMB. AVOID THE SEA' : 'GRAB COINS, DON\'T ALL LEAN SAME WAY', '#fff', Math.max(0.3, hintT), true);
+      }
+      if (!swap.warning && !swap.active) msg.draw(ctx, 24);
       if (T.isTouchDevice) T.drawTouchZones(ctx, [
         { x: 0, y: H - 26, w: W / 3, h: 26, label: '◀ LEAN', active: touchLean < 0 },
         { x: W / 3, y: H - 26, w: W / 3, h: 26, label: 'HOLD=DIVE', active: mouseDown && touchLean === 0 },
@@ -284,7 +339,7 @@
 
     raf = requestAnimationFrame(loop);
     // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
-    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
+    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running, weather: () => weather, gas: () => gas, msg } };
   }
 
   window.PaperPlane = { start, needsPlay: (save) => T.needsPlay(save, 'pp') };

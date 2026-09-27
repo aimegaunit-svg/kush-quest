@@ -42,7 +42,7 @@
 
     // Seeded so every online client builds the same river (the host's seed rides in the start gate).
     let seed = T.newSeed(), R = T.rng(seed);
-    function reseed(sd) { seed = sd; R = T.rng(sd); st.rocks = []; st.swans = []; st.whirlpools = []; st.snacks = []; seedHazards(); }
+    function reseed(sd) { seed = sd; R = T.rng(sd); weather = T.makeWeather(sd, opts.world, opts.night); st.rocks = []; st.swans = []; st.whirlpools = []; st.snacks = []; seedHazards(); }
     function seedHazards() {
       let p = 300;
       while (p < st.finishAt - 200) {
@@ -97,7 +97,7 @@
     const remoteInputs = new Map();
     if (net) net._deliver = (fromId, payload) => {
       if (intro.handle(fromId, payload)) return;
-      if (payload && payload.type === 'swap') { if (!isHost) deck.handle(payload); return; }
+      if (payload && (payload.type === 'swap' || payload.type === 'swapWarn')) { if (!isHost) deck.handle(payload); return; }
       if (payload && payload.type === 'input') remoteInputs.set(fromId, payload);
       if (payload && payload.type === 'state' && !isHost) applyRemoteState(payload);
       if (payload && payload.type === 'end' && !isHost) applyEnd(payload);
@@ -139,14 +139,22 @@
     ], { seats, runner: swap, net, onDone: () => { nextSwapAt = 700 + Math.random() * 600; } });
 
     // ---- results / instructions ----
-    let running = false;
+    let running = false, gas = 0, runT = 0, coinFlash = 0, lastCoins = 0;
+    const msgs = T.makeMessages();
+    let weather = T.makeWeather(seed, opts.world, opts.night);
+    // Economy (Hotbox Highway rules): gas is paid up front; snacks 3c each, every hit spills 2c,
+    // reaching the waterfall pays a finish bonus that shrinks 5c per hit. Popping = no bonus + spill.
+    const SNACK_C = 3, SPILL_C = 2, FINISH_BONUS = 18, BONUS_PER_HIT = 5, POP_SPILL = 5;
     const intro = T.makeStartGate(ctx, {
       save, gameKey: 'lr', seenKey: 'seenLazyRiver', canvas, net, seed, onSeed: reseed,
       title: 'LAZY RIVER',
       lines: soloMode
         ? ['A = left paddle  D = right paddle', 'Left paddle turns you RIGHT,', 'right paddle turns you LEFT.', 'Both together = straight & fast!']
         : ['Paddlers: coordinate left/right!', 'Extra crew: SPACE to fend off', 'hazards and grab snacks.']
-    }, () => { running = true; }, () => finish(true));
+    }, () => {
+      running = true; gas = T.payGas(save, opts.world);
+      msgs.say(soloMode ? 'A / D = PADDLE' : 'PADDLE TOGETHER', soloMode ? 'both = fast · SPACE = fend off' : 'extra crew: SPACE = fend off', '#8ef0b0', 6);
+    }, () => finish(true));
     const results = T.makeResultsScreen();
 
     // ---- main loop ----
@@ -159,17 +167,21 @@
 
       if (!running) { intro.draw(); return; }
 
-      if (swap.tick(dt * 1000)) { simVisualsOnly(dt); draw(); swap.draw(ctx); drawHud(); return; }
-
       if (st.ended) {
-        results.draw(ctx, { canvas, title: st.popped ? 'TUBE POPPED!' : 'SPLASHDOWN!', coins: st.coins, score: st.score, awards: st.wonAwards });
+        draw(); ctx.textBaseline = 'alphabetic';
+        results.draw(ctx, { canvas, title: st.popped ? 'TUBE POPPED!' : 'SPLASHDOWN!', coins: st.coins, score: st.score, awards: st.wonAwards, gas });
         if (results.dismissed()) finish();
         return;
       }
 
+      runT += dt; msgs.tick(dt * 1000);
+      const pct = Math.min(1, st.progress / st.finishAt);
+      const wxName = weather.changed(pct); if (wxName) msgs.say(wxName, weatherTip(weather.at(pct)), '#a0e8ff', 3);
+      if (swap.tick(dt * 1000)) { simVisualsOnly(dt); draw(); swap.draw(ctx); drawHud(true); return; }
       if (isHost || !net) step(dt);
       draw();
       drawHud();
+      swap.draw(ctx);
 
       if (isHost && net) {
         st._bcastT = (st._bcastT || 0) + dt;
@@ -199,12 +211,22 @@
     }
 
     function simVisualsOnly(dt) { st.progress += 20 * dt; }
+    function weatherTip(w) {
+      if (w.k === 'storm') return 'wind pushes the tube';
+      if (w.wet > 0.5) return 'slick water: spins last longer';
+      if (w.snow > 0.5) return 'icy: spins last longer';
+      if (w.fog > 0.4) return 'look close';
+      return '';
+    }
 
     function step(dt) {
       if (st.mirrorT > 0) st.mirrorT -= dt;
       let { left, right } = combinedPaddles();
       if (!soloMode && st.mirrorT > 0) { const t = left; left = right; right = t; }
-      const TURN_ACC = 2.4, DAMP = 0.9, THRUST = 34, DRAG = 0.985;
+      const wx = weather.at(st.progress / st.finishAt);
+      // Weather: low grip = spins damp out slower (up to 0.95 vs 0.9); wind = gentle sideways drift.
+      const TURN_ACC = 2.4, DAMP = 0.9 + (1 - wx.grip) * 0.15, THRUST = 34, DRAG = 0.985;
+      st.x += wx.wind * 7 * dt;
       if (left) st.angVel += TURN_ACC * dt * 60 * dt; // right turn
       if (right) st.angVel -= TURN_ACC * dt * 60 * dt;
       st.angVel *= Math.pow(DAMP, dt * 60);
@@ -229,7 +251,7 @@
       for (const r of st.rocks) if (!r.hit && Math.abs(r.p - st.progress) < 10 && Math.hypot(r.x - st.x, 0) < r.r + 6) hitHazard(r);
       for (const s of st.swans) { s.x += Math.sin(st.progress * 0.01 + s.p) * s.dir * dt * 8; if (!s.hit && Math.abs(s.p - st.progress) < 10 && Math.hypot(s.x - st.x, 0) < s.r + 6) hitHazard(s); }
       for (const w of st.whirlpools) if (Math.abs(w.p - st.progress) < 16 && Math.hypot(w.x - st.x, 0) < w.r) st.angVel += (Math.random() - 0.5) * 0.15;
-      for (const sn of st.snacks) if (!sn.got && Math.abs(sn.p - st.progress) < 8 && Math.hypot(sn.x - st.x, 0) < 8) { sn.got = true; st.coins += 3; st.snacksGot = (st.snacksGot || 0) + 1; T.tone(880, 0.08, 'square', 0.08); }
+      for (const sn of st.snacks) if (!sn.got && Math.abs(sn.p - st.progress) < 8 && Math.hypot(sn.x - st.x, 0) < 8) { sn.got = true; st.coins += SNACK_C; st.snacksGot = (st.snacksGot || 0) + 1; T.tone(880, 0.08, 'square', 0.08); }
       // Lookout / fend-off seats (3rd-4th player; in solo SPACE/W also works): pole-shove the nearest
       // rock or swan ahead out of the tube's path, or hook a floating snack from up to 40px away.
       st.fendCd = Math.max(0, (st.fendCd || 0) - dt);
@@ -239,7 +261,7 @@
         ahead.sort((a, b) => a.p - b.p);
         if (ahead[0]) { const h = ahead[0]; h.x += (h.x >= st.x ? 1 : -1) * 30; h.x = Math.max(RIVER_L + 6, Math.min(RIVER_R - 6, h.x)); T.tone(200, 0.08, 'triangle', 0.1); }
         const sn = st.snacks.find(q => !q.got && Math.abs(q.p - st.progress) < 40 && Math.abs(q.x - st.x) < 40);
-        if (sn) { sn.got = true; st.coins += 3; st.snacksGot = (st.snacksGot || 0) + 1; T.tone(880, 0.08, 'square', 0.08); }
+        if (sn) { sn.got = true; st.coins += SNACK_C; st.snacksGot = (st.snacksGot || 0) + 1; T.tone(880, 0.08, 'square', 0.08); }
       }
 
       if (Math.abs(st.angle) < 0.15 && !hazardNear()) st.lastCalm = st.progress;
@@ -248,7 +270,7 @@
       nextSwapAt -= dt * 60;
       if (nextSwapAt <= 0 && st.progress > 400 && st.progress < st.finishAt - 300) {
         nextSwapAt = 99999;
-        deck.fire();
+        if (!deck.fire()) nextSwapAt = 60; // a warning is already pending: try again shortly
       }
 
       if (st.progress >= st.finishAt) endRun(false);
@@ -270,24 +292,32 @@
 
     function hitHazard(h) {
       h.hit = true; st.hits++; st.shakeT = 0.25;
+      const lost = Math.min(SPILL_C, st.coins); st.coins -= lost;
       T.noise(0.15, 0.15);
-      if (st.hits >= 3) endRun(true);
+      if (st.hits >= 3) { endRun(true); return; }
+      msgs.say(st.hits === 2 ? 'ONE MORE HIT = POP!' : 'BONK!', lost ? '-' + lost + ' coins spilled' : 'tube leaking', st.hits === 2 ? '#ff3b3b' : '#ffd23f', 1.6);
     }
 
     function endRun(popped) {
       st.popped = popped; st.ended = true;
-      if (popped) { st.coins = Math.max(0, st.coins - 5); st.progress = st.lastCalm; }
+      if (popped) { st.coins = Math.max(0, st.coins - POP_SPILL); st.progress = st.lastCalm; }
+      else st.coins += Math.max(0, FINISH_BONUS - BONUS_PER_HIT * st.hits);
       st.wonAwards = [];
       if (st.hits === 0) st.wonAwards.push('DRY & CHILL — no hits!');
-      if (st.coins >= 15) st.wonAwards.push('SNACK RUN — big haul');
+      if ((st.snacksGot || 0) >= 4) st.wonAwards.push('SNACK RUN — big haul');
       st.score += st.coins * 2;
       if (net && isHost) net.send({ type: 'end', popped, coins: st.coins, score: st.score, awards: st.wonAwards, snacksGot: st.snacksGot || 0, state: snapshot() });
     }
 
     function drawRiver() {
+      // banks = grass tinted by time of day; water reflects the sky
+      const pct = Math.min(1, st.progress / st.finishAt), sky = weather.sky(pct);
       ctx.fillStyle = '#1a5c3a'; ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = '#2f8fd6';
-      ctx.fillRect(RIVER_L, 0, RIVER_R - RIVER_L, H);
+      const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, sky[0]); g.addColorStop(1, sky[1]);
+      ctx.fillStyle = g; ctx.globalAlpha = 0.25; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#2f8fd6'; ctx.fillRect(RIVER_L, 0, RIVER_R - RIVER_L, H);
+      ctx.fillStyle = g; ctx.globalAlpha = 0.3;
+      ctx.fillRect(RIVER_L, 0, RIVER_R - RIVER_L, H); ctx.globalAlpha = 1;
       ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
       for (let i = 0; i < 8; i++) { const y = ((i * 30 - (st.progress % 30)) + H) % H; ctx.beginPath(); ctx.moveTo(RIVER_L, y); ctx.lineTo(RIVER_R, y); ctx.stroke(); }
     }
@@ -314,15 +344,26 @@
       ctx.fillStyle = '#ffe0a0'; ctx.fillRect(-2, -3, 4, 4);
       ctx.restore();
       ctx.restore();
+      weather.drawOverlay(ctx, Math.min(1, st.progress / st.finishAt), runT, { topDown: true });
     }
 
-    function drawHud() {
-      ctx.fillStyle = '#fff'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
-      ctx.fillText('Progress ' + Math.min(100, Math.floor(100 * st.progress / st.finishAt)) + '%', 4, 10);
-      ctx.fillText('Coins ' + st.coins, 4, 20);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = st.hits >= 2 ? '#f55' : '#ffd';
-      ctx.fillText('Hits ' + st.hits + '/3', W - 4, 10);
+    function drawHud(swapping) {
+      if (st.coins !== lastCoins) { if (st.coins > lastCoins) coinFlash = 0.35; lastCoins = st.coins; }
+      coinFlash = Math.max(0, coinFlash - 1 / 60);
+      T.hudProgress(ctx, st.progress / st.finishAt);
+      if (coinFlash > 0) { ctx.save(); ctx.fillStyle = 'rgba(255,210,63,0.35)'; ctx.fillRect(2, 6, 34, 14); ctx.restore(); }
+      T.hudCoins(ctx, st.coins, gas);
+      // bottom-left: tube health (3 pips, red when used)
+      ctx.save();
+      T.hudText(ctx, 'TUBE', 4, H - 11, '#fff', 1);
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = i < 3 - st.hits ? '#e0862a' : '#5a2020'; ctx.beginPath(); ctx.arc(30 + i * 9, H - 7, 3, 0, 7); ctx.fill(); }
+      // bottom-right: status tags only when relevant
+      let tx = W - 4;
+      const tag = (str, col) => { ctx.font = '8px monospace'; const w = ctx.measureText(str).width + 6; tx -= w; ctx.fillStyle = col; ctx.fillRect(tx, H - 12, w, 10); T.hudText(ctx, str, tx + 3, H - 11, '#000', 1); tx -= 3; };
+      if (st.mirrorT > 0) tag('L/R SWAPPED ' + Math.ceil(st.mirrorT), '#ff8a4a');
+      if ((st.fendCd || 0) <= 0) tag('SPACE FEND', '#8ef0b0');
+      ctx.restore();
+      if (!swapping && !swap.warning) msgs.draw(ctx, 30);
       if (T.isTouchDevice) T.drawTouchZones(ctx, [
         { x: 0, y: H * 0.15, w: W / 2, h: H * 0.85, label: 'PADDLE L', active: touch.left },
         { x: W / 2, y: H * 0.15, w: W / 2, h: H * 0.85, label: 'PADDLE R', active: touch.right },
@@ -353,7 +394,7 @@
 
     raf = requestAnimationFrame(loop);
     // _debug: test-page / Playwright hook only (state, seats, swap deck, force a swap).
-    return { cleanup, _debug: { st, seats, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
+    return { cleanup, _debug: { st, seats, weather: () => weather, gas: () => gas, msgs, deck, swap, fireSwap: () => deck.fire(), running: () => running } };
   }
 
   window.LazyRiver = { start, needsPlay: (save) => T.needsPlay(save, 'lr') };

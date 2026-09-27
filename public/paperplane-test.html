@@ -24,7 +24,7 @@ function clearMount(){ try { window.game && window.game.cleanup(); } catch(e){} 
 function startSolo() {
   clearMount();
   window.game = PaperPlane.start({
-    from: 'beach', to: 'suburbia', world: 0, crew: 1, save, net: null, mount: document.getElementById('mount'), scale: 3,
+    from: 'beach', to: 'suburbia', world: 'beach', crew: 1, save, net: null, mount: document.getElementById('mount'), scale: 3,
     onDone: (r) => { window.results.push(r); log('onDone: ' + JSON.stringify(r)); }
   });
   log('started solo');
@@ -33,7 +33,7 @@ function startCrew(n) {
   clearMount();
   const crew = []; for (let i=0;i<n;i++) crew.push({id:'p'+i,name:'P'+i,color:i});
   window.game = PaperPlane.start({
-    from: 'beach', to: 'suburbia', world: 0, crew, save, net: null, mount: document.getElementById('mount'), scale: 3,
+    from: 'beach', to: 'suburbia', world: 'beach', crew, save, net: null, mount: document.getElementById('mount'), scale: 3,
     onDone: (r) => { window.results.push(r); log('onDone: ' + JSON.stringify(r)); }
   });
   log('started crew of ' + n);

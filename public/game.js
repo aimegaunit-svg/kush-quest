@@ -1181,8 +1181,8 @@ function variantTheme(base, name, tint, a, enemies) {
   return { name, tiles: b.tiles, sky: tl(b.sky), clouds: b.clouds, far: tl(b.far), near: tl(b.near), enemies, base, floorTint: [tint, a * 0.7] };
 }
 // enemy variants: same moves as the originals, new looks, a bit tougher
-const BASE_AI = { ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop', badtrip: 'cop', paranoia: 'karen' };
-const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2, badtrip: 1 };
+const BASE_AI = { ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop', badtrip: 'cop', paranoia: 'karen', scout: 'squirrel', tourist: 'cop' };
+const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2, badtrip: 1, scout: 1, tourist: 1 };
 {
   const tintSprites = (src, map) => src.map(img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { const key = d.data[i] + ',' + d.data[i + 1] + ',' + d.data[i + 2]; if (map[key]) { d.data[i] = map[key][0]; d.data[i + 1] = map[key][1]; d.data[i + 2] = map[key][2]; } } g.putImageData(d, 0, 0); return c; });
   const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -1198,11 +1198,16 @@ const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, 
   ENEMY_IMG.segway = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#3a6a9a'], [P.D, '#1e3a6a'], [P.y, '#e8e8f0']])); // Downtown: MALL COP ON A SEGWAY
   ENEMY_IMG.owl = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#8a6a4a'], [P.T, '#5a3a20'], [P.y, '#e8e0c8']])); // Misty Woods: OWL NARC
   ENEMY_IMG.securitybot = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#2a2a3a'], [P.D, '#15151f'], [P.y, '#ff3a3a']])); // Buzzkill HQ: SECURITY BOT
+  // v1.3 (content pass, requested 2026-09-26): two more reskins for the worlds this pass covers first -
+  // same recolor recipe as every variant above, just filling out PARK/BEACH's own family pools specifically
+  // rather than only the later-world "remix" themes.
+  ENEMY_IMG.scout = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#6a8a4a'], [P.T, '#3a5a28'], [P.y, '#d8c890']])); // PARK: khaki SCOUT SQUIRREL
+  ENEMY_IMG.tourist = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#ff8a5a'], [P.D, '#d85a2a'], [P.y, '#ffe8a0']])); // BEACH: Hawaiian-shirt TOURIST COP
   // v1.2 (Step 8): Astral Plane enemies (brief v0.9 Phase F). No new sprite art was built for these - they
   // alias existing base sprites with a shadowy/psychedelic recolor, same approach as every variant above.
   ENEMY_IMG.badtrip = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#5a1a8a'], [P.D, '#2e0a58'], [P.y, '#ff6aff']])); // BAD TRIP: shadow-homie
   ENEMY_IMG.paranoia = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#160a28'], [P.D, '#0a0414'], [P.y, '#ff2af0']])); // THE PARANOIA's body - the giant eye is drawn on top of this in drawEnemyB
-  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot', 'badtrip', 'paranoia']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
+  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot', 'badtrip', 'paranoia', 'scout', 'tourist']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
 }
 Object.assign(THEMES, {
   nightwoods: variantTheme('woods', 'MIDNIGHT WOODS', '#101a4a', 0.5, ['ranger', 'raccoon', 'squirrel', 'ranger', 'mouse']),
@@ -1413,10 +1418,10 @@ const SPOOF_SIGNS = ['TACO BONG', 'KUSH & CARRY', 'BUDS BEFORE STUDS', 'THE STON
 // roster slots on a per-LEVEL seed, so a level not only can differ from its neighbor's theme but almost
 // always shows at least one face the player hasn't fought yet within that theme cycle.
 const ENEMY_FAMILY = {
-  cop: ['cop', 'ranger', 'guard', 'lawnmower', 'segway', 'securitybot', 'badtrip'],
+  cop: ['cop', 'ranger', 'guard', 'lawnmower', 'segway', 'securitybot', 'badtrip', 'tourist'],
   karen: ['karen', 'suit', 'paranoia'],
   mouse: ['mouse', 'rat'],
-  squirrel: ['squirrel', 'raccoon', 'crab', 'owl'],
+  squirrel: ['squirrel', 'raccoon', 'crab', 'owl', 'scout'],
 };
 function enemiesForLevel(n, theme) {
   const fam = k => ENEMY_FAMILY[BASE_AI[k] || k] || [k];
@@ -1434,6 +1439,11 @@ function enemiesForLevel(n, theme) {
 function buildLevel(n, remix) {
   const themeKey = themeKeyFor(n), theme = THEMES[themeKey];
   const levelEnemies = enemiesForLevel(n, theme);
+  // v1.3 (content pass, requested 2026-09-26): the last 2 levels of a world are "veteran" - standard
+  // enemies there use a bigger/escalated version of their own world trick (e.g. Beach cops taser twice
+  // instead of once), previewing what that world's boss does at full force. See copAI/enemyAI's wk-gated
+  // trick branches below and bossAI's per-world signature attacks.
+  const veteranTricks = !isSecretLevel(n) && levelInWorld(n) >= WORLDS[worldOf(n)].levels.length - 2;
   const diff = Math.min(n, 12) + (remix ? 4 : 0);
   const type = levelType(n);
   let s = 1000 + (remix ? n + 90000 : n) * 7919; const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -1523,7 +1533,7 @@ function buildLevel(n, remix) {
   // same signs in the same spots on a replay of the same level, same as every other seeded pick here.
   const signs = [{ x: 280, text: pick(SPOOF_SIGNS) }, { x: LEN - 260, text: pick(SPOOF_SIGNS) }];
   return {
-    n, themeKey, theme, levelEnemies, name: missionName(n, remix), items, props, enemies, zones, deco, signs, legend, spot, chestLoot, remix,
+    n, themeKey, theme, levelEnemies, veteranTricks, name: missionName(n, remix), items, props, enemies, zones, deco, signs, legend, spot, chestLoot, remix,
     zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: [],
     type, chase, chaseX: 0, escort,
     // v1.1 A6: SUBURBIA mousetraps - a few placed on the ground in each fight area, telegraphed by being visible before they trigger
@@ -2271,7 +2281,7 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   const KO_LINE = {
     crab: 'CRACKED!', lawnmower: 'MOWED DOWN!', segway: 'WIPED OUT!', owl: 'GROUNDED!', securitybot: 'SHUT DOWN!',
     ranger: 'TICKETED!', guard: 'OFF DUTY!', suit: 'FIRED!', rat: 'SCRAM!', raccoon: 'TRASHED!',
-    badtrip: 'BUMMER!', paranoia: 'PARANOIA FADES!',
+    badtrip: 'BUMMER!', paranoia: 'PARANOIA FADES!', scout: 'SCOUT DOWN!', tourist: 'CHECKED OUT!',
   };
   const AI_KO_LINE = { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' };
   const WEAPON_KO_WORD = { joint: 'PUFF', lighter: 'TOASTED', bong: 'GONG', grinder: 'GROUND UP' };
@@ -2460,8 +2470,12 @@ function updateShots() {
   shots = shots.filter(s => s.life > 0);
   // purses thrown by Karens, and (v1.1 A6) the world-specific thrown tricks - simulated on every screen, each player checks themselves
   for (const s of lvl.eshots) {
-    s.x += s.vx; s.life--; s.spin++;
-    if (s.k === 'pinecone') { // WOODS: an arcing pinecone that explodes in a small radius when it lands
+    s.x += s.vx; if (s.vz) s.z = Math.max(0, Math.min(ZMAX, s.z + s.vz)); s.life--; s.spin++;
+    if (s.k === 'dart') { // v1.3: PARK ranger dart - a boss/veteran-cop signature, chip damage + a short slow
+      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 10) { s.life = 0; hurt(1, 3, s.x); me.slowT = Math.max(me.slowT || 0, 60); popup(me.x - 14, sy(me.z) - 34, 'DARTED!', '#c8a030'); }
+    } else if (s.k === 'taserbolt') { // v1.3: BEACH lifeguard boss signature - a spinning taser-bolt frenzy
+      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 10) { s.life = 0; hurt(1, 4, s.x); me.stunT = Math.max(me.stunT || 0, 40); shake = Math.max(shake, 4); SFX.taser(); popup(me.x - 14, sy(me.z) - 34, 'TASED!', '#9ae8ff'); }
+    } else if (s.k === 'pinecone') { // WOODS: an arcing pinecone that explodes in a small radius when it lands
       s.h = (s.h == null ? 8 : s.h) + (s.vh = (s.vh == null ? 2.2 : s.vh) - 0.14);
       if (s.h <= 0) {
         s.h = 0; s.life = 0; SFX.boom(); puff(s.x, sy(s.z) - 4, 8, ['#8a5a2a', '#c8ffa0', '#ffffff'], 1.4); shake = Math.max(shake, 4);
@@ -2675,8 +2689,7 @@ function updatePlayer() {
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
   if (p.atkT > 6 && p.h === 0) { ix = 0; iz = 0; } // plant your feet while swinging
   if (me.stunT > 0 || me.rootT > 0) { ix = 0; iz = 0; }
-  if (ix) p.face = ix;
-  if (mouseG && !chatOpen && p.atkT <= 6) { const sx = p.x - camX; if (Math.abs(mouseG.x - sx) > 3) p.face = mouseG.x > sx ? 1 : -1; } // aim with the mouse; WASD still moves
+  if (ix) p.face = ix; // v1.3 (control feedback 2026-09-26): WASD alone now decides facing - mouse-aim turning removed per playtest feedback
   if (p.roll > 0) { p.roll--; if (hasSkill('rollsmoke') && frame % 3 === 0) { puff(p.x, sy(p.z) - 6, 3, ['#ffffff', '#c8ffa0'], .6); for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - p.x) < 14 && Math.abs(e.z - p.z) < 10 && !(e.rollHit > frame)) { e.rollHit = frame + 30; hitEnemy(e, 1, Math.sign(e.x - p.x) || 1, false, { burn: 1 }); } } }
   else if (p.inv > 55) { /* knockback */ } else { p.vx += (ix * mx - p.vx) * 0.3; p.vz += (iz * mz - p.vz) * 0.3; }
   if (p.puffed) { p.vx *= 0.9; p.vz *= 0.9; }
@@ -2951,14 +2964,39 @@ function playersList() {
 }
 function bossAI(e, tgt, dx, dz, cloud) {
   const rage = e.hp < e.maxHp / 2, spd = (rage ? 1.3 : 1) * (cloud ? 0.5 : 1);
+  const wk = lvl.theme.base || lvl.themeKey;
   if (rage && !e.raged) { e.raged = true; banner = { t: 100, a: e.bname + ' IS MAD!', b: '' }; shake = 8; }
   if ((e.sumT = (e.sumT == null ? 240 : e.sumT) - 1) <= 0) { e.sumT = e.mega ? (rage ? 300 : 420) : 560; summonAdds(e, e.mega ? 3 : 2); }
+  if (e.sigCd > 0) e.sigCd--;
   if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = e.dash ? 38 : 10; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } return [0, 0]; }
   if (e.state === 2) {
     if (e.dash) { if (--e.t <= 0) { e.state = 3; e.t = 45; e.dash = false; } return [e.dashDir * 4.2 * spd, 0]; }
     if (--e.t <= 0) { e.state = 3; e.t = 30; } return [0, 0];
   }
   if (e.state === 3) { if (--e.t <= 0) e.state = 0; return [0, 0]; }
+  // v1.3 (content pass, requested 2026-09-26): per-world BOSS SIGNATURE attacks - the "multiple sequences
+  // of throwing multiple items while spinning aggressively" escalation the user asked for. A telegraphed
+  // wind-up (state 50, boss visibly spins in place) then a ring of shots fired while still spinning
+  // (state 51) - a bigger, wilder version of that world's own standard-enemy trick (PARK's single dart
+  // aim, BEACH's single taser lunge - see copAI above), not just a reskinned version of the same move.
+  // Scoped to worlds 1-2 for now (park/beach); more worlds get their own signature as this pass continues.
+  if (e.state === 50) {
+    if (--e.t <= 0) { e.state = 51; e.t = 60; e.spinN = 0; banner = { t: 90, a: e.bname + "'S SIGNATURE MOVE!", b: '' }; shake = Math.max(shake, 5); }
+    return [0, 0];
+  }
+  if (e.state === 51) {
+    if (e.t % 6 === 0 && e.spinN < 8) {
+      const ang = (e.spinN / 8) * TAU + frame / 12, kind = wk === 'beach' ? 'taserbolt' : 'dart';
+      const shot = { x: e.x, z: Math.max(0, Math.min(ZMAX, e.z + Math.sin(ang) * 22)), vx: Math.cos(ang) * 2.3, vz: Math.sin(ang) * 1.2, life: 130, spin: 0, k: kind };
+      lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, vz: shot.vz, l: lvl.n, k: kind });
+      e.spinN++; SFX.karen();
+    }
+    if (--e.t <= 0) { e.state = 3; e.t = 70; }
+    return [0, 0];
+  }
+  if (e.mega && (wk === 'park' || wk === 'beach') && !(e.sigCd > 0) && Math.abs(dz) < 40) {
+    e.state = 50; e.t = 46; e.sigCd = rage ? 420 : 560; return [0, 0];
+  }
   e.dir = Math.sign(dx) || 1; e.cd--;
   // v1.2 (Step 6.4): mini-bosses (e.mini) now get the same phase-toggled 2nd attack pattern mega bosses
   // already had (ranged volleys alternating with the brawler pattern below) - was mega-only before, so
@@ -3154,19 +3192,31 @@ function hostUpdate() {
         const spdMul = (e.kind === 'segway' ? 1.8 : 1) * (e.buffed > 0 ? 1.3 : 1); // DOWNTOWN: fast segway ram - jump (h>=14) to dodge, same as any melee contact. HQ: clipboard-buffed cops move faster too
         const wantX = inZone(tgt.x - e.dir * (e.near ? 20 : 52 + (e.id % 3) * 12));
         sx = Math.sign(wantX - e.x) * Math.min(0.9 * spdMul, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.9, Math.abs(dz));
-        if (e.near && wk === 'beach' && !(e.trickCd > 0) && Math.abs(dx) < 34 && Math.abs(dz) < 8) { e.state = 10; e.t = 26; e.trickCd = 260; } // BEACH: taser wind-up
+        if (e.near && wk === 'beach' && !(e.trickCd > 0) && Math.abs(dx) < 34 && Math.abs(dz) < 8) { e.state = 10; e.t = 26; e.trickCd = 260; e.trickChain = 0; } // BEACH: taser wind-up
         else if (e.near && wk === 'suburb' && !(e.trickCd > 0) && Math.abs(dx) < 30 && Math.abs(dz) < 10) { e.state = 15; e.t = 24; e.trickCd = 280; } // SUBURBIA: pepper-spray wind-up
         else if (!(e.trickCd > 0) && wk === 'woods' && Math.abs(dx) < 62 && Math.abs(dz) < 12) { e.state = 17; e.t = 22; e.trickCd = 340; } // WOODS: net-launcher aim
+        // v1.3 (content pass, requested 2026-09-26): PARK's first-ever cop trick - was intentionally the
+        // one theme with none, per A6's own note. Gives Park a standard-enemy attack for RANGER RICK's new
+        // boss signature (see bossAI) to escalate from, matching every other world.
+        else if (!(e.trickCd > 0) && wk === 'park' && Math.abs(dx) < 100 && Math.abs(dz) < 18) { e.state = 30; e.t = 26; e.trickCd = 300; }
         else if (e.near && Math.abs(dx) < 26 && Math.abs(dz) < 5 && tgt.h < 14) { e.state = 1; e.t = e.kind === 'segway' ? 14 : 26; }
       } else if (e.state === 1) { if (--e.t <= 0) { e.state = 2; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.hit(); } }
       else if (e.state === 2) { if (--e.t <= 0) { e.state = 3; e.t = 44; } }
       else if (e.state === 3) { if (--e.t <= 0) e.state = 0; }
+      // v1.3: veteran levels (the last 2 of a world - see buildLevel) chain a 2nd taser lunge instead of
+      // just one, a small preview of LIFEGUARD LANCE's boss-only taser-frenzy spin (see bossAI).
       else if (e.state === 10) { if (--e.t <= 0) { e.state = 11; e.t = 12; e.strikeN = (e.strikeN || 0) + 1; e.dir = Math.sign(dx) || e.dir; SFX.taser(); } } // BEACH taser: lunges in fast, shorter range than the baton
-      else if (e.state === 11) { sx = e.dir * 2.5; if (--e.t <= 0) { e.state = 3; e.t = 50; } }
+      else if (e.state === 11) { sx = e.dir * 2.5; if (--e.t <= 0) { if (lvl.veteranTricks && !e.trickChain && Math.abs(dz) < 10) { e.trickChain = 1; e.state = 10; e.t = 14; } else { e.state = 3; e.t = 50; } } }
       else if (e.state === 15) { if (--e.t <= 0) { e.state = 16; e.t = 14; e.strikeN = (e.strikeN || 0) + 1; SFX.spray(); } } // SUBURBIA pepper cone
       else if (e.state === 16) { if (--e.t <= 0) { e.state = 3; e.t = 50; } }
       else if (e.state === 17) { if (--e.t <= 0) { e.state = 18; e.t = 16; e.strikeN = (e.strikeN || 0) + 1; SFX.net(); } } // WOODS net launcher
       else if (e.state === 18) { if (--e.t <= 0) { e.state = 3; e.t = 60; } }
+      // v1.3: PARK dart aim/fire - veteran levels fire a quick 2-dart volley instead of one, previewing
+      // RANGER RICK's spinning barrage.
+      else if (e.state === 30) { if (--e.t <= 0) { e.state = 31; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; e.dir = Math.sign(dx) || e.dir;
+        const fire = (oz) => { const shot = { x: e.x + e.dir * 10, z: Math.max(0, Math.min(ZMAX, e.z + oz)), vx: e.dir * 2, life: 150, spin: 0, k: 'dart' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'dart' }); };
+        fire(0); if (lvl.veteranTricks) fire(dz > 0 ? 10 : -10); SFX.taser(); } }
+      else if (e.state === 31) { if (--e.t <= 0) { e.state = 3; e.t = 55; } }
     } else if (e.ai === 'karen') {
       if (e.trickCd > 0) e.trickCd--;
       if (wk === 'hq' && frame % 30 === 0) { // HQ clipboard Karen: "writing up" nearby cops/mice buffs them until she's KO'd
@@ -3487,9 +3537,14 @@ function drawEnemyB(e) {
   const img = imgs[f], x = e.x - img.width / 2, y = sy(e.z, e.h) - img.height;
   if (bs > 1) { const X = Math.round(e.x - camX - img.width * bs / 2), Y = Math.round(sy(e.z, e.h) - img.height * bs), fl = e.dir < 0;
     if (e.state === 5) { ctx.globalAlpha = Math.min(1, e.t / 40); } if (e.state === 1 && frame % 6 < 3) ctx.filter = 'brightness(1.8)';
+    if ((e.state === 50 || e.state === 51) && frame % 4 < 2) ctx.filter = 'brightness(1.6) saturate(1.6)'; // v1.3: signature-move flash
     ctx.save(); ctx.translate(X + (fl ? img.width * bs : 0), Y); ctx.scale(fl ? -bs : bs, bs); ctx.drawImage(img, 0, 0); ctx.restore(); ctx.filter = 'none'; ctx.globalAlpha = 1;
     if (e.state === 1) text(e.dash ? '!!' : '!', e.x - camX, Y - 10, '#ff5a6a', 2, 'center');
     if (e.mega && frame % 4 === 0) puff(e.x, Y + 6, 1, ['#ff5a6a', '#ffd84a'], .4, -0.03);
+    // v1.3: PARK/BEACH boss signature move telegraph - a spinning wind-up, then a ring of particles while
+    // firing, so the "bigger and wilder" version of the standard trick actually reads as one on screen.
+    if (e.state === 50) { text('!!!', e.x - camX, Y - 14, '#ffd84a', 2, 'center'); if (frame % 3 === 0) puff(e.x, Y + img.height * bs * 0.4, 1, ['#ffd84a', '#ffffff'], .6, -0.02); }
+    if (e.state === 51 && frame % 4 === 0) puff(e.x, Y + img.height * bs * 0.4, 2, (lvl.theme.base || lvl.themeKey) === 'beach' ? ['#9ae8ff', '#ffffff'] : ['#c8a030', '#ffd84a'], 1.2, -0.02);
     // v1.2 (Step 8): THE PARANOIA is "a giant eye that splits into copies" (brief v0.9 F) - no new sprite
     // was drawn for this, an iris/pupil is just layered on top of its (recolored cop) base sprite.
     if (e.kind === 'paranoia') {
@@ -3518,6 +3573,8 @@ function drawEnemyB(e) {
   if (e.ai === 'cop' && e.state === 16) text('><', e.x - camX, y - 10, '#c8ffa0', 1, 'center');
   if (e.ai === 'cop' && e.state === 17 && frame % 6 < 3) text('+', e.x - camX, y - 8, '#c8ffa0', 1, 'center'); // WOODS net-launcher aim
   if (e.ai === 'cop' && e.state === 18) text('X', e.x - camX, y - 10, '#c8ffa0', 1, 'center');
+  if (e.ai === 'cop' && e.state === 30 && frame % 6 < 3) text('>', e.x - camX, y - 8, '#c8a030', 1, 'center'); // PARK dart aim
+  if (e.ai === 'cop' && e.state === 31) text('»', e.x - camX, y - 10, '#c8a030', 1, 'center');
   if (e.ai === 'cop' && e.drone) { const dx3 = Math.round(e.x - camX); ctx.globalAlpha = .35; ctx.fillStyle = '#2a1838'; ctx.beginPath(); ctx.ellipse(dx3, sy(e.z) - 3, 7, 2.4, 0, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
     const dy3 = y - 20 + Math.sin(frame / 9 + e.id) * 2; R(ctx, '#7a90c0', dx3 - 4, dy3, 8, 3); R(ctx, '#c8e0ff', dx3 - 2, dy3 - 2, 4, 2);
     if (e.drone.cd < 20) text('!', dx3, dy3 - 8, '#ff5a6a', 1, 'center'); } // HQ drone hovering above
@@ -5261,7 +5318,7 @@ function onNet(m) {
     case 'es': if (!isHost()) applySnapshot(m); break;
     case 'hit': if (isHost() && m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e && e.spawned) damageEnemy(e, m.d, m.dir, !!m.s, m.id, { burn: m.b, sp: m.sp, stun: m.st, bleed: m.bl, kb: m.kb || 1, hr: m.hr, air: !!m.a, dragon: !!m.dr }); } break;
     case 'kill': if (m.l === lvl.n) { const e = lvl.enemies[m.i]; if (e) { e.stolen = m.st || 0; onKill(e, m.by); } if (m.ex && Math.abs(m.exx - me.x) < 22 && Math.abs(m.exz - me.z) < 14) { hurt(1, 3, m.exx); SFX.boom(); } } break;
-    case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, life: 150, spin: 0, k: m.k, h: m.h, vh: m.vh }); break;
+    case 'eshot': if (m.l === lvl.n) lvl.eshots.push({ x: m.x, z: m.z, vx: m.vx, vz: m.vz, life: 150, spin: 0, k: m.k, h: m.h, vh: m.vh }); break;
     // v1.1 A6: WOODS essential-oil diffuser - the cloud itself isn't tied to a player id, so it gets its own message
     case 'cloud': if (m.l === lvl.n) lvl.clouds.push({ x: m.x, z: m.z, r: 4, grow: 20, t: 480, poison: true }); break;
     // v1.1 A6: SUBURBIA mousetraps - disarm on every screen, and root whichever player tripped it

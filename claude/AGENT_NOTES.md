@@ -1415,3 +1415,5 @@ fix. Item 2 (intermittent Hotbox Highway error) stays open - never reproduced, a
 session's owned files if the cause does turn out to live in `drive.js`. Item 4's other two sub-items (map
 text overlap, legend name clipping) and the pause-menu box are already fine on current `main` - no changes
 made, to avoid manufacturing unnecessary diffs against non-bugs.
+
+_(Auto-deploy webhook re-verified 2026-09-26: GitHub connection to Render was re-authorized after being found stale; this commit is the test push.)_

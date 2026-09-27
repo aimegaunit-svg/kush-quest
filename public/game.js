@@ -1405,8 +1405,35 @@ let LEN = 0;
 // v1.2 (Step 10.4): stoner-touch background gags for buildLevel()'s new `signs` array - see drawScene()'s
 // `for (const s of lvl.signs)` loop for the actual drawing.
 const SPOOF_SIGNS = ['TACO BONG', 'KUSH & CARRY', 'BUDS BEFORE STUDS', 'THE STONED AGE', 'ROLL WITH IT', 'GRASS IS ALWAYS GREENER', 'WEED LIKE TO WELCOME YOU', 'JOINT VENTURE CAPITAL', 'HIGH-WAY TO SAVINGS', 'BAKED GOODS (LITERALLY)'];
+// v1.3 (requested 2026-09-26): "the enemies/skins/attacks are limited throughout the levels" - true root
+// cause was that every level in a world drew from the SAME fixed 5-kind roster (theme.enemies), and the
+// handful of palette-recolor variants already built (ranger/guard/suit/rat/raccoon etc., see ENEMY_IMG
+// above) only rotated in via the world's whole-theme cycle (VARIANTS_OF), which for a short world like
+// Park is just 2 looks. This reuses those SAME sprites/AI (no new art/behavior needed) but reskins 1-2
+// roster slots on a per-LEVEL seed, so a level not only can differ from its neighbor's theme but almost
+// always shows at least one face the player hasn't fought yet within that theme cycle.
+const ENEMY_FAMILY = {
+  cop: ['cop', 'ranger', 'guard', 'lawnmower', 'segway', 'securitybot', 'badtrip'],
+  karen: ['karen', 'suit', 'paranoia'],
+  mouse: ['mouse', 'rat'],
+  squirrel: ['squirrel', 'raccoon', 'crab', 'owl'],
+};
+function enemiesForLevel(n, theme) {
+  const fam = k => ENEMY_FAMILY[BASE_AI[k] || k] || [k];
+  let roster = theme.enemies.slice();
+  const swaps = 1 + (seededPick(n, 60, [0, 0, 1]) ? 1 : 0); // most levels get 1 reskin, some get 2
+  for (let i = 0; i < swaps; i++) {
+    const from = seededPick(n, 61 + i * 2, [...new Set(roster)]);
+    const options = fam(from).filter(k => k !== from);
+    if (!options.length) continue;
+    const to = seededPick(n, 62 + i * 2, options);
+    roster = roster.map(k => k === from ? to : k);
+  }
+  return roster;
+}
 function buildLevel(n, remix) {
   const themeKey = themeKeyFor(n), theme = THEMES[themeKey];
+  const levelEnemies = enemiesForLevel(n, theme);
   const diff = Math.min(n, 12) + (remix ? 4 : 0);
   const type = levelType(n);
   let s = 1000 + (remix ? n + 90000 : n) * 7919; const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -1446,7 +1473,7 @@ function buildLevel(n, remix) {
     const count = firstFight ? 4 : Math.round(base * 2.5 * (gauntletZone ? 1.7 : 1)) + (n < 2 ? 4 : 0); // enough for a full crew of 4; the host only uses what the crew size needs
     const ids = [];
     for (let k = 0; k < count; k++) {
-      const kind = pick(theme.enemies);
+      const kind = pick(levelEnemies);
       const hp = { cop: 3 + Math.floor(diff / 3), karen: 2 + Math.floor(diff / 4), mouse: 1, squirrel: 1 }[BASE_AI[kind] || kind] + (VARIANT_HP[kind] || 0);
       ids.push(enemies.length);
       enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, hp, maxHp: hp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60 + Math.floor(rand() * 60), flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0 });
@@ -1456,7 +1483,7 @@ function buildLevel(n, remix) {
       ids.push(enemies.length);
       const boss = { id: enemies.length, kind: bd[1], ai: BASE_AI[bd[1]] || bd[1], boss: true, mega, mini, bname: bd[0], skill: bd[2], quote: bd[3], zone: zi, hp: bhp, maxHp: bhp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 90, flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0, summons: [] };
       enemies.push(boss);
-      for (let k = 0; k < 8; k++) { boss.summons.push(enemies.length); const kind = pick(theme.enemies); enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, reserve: true, hp: 1 + (VARIANT_HP[kind] || 0), maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
+      for (let k = 0; k < 8; k++) { boss.summons.push(enemies.length); const kind = pick(levelEnemies); enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, reserve: true, hp: 1 + (VARIANT_HP[kind] || 0), maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
     }
     zones.push({ x0, ids, base, started: false, cleared: false, ambush: zi === ambushZone, gauntlet: gauntletZone });
     // stuff inside each fight area
@@ -1496,7 +1523,7 @@ function buildLevel(n, remix) {
   // same signs in the same spots on a replay of the same level, same as every other seeded pick here.
   const signs = [{ x: 280, text: pick(SPOOF_SIGNS) }, { x: LEN - 260, text: pick(SPOOF_SIGNS) }];
   return {
-    n, themeKey, theme, name: missionName(n, remix), items, props, enemies, zones, deco, signs, legend, spot, chestLoot, remix,
+    n, themeKey, theme, levelEnemies, name: missionName(n, remix), items, props, enemies, zones, deco, signs, legend, spot, chestLoot, remix,
     zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: [],
     type, chase, chaseX: 0, escort,
     // v1.1 A6: SUBURBIA mousetraps - a few placed on the ground in each fight area, telegraphed by being visible before they trigger
@@ -1665,7 +1692,7 @@ function startLevel(n, dropIn) {
   if (dropIn) { lvl.dropInPending = true; me.inv = 150; }
   if (farmHas('giggle')) me.cooked = 10; // GIGGLE GAS: start every mission at +10% Cooked
   if (save.pet === 'munchkin' && save.munchie < 1) save.munchie = 1; // MUNCHKIN: a free munchie every mission start
-  camX = 0; state = dropIn ? 'play' : 'brief'; briefT = Net.online ? ([...new Set(lvl.theme.enemies)].some(k => !save.met.includes(k) && k === 'karen') ? 480 : 240) : 1200; particles = []; popups = []; shots = [];
+  camX = 0; state = dropIn ? 'play' : 'brief'; briefT = Net.online ? ([...new Set(lvl.levelEnemies)].some(k => !save.met.includes(k) && k === 'karen') ? 480 : 240) : 1200; particles = []; popups = []; shots = [];
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
   banner = dropIn ? { t: 150, a: 'DROPPING IN...', b: "CATCHING UP TO THE CREW - YOU'RE BRIEFLY INVINCIBLE" } : null;
   crewLives = Net.online && realRemotes() > 0 ? 5 : 3; checkpoint = null; // v1.1 A5: reset the crew-lives pool + checkpoint for the new level
@@ -2470,7 +2497,7 @@ function update() {
   if (state === 'lobby') { updateLobby(); clearIn(); return; }
   if (state === 'map') { if (invOpen) updateInventory(); else updateMap(); clearIn(); return; }
   if (state === 'brief') {
-    if (--briefT <= 0 || (!Net.online && (K.jumpPressed || K.enterPressed || K.attackPressed))) { state = 'play'; banner = null; for (const k of new Set(lvl.theme.enemies)) if (!save.met.includes(k)) save.met.push(k); persist(); }
+    if (--briefT <= 0 || (!Net.online && (K.jumpPressed || K.enterPressed || K.attackPressed))) { state = 'play'; banner = null; for (const k of new Set(lvl.levelEnemies)) if (!save.met.includes(k)) save.met.push(k); persist(); }
     clearIn(); return;
   }
   if (invOpen) { updateInventory(); if (!Net.online) { clearIn(); return; } }
@@ -3011,12 +3038,18 @@ function hostUpdate() {
     const dx = tgt.x - e.x, dz = tgt.z - e.z;
     if (e.buffed > 0) e.buffed--; // HQ clipboard Karen's write-up buff wears off
     e.vh -= 0.2; e.h = Math.max(0, e.h + e.vh); if (e.h === 0) e.vh = 0;
+    // v1.3 (requested 2026-09-26): elemental damage used to be nearly invisible - just the same generic
+    // white hit-flash as a normal punch, once every 36 frames. Give burn a continuously-visible tell (a
+    // small flame lick every few frames, plus a bigger cinder pop on the actual damage tick) so it reads
+    // as "this enemy is ON FIRE" at a glance, not just a stat ticking down off-screen.
+    if (e.burn > 0 && frame % 8 === 0) puff(e.x + (Math.random() - 0.5) * 6, sy(e.z, e.h) - Math.random() * 10, 1, ['#ff9a3a', '#ffd84a'], .4, -0.05);
     if (e.burn > 0 && --e.burnT <= 0) {
       e.burnT = 36; e.burn--; e.hp -= 1; e.flash = 4;
+      puff(e.x, sy(e.z, e.h) - 6, 6, ['#ff5a2a', '#ff9a3a', '#ffd84a'], .9, -0.04);
       if (e.spread) { const sr = 16 * e.spread; for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && !(o.burn > 0) && Math.abs(o.x - e.x) < sr && Math.abs(o.z - e.z) < 10) { o.burn = 1; o.burnT = 36; o.burnBy = e.burnBy; } }
       if (e.hp <= 0) { damageEnemy(e, 0, e.dir * -1, false, e.burnBy); continue; }
     }
-    if (e.bleedN > 0 && --e.bleedT <= 0) { e.bleedT = 44; e.bleedN--; e.hp -= 1; e.flash = 4; if (e.hp <= 0) { damageEnemy(e, 0, e.dir * -1, false, e.bleedBy); continue; } }
+    if (e.bleedN > 0 && --e.bleedT <= 0) { e.bleedT = 44; e.bleedN--; e.hp -= 1; e.flash = 4; puff(e.x, sy(e.z, e.h) - 4, 3, ['#c83050', '#8a1030'], .5, -0.02); if (e.hp <= 0) { damageEnemy(e, 0, e.dir * -1, false, e.bleedBy); continue; } }
     if (e.flying) {
       for (const o of lvl.enemies) if (o !== e && o.spawned && o.alive && o.state !== 5 && Math.abs(o.x - e.x) < 14 && Math.abs(o.z - e.z) < 10 && !(o.bowled === e.id)) { o.bowled = e.id; damageEnemy(o, 2, e.flying.dir, true, e.flying.by, { kb: 1.5 }); }
       // BLUNT BAT LV3: a launched enemy bounces off the fight-area walls and keeps hitting more enemies
@@ -3425,6 +3458,10 @@ function drawEnemyB(e) {
   draw_(img, x, y, flip);
   if (e.ai === 'cop' && e.state === 1 && frame % 6 < 3) text('!', e.x - camX, y - 8, '#ff5a6a', 1, 'center');
   if (e.conf && frame % 30 < 20) text('?', e.x - camX, y - 12, '#e4b3ff', 1, 'center');
+  // v1.3 (requested 2026-09-26): a standing flame glyph so a burning enemy reads at a glance, not just
+  // from the occasional particle - flickers between two frames like the smoke-spot fire (drawSpot above).
+  if (e.burn > 0) text(frame % 10 < 5 ? '▲' : '△', e.x - camX, y - 14, frame % 20 < 10 ? '#ff5a2a' : '#ffd84a', 1, 'center');
+  if (e.bleedN > 0 && frame % 20 < 10) text('*', e.x - camX, y - (e.burn > 0 ? 18 : 14), '#c83050', 1, 'center');
   if (e.dazed || e.stunned) for (let k = 0; k < 3; k++) { const a = frame / 8 + k * 2.1; R(ctx, '#ffd84a', Math.round(e.x - camX + Math.cos(a) * 7), Math.round(y - 3 + Math.sin(a) * 2), 2, 2); }
   if (e.stolen > 0 && frame % 30 < 20) draw_(COIN, e.x - 5, y - 11);
   // v1.1 A6: world-trick telegraphs - a wind-up flash/symbol before each new attack lands
@@ -4978,7 +5015,7 @@ function drawBrief() {
   text('2. SMOKE (' + KL('toke') + ') TO HEAL + HIT HARDER - IT\'S NOT A REQUIREMENT', 40, 82, '#ffffff');
   text('3. CHILL AT THE SMOKE SPOT AT THE END', 40, 92, '#ffffff');
   { const bd = bossDataFor(lvl.n); text((bd[4] ? 'MEGA BOSS: ' : bd[5] ? 'MINI-BOSS: ' : 'BOSS: ') + bd[0] + ' - BEAT HIM TO LEARN ' + SKILLS[bd[2]].name, 40, 104, bd[4] ? '#ff8a8a' : bd[5] ? '#ff9a5a' : '#e4b3ff'); }
-  const fresh = [...new Set(th.enemies)].find(k => !save.met.includes(k) && k !== 'mouse' && k !== 'squirrel' && k !== 'cop');
+  const fresh = [...new Set(lvl.levelEnemies)].find(k => !save.met.includes(k) && k !== 'mouse' && k !== 'squirrel' && k !== 'cop');
   const NEW_TIP = {
     karen: ['KAREN', '#ff9ab8', ['THROWS PURSES FROM AFAR. JUMP THEM (SPACE)', 'THEN RUSH HER WHILE SHE CATCHES HER BREATH.', 'ROLLING PAPERS (K) HIT HER FROM RANGE!']],
     crab: ['CRAB', '#ff9a6a', ["CAN'T BE HIT WHILE IT'S HOPPING/PINCHING.", 'WAIT FOR IT TO LAND, THEN STRIKE.']],
@@ -5003,7 +5040,7 @@ function drawBrief() {
     return;
   }
   text('WATCH OUT FOR:', 40, 118, '#ffd84a');
-  [...new Set(th.enemies)].forEach((e, i) => ctx.drawImage(ENEMY_IMG[e][0], 104 + i * 22, 132 - ENEMY_IMG[e][0].height));
+  [...new Set(lvl.levelEnemies)].forEach((e, i) => ctx.drawImage(ENEMY_IMG[e][0], 104 + i * 22, 132 - ENEMY_IMG[e][0].height));
   if (frame % 50 < 36) text(Net.online ? 'STARTING...' : 'PRESS SPACE TO START', W / 2, 140, '#fff6b0', 1, 'center');
 }
 
@@ -5397,6 +5434,8 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   openFarmScene: () => { results = { shopOnly: true, farmScene: true, endingStats: true }; state = 'results'; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt,
   // v1.1 B1 debug hooks (used by the automated smoke tests; also handy for future debugging)
   buildLevel, mapNodes, bossDataFor, levelType, worldOf, levelInWorld, missionName, WORLDS, WORLD_START, TOTAL_LEVELS, isSecretLevel, setWorld, get curWorld() { return curWorld; },
+  // v1.3 (requested 2026-09-26) debug hooks: per-level enemy-variety reskin system, for the automated test.
+  BASE_AI, ENEMY_IMG, enemiesForLevel,
   // v1.1 A2/A3 debug hooks (used by the automated smoke tests for the Core-cost curve + Wild charge economy)
   shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, get shopSel() { return shopSel; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost,
   // v1.2 fix (Step 1) debug hooks: crew-lives visibility + the real restart-out-of-lives path, for the

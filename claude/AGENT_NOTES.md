@@ -1527,3 +1527,65 @@ that survives every brief revision (v0.8 through v1.1) - not an oversight, a del
 choice that also drives precise throw/ranged aiming. Presented the trade-off (keep mouse-aim / switch to
 WASD-only facing / a hybrid that only lets the mouse override while aiming a throw) - the user chose to
 keep the current mouse-aim behavior as-is. No code change.
+
+## Playtest feedback: enemy/attack variety per level + elemental damage feedback (user-directed, 2026-09-26)
+
+Two more live-playtest notes, same session as the Cooked-meter redesign and cursor-hide fix above: "the
+enemies and variations of skins and enemies and throwing attacks or special attacks are limited throughout
+the levels, it should be consistently changing, not every battle but every level should have new stuff"
+and "when elemental damage is happening we need more animation to show that."
+
+**Root cause of the variety complaint**: every level in a world drew its grunt roster from the exact same
+fixed `theme.enemies` array (5 kinds), and the only thing that ever varied it was the world's whole-theme
+palette-cycle (`VARIANTS_OF`) - for a short world like Park that's just 2 looks (`park`/`island`)
+alternating every other level, so by level 2 you'd already seen everything that world had to offer. Also
+found, while tracing this: several palette-recolor enemy variants were already fully built (sprites tinted
+via the existing `tintSprites`/`swap` utility, `BASE_AI`/`VARIANT_HP` entries and all - `ranger`, `guard`,
+`suit`, `rat`, `raccoon`) but sat completely unused by the base 6 worlds' `theme.enemies` arrays, only
+showing up in the later "remix" variant themes (`nightwoods`/`station`/etc, used for world-count padding,
+not the base playthrough).
+
+**Fix**: new `enemiesForLevel(n, theme)` (right above `buildLevel`) reskins 1-2 slots of a level's roster
+with a level-seeded pick from a same-AI-family pool (`ENEMY_FAMILY`: cop-likes `[cop, ranger, guard,
+lawnmower, segway, securitybot, badtrip]`, karen-likes `[karen, suit, paranoia]`, mouse-likes `[mouse,
+rat]`, squirrel-likes `[squirrel, raccoon, crab, owl]`), seeded by the level number so it's deterministic
+on replay like every other per-level pick in this file. No new art, no new AI/behavior - every substitute
+already had a sprite, a `BASE_AI` entry, and (where it mattered) a `VARIANT_HP` entry, since they're the
+same reskins the later worlds' remix themes already use. `buildLevel`'s two grunt-spawn `pick(theme.enemies)`
+calls now read `pick(levelEnemies)` instead; `lvl.levelEnemies` is exposed on the built level object and
+the brief screen's roster preview / "new buzzkill" tutorial-tip detection / `save.met` tracking all switched
+from `lvl.theme.enemies` to `lvl.levelEnemies` so what's shown/tracked matches what's actually spawned.
+Boss/mini-boss/captain naming (`bossDataFor`) still reads the base `theme.enemies` - deliberately untouched,
+that's a different, already-varied-per-level system (named captains) and reskinning it wasn't what the
+complaint was about.
+
+Verified (`kq_variety_test.js`): building Park's 6 levels (n=0-5) now produces 5 distinct rosters instead
+of the old 2-look cycle (e.g. level 0 = `mouse,mouse,securitybot,squirrel,squirrel`, level 1 =
+`guard,raccoon,rat,segway,suit`, level 3 = `guard,paranoia,raccoon,ranger,rat`); rebuilding the same level
+twice gives the identical roster (still seeded/deterministic, not randomized on every load); every kind
+produced across the first 20 levels resolves to a real `BASE_AI` entry and a real `ENEMY_IMG` sprite (no
+typo'd/missing kind).
+
+**Elemental damage feedback**: traced burn/bleed status all the way through - the ONLY feedback that
+existed was the same generic white hit-flash every other hit already uses (`e.flash`, swaps in
+`ENEMY_FLASH[e.kind]` for 1 frame every other frame), once every 36 frames on the burn/bleed damage tick.
+No distinct color, no particles, no persistent "this enemy is on fire" tell - a real gap, not just a
+subtlety issue. Added, in the enemy-update loop: a small flame-colored `puff()` lick every 8 frames while
+`e.burn > 0` (continuous, not just on the damage tick), a bigger orange/red/gold cinder burst on the actual
+burn damage tick, and a small dark-red drip burst on the bleed damage tick. In `drawEnemyB`: a standing
+flame glyph (flickers between a filled/hollow triangle, orange/gold, same flicker cadence as the existing
+smoke-spot fire icon) above any burning enemy, and a small red `*` above a bleeding one (offset up if both
+are active so they don't overlap) - so the state is visible even between particle ticks, the same pattern
+already used for confused (`?`)/dazed (orbiting squares)/HQ-Karen-buffed (clipboard icon).
+
+Verified (`kq_variety_test.js` + a screenshot, `kq_ui/elemental_vfx.png`): set `e.burn=3` on a live spawned
+enemy, confirmed the global particle count actually grows over ~0.7s of real frames (not just that a
+function was called), and confirmed the flame glyph is visibly rendered above the enemy in a real
+screenshot. Left the existing poison-cloud drip/color feedback (WOODS diffuser clouds, already had a
+distinct green tint and a `SFX.drip()` cue) and slow/stun telegraphs alone - those already had real,
+distinct-enough feedback; this pass only touched burn and bleed, which genuinely had none beyond the shared
+white flash.
+
+Also re-ran the full existing regression suite (`kq_cursor_test`, `kq_cooked_redesign_test`,
+`kq_cooked_visual`) after these changes - all still pass, zero new console/page errors. `node --check`
+clean on `game.js`.

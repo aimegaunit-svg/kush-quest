@@ -183,6 +183,54 @@ THEMES.suburb = { sky: ['#8ab8ff', '#d8e8ff'], grass: ['#6ab04c', '#5f9f44'], ru
 THEMES.downtown = THEMES.city;
 const SIGNS = ['TACO BONG', 'CIRCLE HAY', "DUNKIN' DOOBIES", 'BUZZKILL CORP: COMING SOON', 'SPEED LIMIT 42.0', 'MUNCHIE MART', 'BLAZE-N-GLAZE DONUTS', 'KEEP IT MELLOW'];
 
+// ---------------- weather + time of day (all worlds, same rules) ----------------
+// Each drive rolls a weather plan from the world's pool (seeded, so every client sees the same sky).
+// The drive also runs through the day: day worlds go day -> golden hour -> sunset; night worlds get deeper.
+// Rain/snow cut grip, fog cuts how far you can see, storms add lightning. The destination skyline rises
+// on the horizon as you get close.
+const WX_POOL = {
+  park:   ['clear', 'clear', 'cloudy', 'rain', 'fog'],
+  beach:  ['clear', 'clear', 'cloudy', 'rain', 'storm'],
+  suburb: ['clear', 'cloudy', 'rain', 'fog', 'storm'],
+  city:   ['clear', 'cloudy', 'rain', 'storm', 'fog'],
+  woods:  ['cloudy', 'fog', 'rain', 'snow', 'snow'],
+  hq:     ['cloudy', 'storm', 'storm', 'fog', 'rain'],
+};
+WX_POOL.downtown = WX_POOL.city;
+const WX = {
+  clear:  { grip: 1,    fog: 0,    dark: 0,    name: '' },
+  cloudy: { grip: 1,    fog: 0.1,  dark: 0.15, name: 'CLOUDS ROLLING IN' },
+  rain:   { grip: 0.8,  fog: 0.2,  dark: 0.25, name: 'RAIN! ROAD IS SLICK' },
+  storm:  { grip: 0.7,  fog: 0.3,  dark: 0.4,  name: 'STORM! HOLD THE WHEEL' },
+  fog:    { grip: 0.95, fog: 0.65, dark: 0.1,  name: 'FOG BANK. EYES UP' },
+  snow:   { grip: 0.65, fog: 0.35, dark: 0.1,  name: 'SNOW! EASY ON THE TURNS' },
+};
+function planWeather(world) {
+  const pool = WX_POOL[world] || WX_POOL.park;
+  const plan = [{ at: 0, k: pool[rng() * 2 | 0] }];
+  for (const at of [0.25 + rng() * 0.1, 0.55 + rng() * 0.1, 0.82]) plan.push({ at, k: pool[rng() * pool.length | 0] });
+  return plan;
+}
+// current weather mix at this point of the drive: { k, prev, mix (0..1 into k), grip, fog, dark }
+function wxNow() {
+  const pct = S.trackLen ? Math.max(0, Math.min(1, S.pos / S.trackLen)) : 0;
+  const pl = S.wxPlan || [{ at: 0, k: 'clear' }];
+  let i = 0; while (i + 1 < pl.length && pct >= pl[i + 1].at) i++;
+  const cur = pl[i], prev = i ? pl[i - 1] : cur;
+  const mix = i ? Math.min(1, (pct - cur.at) / 0.04) : 1;
+  const a = WX[prev.k], b = WX[cur.k], L = (x, y) => x + (y - x) * mix;
+  return { k: cur.k, prev: prev.k, mix, pct, grip: L(a.grip, b.grip), fog: L(a.fog, b.fog), dark: L(a.dark, b.dark), wet: (cur.k === 'rain' || cur.k === 'storm' ? mix : 0) + (prev.k === 'rain' || prev.k === 'storm' ? 1 - mix : 0), snow: (cur.k === 'snow' ? mix : 0) + (prev.k === 'snow' ? 1 - mix : 0) };
+}
+const lerpC = (a, b, t) => { const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16)); return 'rgb(' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(',') + ')'; };
+const hex6 = c => c.length === 4 ? '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3] : c;
+// sky colours over the drive: [top, bottom] at progress 0, 0.55, 1
+function skyAt(th, pct, night) {
+  const keys = night ? [[th.sky[0], th.sky[1]], ['#0a0618', '#3a1440'], ['#05030c', '#1a0a2a']]
+                     : [[th.sky[0], th.sky[1]], ['#4a8ad8', '#ffc07a'], ['#3a2a6a', '#ff7a4a']];
+  const seg = pct < 0.55 ? 0 : 1, t = seg ? (pct - 0.55) / 0.45 : pct / 0.55;
+  return [0, 1].map(j => lerpC(hex6(keys[seg][j]), hex6(keys[seg + 1][j]), Math.max(0, Math.min(1, t))));
+}
+
 // ---------------- swap events ----------------
 // solo: scrambles controls ~3s. tags restrict where they fire.
 const EVENTS = [
@@ -432,6 +480,7 @@ function setupDrive() {
     }
   }
   if (!S.practice) S.segs[S.forkAt - 30].props.push({ k: 'fork', x: -1.6 }, { k: 'fork', x: 1.6, right: true });
+  S.wxPlan = S.practice ? [{ at: 0, k: 'clear' }] : planWeather(S.world);
   rng = Math.random;
   const pc = {}; for (const c of S.crew) pc[c.id] = S.cooked0;
   Object.assign(S, {
@@ -462,12 +511,13 @@ function spawnTraffic(segAhead) {
   const z = (S.pos + segAhead * SEG) % S.trackLen;
   S.traffic.push({ z, x: [-0.62, 0, 0.62][Math.random() * 3 | 0], sp: MAXSP * (0.3 + Math.random() * 0.25), col: ['#3a7bd5', '#e0e0e0', '#c94', '#6a4', '#a4a'][Math.random() * 5 | 0] });
 }
-function spawnCop() {
+function spawnCop(noTrap) {
   const later = (S.save.drivesDone || 0) >= 3;
   const r = Math.random();
   const type = later && r < 0.2 ? 'suv' : r < 0.55 ? 'moto' : 'cruiser';
   const hp = { cruiser: 2, moto: 1, suv: 5 }[type];
   const plan = type === 'suv' ? 'block' : type === 'moto' ? 'side' : Math.random() < 0.35 ? 'block' : 'side';
+  if (!noTrap && Math.random() < 0.35) { S.cops.push({ type, hp, plan, z: S.pos + SEG * 150, sp: 0, x: Math.random() < 0.5 ? -1.3 : 1.3, side: 1, stage: 'parked', t: 0, blind: 0, wob: 0 }); return; }
   S.cops.push({ type, hp, plan, z: S.pos - 700 - Math.random() * 600, sp: S.speed, x: [-0.62, 0, 0.62][Math.random() * 3 | 0], side: 1, stage: 'tail', t: 0, blind: 0, wob: Math.random() * 6 });
   sfx('siren');
 }
@@ -489,7 +539,7 @@ function pickTarget(seat, aim) {
   let dir = aim;
   if (dir == null) dir = seat === 1 ? 1 : seat === 3 ? -1 : 0;
   const pool = S.cops.filter(c => {
-    if (c.stage === 'spin') return false;
+    if (c.stage === 'spin' || c.stage === 'parked') return false;
     if (S.solo || (n === 2 && seat === 1)) return true; // solo / lone window covers everything
     if (c.stage === 'spin') return false;
     if (dir === 0) return c.z - S.pos < PZ - SEG;
@@ -737,7 +787,10 @@ function updateDrive(rdt) {
   else if (S.speed < top) S.speed += S.accel * (boost ? 1.3 : 1) * dt;
   else S.speed -= S.accel * 1.5 * dt;
   S.speed = Math.max(0, Math.min(S.maxSp * 1.05, S.speed));
-  S.x += (S.lastSteer * 2.2 * S.grip * (0.4 + spPct) + S.drift * 0.6) * dt;
+  const wx = wxNow(); S.wx = wx;
+  if (wx.k !== S.wxK) { if (S.wxK && WX[wx.k].name) banner(WX[wx.k].name, '', '#9fd8ff', 1.6, true); S.wxK = wx.k; }
+  const slide = (1 - wx.grip) * Math.sin(S.t * 1.7) * spPct * 1.4;   // slick roads push you around a bit
+  S.x += (S.lastSteer * 2.2 * S.grip * wx.grip * (0.4 + spPct) + S.drift * 0.6 + slide) * dt;
   S.x -= sg.curve * spPct * spPct * 0.9 * dt;
   S.x = Math.max(-2.2, Math.min(2.2, S.x));
   if (offroad && S.speed > S.maxSp * 0.3) S.shake = Math.max(S.shake, 1.5);
@@ -848,7 +901,7 @@ function updateDrive(rdt) {
   // ---- heat: locked on / busted ----
   if (!S.practice && S.heat >= 100 && S.lockT <= 0) {
     S.lockT = 5; banner('LOCKED ON!', 'BOOST, SWERVE OR PELT IT', '#ff3b3b', 1.5); sfx('siren');
-    if (!S.cops.length) spawnCop();
+    if (!S.cops.length) spawnCop(true);
     for (const c of S.cops) { c.plan = 'side'; c.t = 99; }
   }
   if (S.lockT > 0) {
@@ -888,6 +941,11 @@ function wipeout(c, why) { c.stage = 'spin'; c.t = 0; S.shaken[half()]++; addHea
 function copAI(c, dt) {
   c.t += dt; c.wob += dt;
   if (c.type === 'cone') { c.z = S.pos + PZ; c.x = S.x + 0.5; c.side = 1; c.stage = 'side'; return; }
+  if (c.stage === 'parked') {
+    c.rel = c.z - S.pos; c.side = c.x < S.x ? -1 : 1;
+    if (c.rel - PZ < -SEG * 0.5) { c.stage = 'tail'; c.t = 0; c.called = true; c.x = c.x > 0 ? 0.9 : -0.9; c.sp = S.speed * 0.5; sfx('siren'); banner('SPEED TRAP!', "HE'S PULLING OUT", '#ff6b6b', 1.4, true); }
+    else { S.siren = Math.max(S.siren, 0.3); return; }
+  }
   const rel = c.z - S.pos, vr = rel - PZ, lock = S.lockT > 0;
   c.rel = rel; c.side = c.x < S.x ? -1 : 1;
   let tsp = S.speed, tx = c.x, lat = 0.7;
@@ -898,18 +956,19 @@ function copAI(c, dt) {
   const chase = S.maxSp * 0.35 * want * (lock ? 1.5 : 1);
   if (c.blind > 0) {
     c.blind -= dt; tsp = S.speed * 0.7; tx = c.x + Math.sin(c.t * 7) * 0.5; lat = 1.2;
-  } else if (vr < -SEG * 2) {
-    c.stage = 'tail'; tsp = S.speed + chase; tx = S.x + (c.plan === 'side' ? (c.x < S.x ? -0.62 : 0.62) : 0.62);
+  } else if (vr < -SEG * 0.2 && c.stage !== 'pace' && c.stage !== 'ram') {
+    c.stage = 'tail'; tsp = S.speed + (vr > -SEG * 2 ? SEG * 1.5 : vr > -SEG * 6 ? S.maxSp * 0.12 : chase); tx = S.x + (c.plan === 'side' ? (c.x < S.x ? -0.62 : 0.62) : 0.62);
+    if (!c.called) { c.called = true; banner('COPS COMING UP BEHIND!', 'CHECK YOUR MIRROR', '#ff6b6b', 1.4, true); }
     if (c.x !== tx && Math.abs(c.x - S.x) < 0.3) tx = S.x + 0.62; // don't rear-end the van, go around
   } else if (c.plan === 'side') {
     const lane = S.x + (c.lane || (c.lane = c.x < S.x ? -0.62 : 0.62));
     if (c.stage !== 'ram') {
       if (c.stage !== 'pace') { c.stage = 'pace'; c.t = 0; sfx('horn'); }
-      tsp = S.speed - vr * 0.9; tx = lane; lat = 0.9;
+      tsp = S.speed - (vr - SEG * 0.7) * 0.9; tx = lane; lat = 0.9; // sit just ahead, in view beside you
       addHeat(dt * 2);
-      if (c.t > (S.solo ? 3.5 : 2.5) && Math.abs(vr) < SEG * 1.5) { c.stage = 'ram'; c.t = 0; }
+      if (c.t > (c.rams ? 2.5 : 4) && Math.abs(vr) < SEG * 1.5) { c.stage = 'ram'; c.t = 0; c.rams = (c.rams || 0) + 1; }
     } else {
-      tsp = S.speed - vr * 0.9; tx = S.x; lat = 2.2; // swerve in
+      tsp = S.speed - (vr - SEG * 0.4) * 0.9; tx = S.x; lat = 2.2; // swerve in
       if (Math.abs(c.x - S.x) < VHW * 2 + 0.02 && Math.abs(vr) < SEG * 0.6 && !c.rammed) {
         c.rammed = true; S.shake = 5; S.damage++; loseCoins(5); addHeat(8); pop('RAMMED!', '#ff3b3b'); sfx('crash');
         S.x += (S.x > c.x ? 1 : -1) * 0.35; c.x -= (S.x > c.x ? 1 : -1) * 0.2;
@@ -917,7 +976,7 @@ function copAI(c, dt) {
       if (c.t > 1.2) { c.stage = 'pace'; c.t = 0; c.rammed = false; c.lane = -c.lane * (Math.random() < 0.5 ? 1 : -1); }
     }
   } else { // block: get in front of you and brake-check
-    if (vr < SEG * 5) { c.stage = 'pass'; tsp = S.speed + chase; tx = Math.abs(S.x - 0.62) > 0.4 ? 0.62 : -0.62; }
+    if (vr < SEG * 5) { c.stage = 'pass'; tsp = S.speed + S.maxSp * 0.18; c.passLane = c.passLane || (S.x < 0 ? 0.62 : -0.62); tx = c.passLane; }
     else {
       if (c.stage !== 'block') { c.stage = 'block'; c.t = 0; sfx('horn'); banner('COP CUTTING YOU OFF!', 'GO AROUND IT', '#ff6b6b', 1, true); }
       tx = S.x; lat = 0.6;
@@ -1068,12 +1127,29 @@ function draw() {
   ctx.translate(Math.round((Math.random() - 0.5) * sh * 2), Math.round((Math.random() - 0.5) * sh * 2));
   // sky
   const wob = lvl ? Math.sin(S.t * 1.3) * S.sway * 0.4 : 0;
+  const wx = S.wx || wxNow(), pct = wx.pct;
+  const sky = skyAt(th, pct, S.night);
   const g = ctx.createLinearGradient(0, 0, 0, HZ);
-  g.addColorStop(0, ultra ? hue(S.t * 60) : th.sky[0]); g.addColorStop(1, ultra ? hue(S.t * 60 + 120) : th.sky[1]);
+  g.addColorStop(0, ultra ? hue(S.t * 60) : sky[0]); g.addColorStop(1, ultra ? hue(S.t * 60 + 120) : sky[1]);
   ctx.fillStyle = g; ctx.fillRect(-4, -4, W + 8, H + 8);
-  if (S.night) { ctx.fillStyle = '#fff'; for (let i = 0; i < 30; i++) ctx.fillRect((i * 97) % W, (i * 53) % 70, 1, 1); }
+  const starA = S.night ? 1 : Math.max(0, (pct - 0.8) * 5);
+  if (starA > 0 && wx.dark < 0.3) { ctx.globalAlpha = starA; ctx.fillStyle = '#fff'; for (let i = 0; i < 30; i++) ctx.fillRect((i * 97) % W, (i * 53) % (HZ - 6), 1, 1); ctx.globalAlpha = 1; }
+  // sun sets (day) / moon rises (night) as the drive goes on
+  if (!ultra && wx.fog < 0.5) {
+    const sx = W * 0.72 - S.bgX * 0.2 % W, sy = S.night ? HZ - 10 - pct * 30 : 8 + pct * (HZ - 4);
+    ctx.globalAlpha = 1 - wx.dark * 1.8; ctx.fillStyle = S.night ? '#f4f0d8' : lerpC('#fff4a0', '#ff6a3a', pct);
+    ctx.beginPath(); ctx.arc(((sx % W) + W) % W, sy, S.night ? 6 : 9, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  if (wx.dark > 0) { ctx.globalAlpha = wx.dark; ctx.fillStyle = '#4a4a5a'; ctx.fillRect(-4, -4, W + 8, HZ + 6); ctx.globalAlpha = 1; }
   // parallax hills
   const cur = segAt(S.pos);
+  // the next stop rises on the horizon over the last 30% of the drive
+  if (pct > 0.7) {
+    const up = Math.min(1, (pct - 0.7) / 0.25), bx = W * 0.5 - S.bgX * 0.15 % 40;
+    ctx.fillStyle = S.night || pct > 0.9 ? '#1a1030' : '#5a5070';
+    for (let i = -5; i <= 5; i++) { const bh = (10 + ((i * 7919) % 13 + 13) % 13 * 2.2) * up, bw = 9; ctx.fillRect(bx + i * 11, HZ - bh - 6, bw, bh + 8); }
+    if (pct > 0.85) { ctx.fillStyle = '#ffd84a'; for (let i = -5; i <= 5; i += 2) ctx.fillRect(bx + i * 11 + 3, HZ - 12 - ((i * 7919) % 13 + 13) % 13 * up, 2, 2); }
+  }
   S.bgX = (S.bgX || 0) + cur.curve * (S.speed / MAXSP) * 0.8;
   // clouds (slow parallax) + far skyline
   if (!S.night) { ctx.fillStyle = ultra ? hue(S.t * 60 + 200, 60, 85) : '#ffffffcc'; for (let i = 0; i < 6; i++) { const cx = ((i * 71 - S.bgX * 0.3 - S.t * 3) % (W + 80) + W + 80) % (W + 80) - 40, cy = 14 + (i * 37) % 40; ctx.fillRect(cx, cy, 34, 6); ctx.fillRect(cx + 6, cy - 4, 20, 5); ctx.fillRect(cx + 14, cy - 7, 10, 4); } }
@@ -1116,10 +1192,10 @@ function draw() {
     const p1 = s.p, p2 = s.p2;
     const alt = Math.floor(s.i / RUMBLE) % 2;
     const y1 = p1.y + wob, y2 = p2.y + wob;
-    ctx.fillStyle = ultra ? hue(s.i * 8 + S.t * 90, 70, alt ? 35 : 30) : th.grass[alt]; ctx.fillRect(-4, y2, W + 8, y1 - y2 + 2);
+    ctx.fillStyle = ultra ? hue(s.i * 8 + S.t * 90, 70, alt ? 35 : 30) : wx.snow > 0.5 ? (alt ? '#e8eef5' : '#dde5ee') : th.grass[alt]; ctx.fillRect(-4, y2, W + 8, y1 - y2 + 2);
     if (!ultra) poly(p1.x, y1, p1.w * 1.4, p2.x, y2, p2.w * 1.4, shade(th.grass[alt], 0.8)); // dirt shoulder
     poly(p1.x, y1, p1.w * 1.15, p2.x, y2, p2.w * 1.15, ultra ? hue(s.i * 12, 90, 70) : th.rumble[alt]);
-    poly(p1.x, y1, p1.w, p2.x, y2, p2.w, ultra ? hue(s.i * 5 + S.t * 40, 50, alt ? 32 : 28) : th.road[alt]);
+    poly(p1.x, y1, p1.w, p2.x, y2, p2.w, ultra ? hue(s.i * 5 + S.t * 40, 50, alt ? 32 : 28) : (wx.wet > 0.3 ? shade(th.road[alt], 0.75) : wx.snow > 0.3 ? shade(th.road[alt], 1.35) : th.road[alt]));
     const hs = (Math.imul(s.i, 2654435761) >>> 0);
     if (!ultra) {
       for (const ex of [-0.94, 0.94]) poly(p1.x + p1.w * ex, y1, p1.w * 0.018, p2.x + p2.w * ex, y2, p2.w * 0.018, '#eee'); // edge lines
@@ -1167,6 +1243,19 @@ function draw() {
   // fx
   for (const p of S.fx) { ctx.globalAlpha = Math.min(1, p.t); if (p.txt) { text(p.txt, p.x, p.y, p.col, 1, 'center'); continue; } ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, p.r, p.r); }
   ctx.globalAlpha = 1;
+  // ---- weather ----
+  if (!ultra) {
+    if (wx.fog > 0) { const fg = ctx.createLinearGradient(0, HZ - 10, 0, H); const fc = wx.snow > 0.5 ? '232,236,245' : '190,195,205'; fg.addColorStop(0, 'rgba(' + fc + ',' + Math.min(0.95, wx.fog * 1.3) + ')'); fg.addColorStop(0.45, 'rgba(' + fc + ',' + wx.fog * 0.55 + ')'); fg.addColorStop(1, 'rgba(' + fc + ',' + wx.fog * 0.15 + ')'); ctx.fillStyle = fg; ctx.fillRect(-4, HZ - 12, W + 8, H); }
+    if (wx.wet > 0) { ctx.strokeStyle = 'rgba(180,200,255,0.55)'; ctx.lineWidth = 1; ctx.beginPath(); const n = Math.round(60 * wx.wet); for (let i = 0; i < n; i++) { const rx = (i * 53 + S.t * 400 * (1 + i % 3)) % (W + 20) - 10, ry = (i * 97 + S.t * 520) % H; ctx.moveTo(rx, ry); ctx.lineTo(rx - 3, ry + 9); } ctx.stroke(); }
+    if (wx.snow > 0) { ctx.fillStyle = '#fff'; const n = Math.round(70 * wx.snow); for (let i = 0; i < n; i++) { const fx = (i * 61 + Math.sin(S.t + i) * 14 + S.t * 20) % W, fy = (i * 89 + S.t * (40 + i % 4 * 15)) % H; ctx.fillRect(fx, fy, i % 3 ? 1 : 2, i % 3 ? 1 : 2); } }
+    if (wx.k === 'storm' && wx.mix > 0.5) {
+      if (!S.boltT || S.t > S.boltT) { S.boltT = S.t + 3 + Math.random() * 5; S.bolt = 0.25; noise(0.8, 0.12, 0.3, 120); }
+      if (S.bolt > 0) { S.bolt -= 1 / 60; ctx.globalAlpha = Math.min(0.7, S.bolt * 3); ctx.fillStyle = '#eef'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+    }
+    // sunset / night tint over everything as the drive goes on
+    const dusk = S.night ? 0 : Math.max(0, pct - 0.55) / 0.45;
+    if (dusk > 0) { ctx.globalAlpha = dusk * 0.28; ctx.fillStyle = pct > 0.85 ? '#2a1a50' : '#ff8a4a'; ctx.fillRect(0, HZ, W, H); ctx.globalAlpha = 1; }
+  }
   // siren wash
   if (S.siren > 0.2) { ctx.globalAlpha = 0.12 * S.siren; ctx.fillStyle = Math.floor(S.t * 6) % 2 ? '#f00' : '#03f'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   if (lvl >= 2) { ctx.globalAlpha = 0.08 * lvl; ctx.fillStyle = hue(S.t * 50); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
@@ -1326,6 +1415,7 @@ function drawHUD() {
   // cooked
   const lvl = bakedLevel();
   text('COOKED', W - 74, 4, '#8ef0b0'); bar(W - 48, 4, 44, 5, avgCooked() / 100, lvl === 3 ? hue(S.t * 90) : '#8ef0b0');
+  if (S.wx && S.wx.k !== 'clear') text(S.wx.k.toUpperCase() + (S.wx.grip < 0.9 ? ' - SLICK' : ''), W - 4, 20, '#9fd8ff', 1, 'right');
   text(BAKED[lvl] + (lvl ? ' x' + coinMul() : ''), W - 4, 12, lvl === 3 ? hue(S.t * 90) : '#c8ffa0', 1, 'right');
   // distance bar with ??? swap marker
   const pct = S.pos / (S.trackLen - SEG * 40);

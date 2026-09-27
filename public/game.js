@@ -360,7 +360,20 @@ cv.addEventListener('mousemove', e => {
   const r = cv.getBoundingClientRect(); mouseG = { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
   const h = hotAt(mouseG.x, mouseG.y); if (h && h.hover) h.hover();
 });
-cv.addEventListener('wheel', e => { if (!running) return; e.preventDefault(); if (menu) return; if (state === 'results') { if (e.deltaY < 0) K.upPressed = true; else K.downPressed = true; } else if (state === 'play') cycleWeapon(); }, { passive: false });
+let lastWheelNav = 0;
+cv.addEventListener('wheel', e => {
+  if (!running) return; e.preventDefault(); if (menu) return;
+  if (state === 'results') {
+    // v1.3 (user-reported 2026-09-26): a single physical scroll notch/gesture fires many native 'wheel'
+    // events in quick succession (esp. trackpads and high-res mice), and each one used to move the shop
+    // selection by 1 - so one scroll could jump several items at once. Throttle to at most one nav-step
+    // per ~120ms, regardless of how many wheel events land in that window.
+    const now = performance.now();
+    if (now - lastWheelNav < 120) return;
+    lastWheelNav = now;
+    if (e.deltaY < 0) K.upPressed = true; else K.downPressed = true;
+  } else if (state === 'play') cycleWeapon();
+}, { passive: false });
 document.querySelectorAll('#touch button').forEach(b => {
   const k = b.dataset.k;
   b.addEventListener('pointerdown', e => {
@@ -1181,8 +1194,20 @@ function variantTheme(base, name, tint, a, enemies) {
   return { name, tiles: b.tiles, sky: tl(b.sky), clouds: b.clouds, far: tl(b.far), near: tl(b.near), enemies, base, floorTint: [tint, a * 0.7] };
 }
 // enemy variants: same moves as the originals, new looks, a bit tougher
-const BASE_AI = { ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop', badtrip: 'cop', paranoia: 'karen', scout: 'squirrel', tourist: 'cop' };
-const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2, badtrip: 1, scout: 1, tourist: 1 };
+const BASE_AI = {
+  ranger: 'cop', guard: 'cop', suit: 'karen', rat: 'mouse', raccoon: 'squirrel', crab: 'squirrel', lawnmower: 'cop', segway: 'cop', owl: 'squirrel', securitybot: 'cop', badtrip: 'cop', paranoia: 'karen', scout: 'squirrel', tourist: 'cop',
+  // v1.3 (content pass 2, requested 2026-09-26): 10 more Park/Beach reskins - 5 flavored for each world,
+  // same zero-new-art recolor recipe as every variant above, filling out each family's pool further.
+  jogger: 'cop', birdwatcher: 'cop', yogamom: 'karen', pigeonlady: 'mouse', skateboarder: 'squirrel', // PARK
+  patrol: 'cop', influencer: 'karen', beachbum: 'mouse', surfer: 'squirrel', parrot: 'squirrel', // BEACH
+};
+const VARIANT_HP = {
+  ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, lawnmower: 2, segway: 1, owl: 1, securitybot: 2, badtrip: 1, scout: 1, tourist: 1,
+  jogger: -1, birdwatcher: 2, yogamom: 1, pigeonlady: 0, skateboarder: -1,
+  patrol: 1, influencer: 1, beachbum: 2, surfer: -1, parrot: 0,
+};
+// v1.3: per-kind speed multiplier for the new fast/slow variants above (everything else defaults to 1x via `SPD_MUL[k] || 1`)
+const SPD_MUL = { jogger: 1.35, birdwatcher: 0.8, skateboarder: 1.3, beachbum: 0.75, surfer: 1.25, parrot: 1.2 };
 {
   const tintSprites = (src, map) => src.map(img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { const key = d.data[i] + ',' + d.data[i + 1] + ',' + d.data[i + 2]; if (map[key]) { d.data[i] = map[key][0]; d.data[i + 1] = map[key][1]; d.data[i + 2] = map[key][2]; } } g.putImageData(d, 0, 0); return c; });
   const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -1203,11 +1228,22 @@ const VARIANT_HP = { ranger: 1, guard: 2, suit: 1, rat: 0, raccoon: 1, crab: 0, 
   // rather than only the later-world "remix" themes.
   ENEMY_IMG.scout = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#6a8a4a'], [P.T, '#3a5a28'], [P.y, '#d8c890']])); // PARK: khaki SCOUT SQUIRREL
   ENEMY_IMG.tourist = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#ff8a5a'], [P.D, '#d85a2a'], [P.y, '#ffe8a0']])); // BEACH: Hawaiian-shirt TOURIST COP
+  // v1.3 (content pass 2, requested 2026-09-26): 10 more reskins, 5 per world (Park/Beach) - same recipe.
+  ENEMY_IMG.jogger = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#e83a5a'], [P.D, '#a01838'], [P.y, '#f0f0f0']])); // PARK: fast JOGGER
+  ENEMY_IMG.birdwatcher = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#8a7a4a'], [P.D, '#5a4e28'], [P.y, '#d8c8a0']])); // PARK: tanky BIRDWATCHER
+  ENEMY_IMG.yogamom = tintSprites(ENEMY_IMG.karen, swap([[P.p, '#9a5aca'], [P.q, '#6a2e9a'], [P.h, '#3a2a1a'], [P.H, '#241a10']])); // PARK: YOGA MOM
+  ENEMY_IMG.pigeonlady = tintSprites(ENEMY_IMG.mouse, swap([[P.m, '#c8c8c0'], [P.M, '#8a8a80'], [P.u, '#e8d8a0']])); // PARK: PIGEON LADY
+  ENEMY_IMG.skateboarder = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#2a2a2a'], [P.T, '#111'], [P.y, '#ff5a3a']])); // PARK: SKATEBOARDER
+  ENEMY_IMG.patrol = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#ff3a3a'], [P.D, '#c81818'], [P.y, '#ffffff']])); // BEACH: PATROL (lifeguard grunt)
+  ENEMY_IMG.influencer = tintSprites(ENEMY_IMG.karen, swap([[P.p, '#ff8ac8'], [P.q, '#c8408a'], [P.h, '#e8c860'], [P.H, '#b89838']])); // BEACH: INFLUENCER
+  ENEMY_IMG.beachbum = tintSprites(ENEMY_IMG.mouse, swap([[P.m, '#c8a878'], [P.M, '#8a6e48'], [P.u, '#e8c8a0']])); // BEACH: BEACH BUM
+  ENEMY_IMG.surfer = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#2a9aa0'], [P.T, '#186a70'], [P.y, '#ffa030']])); // BEACH: SURFER
+  ENEMY_IMG.parrot = tintSprites(ENEMY_IMG.squirrel, swap([[P.t, '#3ac850'], [P.T, '#1a8030'], [P.y, '#ff3a3a']])); // BEACH: PARROT
   // v1.2 (Step 8): Astral Plane enemies (brief v0.9 Phase F). No new sprite art was built for these - they
   // alias existing base sprites with a shadowy/psychedelic recolor, same approach as every variant above.
   ENEMY_IMG.badtrip = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#5a1a8a'], [P.D, '#2e0a58'], [P.y, '#ff6aff']])); // BAD TRIP: shadow-homie
   ENEMY_IMG.paranoia = tintSprites(ENEMY_IMG.cop, swap([[P.d, '#160a28'], [P.D, '#0a0414'], [P.y, '#ff2af0']])); // THE PARANOIA's body - the giant eye is drawn on top of this in drawEnemyB
-  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot', 'badtrip', 'paranoia', 'scout', 'tourist']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
+  for (const k of ['ranger', 'guard', 'suit', 'rat', 'raccoon', 'crab', 'lawnmower', 'segway', 'owl', 'securitybot', 'badtrip', 'paranoia', 'scout', 'tourist', 'jogger', 'birdwatcher', 'yogamom', 'pigeonlady', 'skateboarder', 'patrol', 'influencer', 'beachbum', 'surfer', 'parrot']) ENEMY_FLASH[k] = ENEMY_IMG[k].map(flashOf);
 }
 Object.assign(THEMES, {
   nightwoods: variantTheme('woods', 'MIDNIGHT WOODS', '#101a4a', 0.5, ['ranger', 'raccoon', 'squirrel', 'ranger', 'mouse']),
@@ -1418,10 +1454,10 @@ const SPOOF_SIGNS = ['TACO BONG', 'KUSH & CARRY', 'BUDS BEFORE STUDS', 'THE STON
 // roster slots on a per-LEVEL seed, so a level not only can differ from its neighbor's theme but almost
 // always shows at least one face the player hasn't fought yet within that theme cycle.
 const ENEMY_FAMILY = {
-  cop: ['cop', 'ranger', 'guard', 'lawnmower', 'segway', 'securitybot', 'badtrip', 'tourist'],
-  karen: ['karen', 'suit', 'paranoia'],
-  mouse: ['mouse', 'rat'],
-  squirrel: ['squirrel', 'raccoon', 'crab', 'owl', 'scout'],
+  cop: ['cop', 'ranger', 'guard', 'lawnmower', 'segway', 'securitybot', 'badtrip', 'tourist', 'jogger', 'birdwatcher', 'patrol'],
+  karen: ['karen', 'suit', 'paranoia', 'yogamom', 'influencer'],
+  mouse: ['mouse', 'rat', 'pigeonlady', 'beachbum'],
+  squirrel: ['squirrel', 'raccoon', 'crab', 'owl', 'scout', 'skateboarder', 'surfer', 'parrot'],
 };
 function enemiesForLevel(n, theme) {
   const fam = k => ENEMY_FAMILY[BASE_AI[k] || k] || [k];
@@ -2282,6 +2318,8 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
     crab: 'CRACKED!', lawnmower: 'MOWED DOWN!', segway: 'WIPED OUT!', owl: 'GROUNDED!', securitybot: 'SHUT DOWN!',
     ranger: 'TICKETED!', guard: 'OFF DUTY!', suit: 'FIRED!', rat: 'SCRAM!', raccoon: 'TRASHED!',
     badtrip: 'BUMMER!', paranoia: 'PARANOIA FADES!', scout: 'SCOUT DOWN!', tourist: 'CHECKED OUT!',
+    jogger: 'OUT OF BREATH!', birdwatcher: 'SPOOKED OFF!', yogamom: 'NAMASTE DOWN!', pigeonlady: 'SCATTERED!', skateboarder: 'WIPED OUT!',
+    patrol: 'OFF DUTY!', influencer: 'UNFOLLOWED!', beachbum: 'ZONKED OUT!', surfer: 'WIPEOUT!', parrot: 'PLUCKED!',
   };
   const AI_KO_LINE = { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' };
   const WEAPON_KO_WORD = { joint: 'PUFF', lighter: 'TOASTED', bong: 'GONG', grinder: 'GROUND UP' };
@@ -2485,6 +2523,10 @@ function updateShots() {
       if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 7) { s.life = 0; me.slowT = Math.max(me.slowT || 0, 80); popup(me.x - 16, sy(me.z) - 34, 'SLOWED!', '#e8c896'); SFX.thud(); }
     } else if (s.k === 'drone') { // HQ: the cop's flying drone shoots down from above
       if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 24) { s.life = 0; hurt(1, 3, s.x); }
+    } else if (s.k === 'yogamat') { // v1.3: PARK's YOGA MOM - a rolled mat that roots you on hit, no direct damage
+      if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 8) { s.life = 0; me.rootT = Math.max(me.rootT || 0, 50); popup(me.x - 16, sy(me.z) - 34, 'ROOTED!', '#c070ff'); SFX.thud(); }
+    } else if (s.k === 'lifering') { // v1.3: BEACH's PATROL - a thrown life-ring that stuns briefly, no direct damage
+      if (state === 'play' && Math.abs(s.x - me.x) < 11 && Math.abs(s.z - me.z) < 9 && me.h < 8) { s.life = 0; me.stunT = Math.max(me.stunT || 0, 34); popup(me.x - 16, sy(me.z) - 34, 'RINGED!', '#ff4a4a'); SFX.bump(); }
     } else if (!s.k) { // plain purse throw
       if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 7) { s.life = 0; hurt(1, 8, s.x); }
     }
@@ -3189,10 +3231,15 @@ function hostUpdate() {
         // take turns: only a couple of cops go for you at once, the rest circle and wait
         const busy = lvl.enemies.filter(o => o !== e && o.ai === 'cop' && o.alive && (o.state === 1 || o.state === 2 || o.near)).length;
         e.near = busy < 1 + players.length;
-        const spdMul = (e.kind === 'segway' ? 1.8 : 1) * (e.buffed > 0 ? 1.3 : 1); // DOWNTOWN: fast segway ram - jump (h>=14) to dodge, same as any melee contact. HQ: clipboard-buffed cops move faster too
+        const spdMul = (e.kind === 'segway' ? 1.8 : (SPD_MUL[e.kind] || 1)) * (e.buffed > 0 ? 1.3 : 1); // DOWNTOWN: fast segway ram - jump (h>=14) to dodge, same as any melee contact. HQ: clipboard-buffed cops move faster too. v1.3: fast/tanky-slow reskins get their own SPD_MUL
         const wantX = inZone(tgt.x - e.dir * (e.near ? 20 : 52 + (e.id % 3) * 12));
         sx = Math.sign(wantX - e.x) * Math.min(0.9 * spdMul, Math.abs(wantX - e.x)); sz = Math.sign(dz) * Math.min(0.9, Math.abs(dz));
-        if (e.near && wk === 'beach' && !(e.trickCd > 0) && Math.abs(dx) < 34 && Math.abs(dz) < 8) { e.state = 10; e.t = 26; e.trickCd = 260; e.trickChain = 0; } // BEACH: taser wind-up
+        // v1.3 (content pass 2, requested 2026-09-26): PATROL's own signature - a thrown life-ring that
+        // stuns on hit. Checked BEFORE the shared wk==='beach' taser trick below (which would otherwise
+        // always win the same range check first, since it's earlier in this else-if chain) so a PATROL
+        // genuinely throws rings instead of tasing - its own move, not just a reskinned taser cop.
+        if (e.kind === 'patrol' && !(e.trickCd > 0) && Math.abs(dx) < 80 && Math.abs(dz) < 16) { e.state = 34; e.t = 24; e.trickCd = 280; }
+        else if (e.near && wk === 'beach' && !(e.trickCd > 0) && Math.abs(dx) < 34 && Math.abs(dz) < 8) { e.state = 10; e.t = 26; e.trickCd = 260; e.trickChain = 0; } // BEACH: taser wind-up
         else if (e.near && wk === 'suburb' && !(e.trickCd > 0) && Math.abs(dx) < 30 && Math.abs(dz) < 10) { e.state = 15; e.t = 24; e.trickCd = 280; } // SUBURBIA: pepper-spray wind-up
         else if (!(e.trickCd > 0) && wk === 'woods' && Math.abs(dx) < 62 && Math.abs(dz) < 12) { e.state = 17; e.t = 22; e.trickCd = 340; } // WOODS: net-launcher aim
         // v1.3 (content pass, requested 2026-09-26): PARK's first-ever cop trick - was intentionally the
@@ -3217,6 +3264,9 @@ function hostUpdate() {
         const fire = (oz) => { const shot = { x: e.x + e.dir * 10, z: Math.max(0, Math.min(ZMAX, e.z + oz)), vx: e.dir * 2, life: 150, spin: 0, k: 'dart' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'dart' }); };
         fire(0); if (lvl.veteranTricks) fire(dz > 0 ? 10 : -10); SFX.taser(); } }
       else if (e.state === 31) { if (--e.t <= 0) { e.state = 3; e.t = 55; } }
+      else if (e.state === 34) { if (--e.t <= 0) { e.state = 35; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; e.dir = Math.sign(dx) || e.dir;
+        const shot = { x: e.x + e.dir * 9, z: e.z, vx: e.dir * 1.9, life: 140, spin: 0, k: 'lifering' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'lifering' }); SFX.thud(); } } // PATROL: life-ring throw wind-up/fire
+      else if (e.state === 35) { if (--e.t <= 0) { e.state = 3; e.t = 55; } }
     } else if (e.ai === 'karen') {
       if (e.trickCd > 0) e.trickCd--;
       if (wk === 'hq' && frame % 30 === 0) { // HQ clipboard Karen: "writing up" nearby cops/mice buffs them until she's KO'd
@@ -3230,6 +3280,10 @@ function hostUpdate() {
         else if (wk === 'suburb' && !(e.trickCd > 0) && Math.abs(dx) < 70 && Math.abs(dz) < 14) { e.state = 22; e.t = 22; e.trickCd = 280; } // SUBURBIA: leaf-blower wind-up
         else if (wk === 'woods' && !(e.trickCd > 0) && Math.abs(dz) < 20) { e.state = 24; e.t = 30; e.trickCd = 420; } // WOODS: essential-oil diffuser
         else if (wk === 'city' && !(e.trickCd > 0) && Math.abs(dx) < 90 && Math.abs(dz) < 16) { e.state = 25; e.t = 20; e.trickCd = 320; } // DOWNTOWN: phone-camera flash
+        // v1.3 (content pass 2, requested 2026-09-26): YOGA MOM's own signature - a rolled-mat throw that
+        // roots you in place. Kind-specific (not gated to wk==='park') since it's this ONE reskin's move,
+        // not a per-world trick every Park karen gets - Park karens otherwise still just use the plain ranged shot.
+        else if (e.kind === 'yogamom' && !(e.trickCd > 0) && Math.abs(dx) < 90 && Math.abs(dz) < 16) { e.state = 32; e.t = 22; e.trickCd = 300; }
         else if (--e.cd <= 0 && Math.abs(dz) < 10) { e.state = 1; e.t = 16; }
       } else if (e.state === 1) {
         if (--e.t <= 0) {
@@ -3253,12 +3307,23 @@ function hostUpdate() {
         }
       }
       else if (e.state === 26) { if (--e.t <= 0) { e.state = 3; e.t = 60; } }
+      else if (e.state === 32) { if (--e.t <= 0) { e.state = 33; e.t = 12; e.strikeN = (e.strikeN || 0) + 1; e.dir = Math.sign(dx) || e.dir;
+        const shot = { x: e.x + e.dir * 8, z: e.z, vx: e.dir * 1.7, life: 140, spin: 0, k: 'yogamat' }; lvl.eshots.push(shot); Net.send({ t: 'eshot', x: Math.round(shot.x), z: Math.round(shot.z), vx: shot.vx, l: lvl.n, k: 'yogamat' }); SFX.thud(); } } // YOGA MOM: rolled-mat throw wind-up/fire
+      else if (e.state === 33) { if (--e.t <= 0) { e.state = 3; e.t = 60; } }
     } else if (e.ai === 'mouse') {
+      if (e.trickCd > 0) e.trickCd--;
       // HQ: robot mice beep, then self-detonate in a small radius near their target (also see damageEnemy for a kill-triggered blast)
       if (wk === 'hq' && !e.reserve && e.state !== 13 && e.state !== 14 && Math.abs(dx) < 20 && Math.abs(dz) < 12) { e.state = 13; e.t = 26; e.strikeN = (e.strikeN || 0) + 1; }
       if (e.state === 13) { if (--e.t <= 0) { e.state = 14; e.t = 8; e.strikeN = (e.strikeN || 0) + 1; SFX.beep(); } }
       else if (e.state === 14) { if (--e.t <= 0) damageEnemy(e, 999, e.dir, true, e.id); }
-      else { e.dir = Math.sign(dx) || 1; sx = Math.sign(dx) * Math.min(1.8, Math.abs(dx)); sz = Math.sign(dz) * Math.min(1.1, Math.abs(dz)); }
+      // v1.3 (content pass 2, requested 2026-09-26): PIGEON LADY - a burst of feathers up close briefly
+      // blinds you, in place of the normal mouse's plain nibble. Kind-specific, same reasoning as YOGA MOM above.
+      else if (e.kind === 'pigeonlady' && !(e.trickCd > 0) && Math.abs(dx) < 16 && Math.abs(dz) < 10) { e.state = 15; e.t = 16; e.trickCd = 260; }
+      else if (e.state === 15) { if (--e.t <= 0) { e.state = 16; e.t = 10; e.strikeN = (e.strikeN || 0) + 1; SFX.thud();
+        if (state === 'play' && Math.abs(e.x - me.x) < 18 && Math.abs(e.z - me.z) < 11) { me.blindT = Math.max(me.blindT || 0, 40); popup(me.x - 18, sy(me.z) - 34, 'FEATHERS!', '#e8e0c8'); }
+        puff(e.x, sy(e.z) - 10, 5, ['#e8e0c8', '#ffffff'], .6); } }
+      else if (e.state === 16) { if (--e.t <= 0) { e.state = 3; e.t = 50; } }
+      else { const spdMul = SPD_MUL[e.kind] || 1; e.dir = Math.sign(dx) || 1; sx = Math.sign(dx) * Math.min(1.8 * spdMul, Math.abs(dx)); sz = Math.sign(dz) * Math.min(1.1, Math.abs(dz)); }
     } else if (e.ai === 'squirrel') {
       if (e.trickCd > 0) e.trickCd--;
       if (e.h === 0) {
@@ -3909,6 +3974,10 @@ function drawScene() {
     if (s.k === 'sand') { R(ctx, '#e8c896', -4, -4, 8, 8); R(ctx, '#fff0d0', -2, -2, 4, 4); }
     else if (s.k === 'pinecone') { R(ctx, '#6a4a2a', -3, -4, 6, 8); R(ctx, '#8a6a3a', -2, -3, 4, 6); }
     else if (s.k === 'drone') { R(ctx, '#7a90c0', -4, -3, 8, 6); R(ctx, '#c8e0ff', -2, -4, 4, 2); }
+    else if (s.k === 'dart') { R(ctx, '#c8a030', -4, -1, 8, 2); R(ctx, '#e8e8e8', -1, -1, 2, 2); } // v1.3: PARK dart
+    else if (s.k === 'taserbolt') { R(ctx, '#9ae8ff', -3, -3, 6, 6); R(ctx, '#ffffff', -1, -1, 2, 2); } // v1.3: BEACH boss taser bolt
+    else if (s.k === 'yogamat') { R(ctx, '#c070ff', -5, -2, 10, 4); R(ctx, '#e4b3ff', -3, -1, 6, 2); } // v1.3: PARK yoga mat
+    else if (s.k === 'lifering') { R(ctx, '#ff4a4a', -4, -4, 8, 8); R(ctx, '#ffffff', -2, -2, 4, 4); } // v1.3: BEACH life-ring
     else { R(ctx, P.k, -4, -4, 8, 8); R(ctx, '#ff7ac8', -3, -3, 6, 6); R(ctx, '#ffd84a', -1, -5, 2, 2); }
     ctx.restore();
   } });
@@ -4113,18 +4182,25 @@ function drawHUD() {
 
 }
 
+// v1.3 (user-reported 2026-09-26, "the end of match head shop design is all over each other"): this used
+// to be a fixed-position widget (a 12px-tall dot row + number labels 14px below it + a full player sprite
+// drawn 20px ABOVE its own y) always called at a hardcoded drawShop() y=38 - a ~42px-tall footprint that
+// was fine when the results screen above it only ever had 2 short lines of text, but every stats/grade/
+// leaderboard/share-card line added since then kept landing at fixed y positions inside that same band,
+// so on a "full" results screen (grade shown, a DJ Dank line, a leaderboard hit, the share-card prompt)
+// everything piled up on top of everything else. Redesigned as a compact single-row strip (no number
+// labels - unreadable at 49-dots-across scale anyway, no sprite poking up above its own row) so its real
+// footprint is just ~8px tall, and drawShop() below now threads a real, content-dependent y into it
+// instead of a hardcoded 38, so the two can never collide again regardless of how much results text shows.
 function drawMap(y) {
-  const n = SPOTS_TO_FARM, x0 = 36, dx = (W - 90) / n;
-  R(ctx, '#6a6080', x0, y + 5, dx * n, 2);
+  const n = SPOTS_TO_FARM, x0 = 10, dx = (W - 26 - x0) / n, pos = Math.min(save.spots, n - 1);
+  R(ctx, '#6a6080', x0, y + 3, dx * n, 1);
   for (let i = 0; i < n; i++) {
-    const x = x0 + i * dx, done = i < save.spots;
-    R(ctx, P.k, x - 5, y, 12, 12); R(ctx, done ? '#7fe07a' : '#4a3a60', x - 4, y + 1, 10, 10);
-    if (done) R(ctx, '#ffffff', x - 1, y + 2, 4, 3);
-    text((i + 1) + '', x + 1, y + 14, done ? '#c8ffa0' : '#6a6080', 1, 'center');
+    const x = x0 + i * dx, done = i < save.spots, cur = i === pos;
+    const s = cur ? 7 : 5;
+    R(ctx, P.k, x - s / 2, y - (cur ? 1 : 0), s, s); R(ctx, cur ? '#ffd84a' : done ? '#7fe07a' : '#4a3a60', x - s / 2 + 1, y - (cur ? 1 : 0) + 1, s - 2, s - 2);
   }
-  ctx.drawImage(ICONS.farm, x0 + n * dx - 4, y - 1);
-  const pos = Math.min(save.spots, n);
-  ctx.drawImage(PLAYER[me.color][0], x0 + Math.max(0, pos - 1) * dx - 7 + (pos ? 0 : -12), y - 20);
+  ctx.drawImage(ICONS.farm, x0 + n * dx - 2, y - 3, 8, 8);
 }
 // ============================================================
 //  RESULTS + SHOP (between missions)
@@ -4331,44 +4407,58 @@ function drawShop() {
     return;
   }
   const r = results;
-  if (r.shopOnly) { text('THE HEAD SHOP', W / 2, 6, '#c8ffa0', 2, 'center'); text('SPEND COINS ON GEAR... OR SAVE THEM FOR THE FARM', W / 2, 24, '#ffffff', 1, 'center'); }
-  else {
-  text(r.made ? 'SMOKE SPOT ' + (lvl.n + 1) + ' REACHED!' : 'MISSION OVER', W / 2, 4, r.made ? '#c8ffa0' : '#ff8a8a', 2, 'center');
-  // v1.2 (Step 7.1/7.2): show this run's grade + a "NEW BEST!" callout when it raised the saved best
-  if (r.made && r.grade) { const gCol = { S: '#ffd84a', A: '#c8ffa0', B: '#7ac8ff', C: '#b0a8c0' }[r.grade]; text('GRADE ' + r.grade + (r.isNewBest ? '!' : ''), W - 6, 4, gCol, 2, 'right'); }
-  text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA +25%!' : '') + (r.dailyBonus ? '   DAILY BONUS +' + r.dailyBonus + '!' : ''), W / 2, 18, '#ffffff', 1, 'center');
-  // v1.2 (Step 10.3): "NEW:" highlights + DJ Dank's roast/praise line - both computed once in toResults()
-  // and just read off here.
-  if (r.newThings && r.newThings.length) text(r.newThings.join('   '), W / 2, 26, '#ffd84a', 1, 'center');
-  if (r.roast) text(r.roast, W / 2, 33, '#e4b3ff', 1, 'center');
-  // v1.2 (Step 11.1): Smoke Runs leaderboard - shows once the server answers the submit this run just
-  // sent (see toResults()). Top 3 only here; the full top 10 is what the server actually keeps.
-  if (r.made && leaderboard.key === lbKeyFor(lvl.n, lvl.daily ? todaySeed() : null) && leaderboard.list.length) {
-    text((lvl.daily ? "TODAY'S SMOKE RUN" : 'LEVEL') + ' TOP ' + Math.min(3, leaderboard.list.length) + ': ' +
-      leaderboard.list.slice(0, 3).map((e, i) => (i + 1) + '. ' + e.name + ' ' + e.score).join('   '), W / 2, 40, '#7ac8ff', 1, 'center');
+  // v1.3 (user-reported 2026-09-26, "the end of match head shop design is all over each other"): every
+  // one of these result lines (grade, "NEW:" highlights, DJ Dank's line, the leaderboard hit, the share
+  // card prompt) used to be drawn at its own hardcoded y, added one at a time over several sessions with
+  // no one ever re-checking whether they now all fit in the same space - a "full" results screen (grade +
+  // a roast + a leaderboard hit + the share card, all real, all common) stacked several of them into the
+  // exact same 20px band. Now stacked dynamically: each line only claims space when it's actually shown,
+  // and the running `ry` is threaded into drawMap()/the tabs/the shop list below so nothing downstream can
+  // land on top of it either, however much (or little) of this optional text ends up on screen.
+  let ry;
+  if (r.shopOnly) {
+    text('THE HEAD SHOP', W / 2, 6, '#c8ffa0', 2, 'center'); text('SPEND COINS ON GEAR... OR SAVE THEM FOR THE FARM', W / 2, 24, '#ffffff', 1, 'center');
+    ry = 32;
+  } else {
+    text(r.made ? 'SMOKE SPOT ' + (lvl.n + 1) + ' REACHED!' : 'MISSION OVER', W / 2, 4, r.made ? '#c8ffa0' : '#ff8a8a', 2, 'center');
+    // v1.2 (Step 7.1/7.2): show this run's grade + a "NEW BEST!" callout when it raised the saved best
+    if (r.made && r.grade) { const gCol = { S: '#ffd84a', A: '#c8ffa0', B: '#7ac8ff', C: '#b0a8c0' }[r.grade]; text('GRADE ' + r.grade + (r.isNewBest ? '!' : ''), W - 6, 4, gCol, 2, 'right'); }
+    text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA +25%!' : '') + (r.dailyBonus ? '   DAILY BONUS +' + r.dailyBonus + '!' : ''), W / 2, 13, '#ffffff', 1, 'center');
+    ry = 20;
+    // v1.2 (Step 10.3): "NEW:" highlights + DJ Dank's roast/praise line - both computed once in toResults()
+    // and just read off here. Sharing one line since both are short and neither shows up every run.
+    const midLine = [r.newThings && r.newThings.length ? r.newThings.join('   ') : null, r.roast || null].filter(Boolean).join('   ');
+    if (midLine) { text(midLine, W / 2, ry, '#ffd84a', 1, 'center'); ry += 7; }
+    // v1.2 (Step 11.1): Smoke Runs leaderboard - shows once the server answers the submit this run just
+    // sent (see toResults()). Top 3 only here; the full top 10 is what the server actually keeps.
+    if (r.made && leaderboard.key === lbKeyFor(lvl.n, lvl.daily ? todaySeed() : null) && leaderboard.list.length) {
+      text((lvl.daily ? "TODAY'S SMOKE RUN" : 'LEVEL') + ' TOP ' + Math.min(3, leaderboard.list.length) + ': ' +
+        leaderboard.list.slice(0, 3).map((e, i) => (i + 1) + '. ' + e.name + ' ' + e.score).join('   '), W / 2, ry, '#7ac8ff', 1, 'center');
+      ry += 7;
+    }
+    // v1.2 (Step 11.2): share card - a real downloadable PNG snapshot of this run (see buildShareCard()),
+    // not just a "share" button that does nothing. Only offered on a real clear, since a share card for a
+    // wipe isn't much of a brag.
+    if (r.made) { hot(W / 2 - 30, ry - 2, 60, 8, () => shareCard()); text('[ SHARE CARD ]', W / 2, ry, '#ffd84a', 1, 'center'); ry += 7; }
   }
-  // v1.2 (Step 11.2): share card - a real downloadable PNG snapshot of this run (see buildShareCard()),
-  // not just a "share" button that does nothing. Only offered on a real clear, since a share card for a
-  // wipe isn't much of a brag.
-  if (r.made) { hot(W / 2 - 30, 46, 60, 8, () => shareCard()); text('[ SHARE CARD ]', W / 2, 48, '#ffd84a', 1, 'center'); }
-  }
-  drawMap(38);
+  const mapY = ry + 3; drawMap(mapY);
+  const tabsY = mapY + 9, headY = tabsY + 10, listY = tabsY + 18;
   // tabs
   let tx = 6;
   SHOP_TABS.forEach((t, i) => {
     const tw = t.length * 4 + 6;
-    hot(tx, 58, tw, 8, () => { shopTab = i; shopSel = 0; SFX.tick(); });
-    if (i === shopTab) R(ctx, '#4a3a60', tx, 58, tw, 8);
-    text(t, tx + 3, 60, i === shopTab ? '#ffd84a' : '#8a809a');
+    hot(tx, tabsY, tw, 8, () => { shopTab = i; shopSel = 0; SFX.tick(); });
+    if (i === shopTab) R(ctx, '#4a3a60', tx, tabsY, tw, 8);
+    text(t, tx + 3, tabsY + 2, i === shopTab ? '#ffd84a' : '#8a809a');
     tx += tw + 2;
   });
-  text('Q/E OR CLICK TO SWITCH TABS', W - 6, 60, '#8a809a', 1, 'right');
+  text('Q/E OR CLICK TO SWITCH TABS', W - 6, tabsY + 2, '#8a809a', 1, 'right');
   // shop list
-  text('HEAD SHOP', 8, 68, '#ffd84a', 1);
-  text('COINS ' + save.coins + '   RESIN ' + save.resin + '   SEEDS ' + (save.seeds || 0), W - 8, 68, '#ffd84a', 1, 'right');
+  text('HEAD SHOP', 8, headY, '#ffd84a', 1);
+  text('COINS ' + save.coins + '   RESIN ' + save.resin + '   SEEDS ' + (save.seeds || 0), W - 8, headY, '#ffd84a', 1, 'right');
   const list = shopEntries(), rows = 9, start = Math.max(0, Math.min(shopSel - 4, list.length - rows));
   for (let i = start; i < Math.min(list.length, start + rows); i++) {
-    const it = list[i], y = 76 + (i - start) * 10, sel = i === shopSel, st = itemStatus(it);
+    const it = list[i], y = listY + (i - start) * 10, sel = i === shopSel, st = itemStatus(it);
     // v1.1 A2: Core upgrades cost coins + Resin (+ Seeds on odd target levels), everything else is coins-only
     const isCoreup = it.kind === 'coreup';
     const afford = isCoreup ? (save.coins >= it.coinPrice && save.resin >= it.resinPrice && (save.seeds || 0) >= it.seedPrice) : save.coins >= it.price;
@@ -4381,24 +4471,25 @@ function drawShop() {
     if (!plain) text(st || costStr, 192, y + 1, st ? '#8a809a' : afford ? '#ffd84a' : '#ff8a8a', 1, 'right');
     else if (st) text(st, 192, y + 1, '#e4b3ff', 1, 'right');
   }
-  if (start > 0 && frame % 30 < 20) text('^ MORE', 150, 68, '#b0a8c0');
-  if (start + rows < list.length && frame % 30 < 20) text('V MORE', 150, 176, '#b0a8c0');
+  if (start > 0 && frame % 30 < 20) text('^ MORE', 150, headY, '#b0a8c0');
+  if (start + rows < list.length && frame % 30 < 20) text('V MORE', 150, listY + 100, '#b0a8c0');
   const it = list[shopSel];
-  R(ctx, '#4a3a60', 202, 76, 112, 96);
-  if (it.kind !== 'ready' && it.kind !== 'quit') ctx.drawImage(ICONS[it.icon], 246, 80, 20, 20);
-  wrap(it.desc, 206, 106, 26, '#ffffff');
+  const panelY = listY;
+  R(ctx, '#4a3a60', 202, panelY, 112, 96);
+  if (it.kind !== 'ready' && it.kind !== 'quit') ctx.drawImage(ICONS[it.icon], 246, panelY + 4, 20, 20);
+  wrap(it.desc, 206, panelY + 30, 26, '#ffffff');
   if (it.kind === 'coreup') {
     { const nf = formName(weaponDef().id, coreLevel() + 1), of = formName(weaponDef().id, coreLevel());
-      text('LV ' + coreLevel() + ' -> LV ' + (coreLevel() + 1) + (nf !== of ? '   BECOMES THE ' + nf + '!' : '   +1 DAMAGE'), 206, 128, '#7fe07a'); }
-    if (!it.capReached && coreLevel() < 10) text('COST: ' + it.coinPrice + ' COINS + ' + it.resinPrice + ' RESIN' + (it.seedPrice ? ' + ' + it.seedPrice + ' SEED' : ''), 206, 136, '#c8ffa0');
+      text('LV ' + coreLevel() + ' -> LV ' + (coreLevel() + 1) + (nf !== of ? '   BECOMES THE ' + nf + '!' : '   +1 DAMAGE'), 206, panelY + 52, '#7fe07a'); }
+    if (!it.capReached && coreLevel() < 10) text('COST: ' + it.coinPrice + ' COINS + ' + it.resinPrice + ' RESIN' + (it.seedPrice ? ' + ' + it.seedPrice + ' SEED' : ''), 206, panelY + 60, '#c8ffa0');
   } else if (it.kind === 'armor') {
     const curHp = ARMORS.filter(a => save.armor.includes(a.id)).reduce((m, a) => Math.max(m, a.hp), 0), hd = it.hp - curHp;
-    text('HEARTS ' + (hd >= 0 ? '+' : '') + hd, 206, 128, hd >= 0 ? '#7fe07a' : '#ff8a8a');
+    text('HEARTS ' + (hd >= 0 ? '+' : '') + hd, 206, panelY + 52, hd >= 0 ? '#7fe07a' : '#ff8a8a');
   }
-  if (r.msg) wrap(r.msg, 206, 142, 26, '#ffd84a');
+  if (r.msg) wrap(r.msg, 206, panelY + 66, 26, '#ffd84a');
   const clerk = SHOPKEEP_LINES[Math.floor(frame / 300) % SHOPKEEP_LINES.length];
-  text('SMOKEY:', 206, 160, '#e4b3ff'); wrap('"' + clerk + '"', 206, 168, 26, '#ffffff');
-  text('MOUSE: CLICK TWICE TO BUY   KEYS: UP/DOWN + ENTER   ESC: MAP', W / 2, 183, '#8a809a', 1, 'center');
+  text('SMOKEY:', 206, panelY + 84, '#e4b3ff'); wrap('"' + clerk + '"', 206, panelY + 92, 26, '#ffffff');
+  text('MOUSE: CLICK TWICE TO BUY   KEYS: UP/DOWN + ENTER   ESC: MAP', W / 2, listY + 107, '#8a809a', 1, 'center');
 }
 function wrap(str, x, y, width, col) {
   const words = String(str).split(' '); let line = '';
@@ -5545,13 +5636,13 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   // v1.3 (requested 2026-09-26) debug hooks: per-level enemy-variety reskin system, for the automated test.
   BASE_AI, ENEMY_IMG, enemiesForLevel,
   // v1.1 A2/A3 debug hooks (used by the automated smoke tests for the Core-cost curve + Wild charge economy)
-  shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, get shopSel() { return shopSel; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost,
+  shopEntries, shopConfirm, itemStatus, get shopTab() { return shopTab; }, set shopTab(v) { shopTab = v; }, set shopSel(v) { shopSel = v; }, ENV_WEAPONS, gainResin, onKill, coreLevel, coreUpCost,
   // v1.2 fix (Step 1) debug hooks: crew-lives visibility + the real restart-out-of-lives path, for the
   // automated 2-browser tests that verify the host/non-host crewLives-sync fix.
   get crewLives() { return me.lives; }, restartLevelOutOfLives, cycleWeapon, progressLabel,
   // v1.3 (rebalance, requested 2026-09-26) debug hooks: per-player lives/deadOut, for the automated test.
   get deadOut() { return me.deadOut; }, knockedOutFinal, get lastZiSeen() { return lastZiSeen; },
-  get frame() { return frame; }, get paused() { return paused; }, get invOpen() { return invOpen; },
+  get frame() { return frame; }, get paused() { return paused; }, get invOpen() { return invOpen; }, get shopSel() { return shopSel; }, get menu2() { return menu; },
   // v1.2 fix (Step 5) debug hooks: set the current homie's Core straight to a level (bypassing coreCap and
   // the coins/Resin/Seed cost) for the "screenshot every form" check, plus the tier/form-name helpers.
   setCoreLevel: lv => { save.cores[CORE_HOMIE[Net.color || 0]] = Math.max(1, Math.min(10, lv | 0)); save.coreCap = Math.max(save.coreCap || 3, lv | 0); },

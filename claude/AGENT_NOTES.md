@@ -1260,3 +1260,60 @@ separate cosmetic slot did not - scoping this out for now as its own small conte
 kind of trim as Step 10's) and the animated title screen (also scoped out - a real title-screen animation
 is its own small art/timing task, not a mechanic, and there wasn't room to do it justice alongside the six
 items above). Moving to Step 12 (final full-game test) next; these two can be picked up in a future pass.
+
+## STEP 12 (FIX_STEPS.md): Final full-game test
+
+No code changes this step - this is a verification pass, per the plan. Ran against the current `main`
+(through the Step 11 commits above), with a fresh `server.js` restart so every test hit the real deployed
+code, not a stale process.
+
+1. **Full solo playthrough (automated).** `kq_step12_solo_playthrough.js`: every one of the 49 main levels
+   (0-48) goes through `buildLevel()` -> `startLevel()` -> a forced clean clear -> `toResults()`/`persist()`
+   with zero crashes. Also confirmed the Farm hub and the Astral Plane level (`buildLevel(ASTRAL_LEVEL)`)
+   both build/open cleanly. **Caveat, disclosed rather than glossed over**: this checks that every level's
+   generation and clear-flow pipeline is sound (a real, checkable regression surface), not that a human
+   walked and fought through all 6 worlds/every transit game by hand - that's specifically what "a full
+   solo playthrough" evokes and this pass does NOT claim to have done. The 5 transit mini-games are a
+   different agent's files/tests (see their own AGENT_NOTES sections above, already verified by them);
+   this pass didn't re-drive them. The coin totals this test logs (~297/level average) are **not** a real
+   economy-tuning signal - they're almost entirely the fixed level-clear bonus (`50 + n*10`) since the test
+   skips actual combat/looting, so they should not be read as "the coin economy earns ~300/level in real
+   play" (the actual per-level economy from real play was last spot-checked in Step 6's notes, ~50-107/level
+   from a debug-bot playthrough, itself flagged there as likely an undercount of real play).
+2. **A full 4-player online session, in real browsers.** `kq_step12_online_session.js`: 4 real Playwright
+   tabs create/join a room, ready up together (lobby -> map, server-authoritative), the host picks a level,
+   the whole crew plays it out and reaches the smoke spot together (`fin` x4 -> server's real `checkProgress`
+   -> `allfin` -> every one of the 4 clients independently lands on the results screen), then everyone
+   readies up again and the whole crew advances to the map together. This exercises the actual
+   server-authoritative phase machine (lobby/map/play/shop) end to end with a real crew size, not just the
+   2-tab spot-checks earlier steps used.
+3. **Old saves load.** `kq_step12_saves_test.js`: three save shapes standing in for v0.7/v0.8/v0.9
+   (missing `cores`/`resin`/`farmPlots`/`grades`/`farmUpgrades`/etc entirely, using the old flat
+   `weapons`/`wlv`/`throws` economy) were written to a real save slot and loaded through the actual menu
+   click path (`chooseSlot` -> `loadSlot`), confirmed to migrate cleanly with every new field present and
+   sane (no crash, `migratedV11` set, Core levels seeded from the old `wlv` weapon levels, old
+   weapon/throw counts banked into Resin). This is the exact migration path `loadSlot()` has carried since
+   the original v1.1 pass, still working after every step since.
+4. **A phone test on a real iPhone.** **Not possible from this sandboxed environment** - there is no real
+   iOS device reachable here, and the sandbox's egress doesn't reach the live Render deploy either to even
+   screenshot it externally. What WAS done: Playwright's iPhone 13 viewport/touch emulation (already used in
+   an earlier mobile-UX session, see that AGENT_NOTES section above) confirms the joystick and touch
+   controls respond correctly under emulation, but that is explicitly not the same as a real-device test.
+   **This item needs a human with a real iPhone** - flagging clearly rather than claiming it's done.
+5. **Coin economy and difficulty tuning "from real numbers".** Not done this pass, for the same reason
+   item 1's caveat explains: nothing in this session played the game for real (fighting, looting,
+   spending time in levels) - every automated check forces a clean clear via debug hooks specifically to
+   test the FLOW, not to generate real play data. Actual economy tuning needs either real human playtesting
+   or a bot that plays combat for real (attacks, moves, loots) rather than skipping straight to the level
+   clear - neither exists yet. Flagging this as the one item in Step 12 that genuinely needs something this
+   session cannot produce on its own, same as item 4.
+
+**Regression status**: every test script from every prior step in this session's scope (Steps 9.3 through
+12) still passes with zero console/page errors: `kq_step10_test/online/teamchest`, `kq_step11_armor_online`,
+`kq_step11_server_test`, `kq_step11_sharecard_test`, plus this step's three new scripts. `node --check`
+clean on `game.js` and `server.js`.
+
+**Step 12 verdict**: items 1-3 are done and automated-tested for real (not just code review). Items 4-5
+need a human (a real iPhone, and real playtime for economy data) - this session cannot manufacture either.
+This closes out this session's assigned scope: Steps 1, 2, 5, 6, 7, 8, 9 (excl. garage), 10, 11, 12 are all
+landed, tested, and pushed to `main`.

@@ -131,10 +131,13 @@
       <div id="names"></div>
       <button id="solo" class="gold">PLAY SOLO</button>
       <button id="create">CREATE ROOM (ONLINE)</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:9px;margin:4px 0 0"><input type="checkbox" id="pubRoom" style="width:auto;margin:0"> LIST THIS ROOM FOR FIND A CREW</label>
       <div class="row">
         <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" style="margin-top:12px">
         <button id="join" class="alt">JOIN</button>
       </div>
+      <button id="findCrew" class="alt">FIND A CREW</button>
+      <div id="crewList" style="display:none;text-align:left;font-size:9px;max-height:100px;overflow:auto;margin-top:6px"></div>
       <button id="back" class="alt" style="background:#4a3a60;box-shadow:0 5px 0 #2a1838">&larr; BACK TO SAVES</button>
     </div>
     <div id="err"></div>

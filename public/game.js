@@ -5070,7 +5070,7 @@ setInterval(() => {
   lastBg += steps * (1000 / 60);
   while (steps-- > 0) update();
 }, 100);
-document.addEventListener('visibilitychange', () => { last = 0; acc = 0; if (master) master.gain.value = (document.hidden && settings.muteHidden) ? 0 : settings.sfx; });
+document.addEventListener('visibilitychange', () => { last = 0; acc = 0; if (master) master.gain.value = (document.hidden && settings.muteHidden) ? 0 : settings.sfx; if (document.hidden) for (const k in K) K[k] = false; });
 function loop(t) {
   if (!last) last = t;
   acc += Math.min(100, t - last); last = t;

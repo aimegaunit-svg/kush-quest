@@ -105,13 +105,33 @@ function makeCode() {
 }
 const cleanName = n => (String(n || '').toUpperCase().replace(/[^A-Z0-9 _-]/g, '').trim().slice(0, 10)) || 'STONER';
 
+// v1.2 (Step 10.1): spectators get everything a real player gets (enemy snapshots, chat, positions,
+// softpause, etc.) so they can actually watch the run - they just never enter `room.players`, so they
+// never count toward checkProgress()'s "everyone ready/everyone finished" gates below.
 function broadcast(room, obj, except) {
   for (const [id, p] of room.players) if (id !== except) p.client.send(obj);
+  if (room.spectators) for (const [id, p] of room.spectators) if (id !== except) p.client.send(obj);
 }
 
+const MAX_SPECTATORS = 4;
 function enter(client, code, name, wantColor) {
   const room = rooms.get(code);
-  if (room.players.size >= MAX_PLAYERS) return client.send({ t: 'err', msg: 'Room is full (4 max)' });
+  room.spectators = room.spectators || new Map();
+  if (room.players.size >= MAX_PLAYERS) {
+    // v1.2 (Step 10.1): the crew slots (4) are full - offer a 5th+ join as a read-only Spectator instead
+    // of rejecting outright, up to MAX_SPECTATORS more.
+    if (room.spectators.size >= MAX_SPECTATORS) return client.send({ t: 'err', msg: 'Room is full (4 players + 4 spectators max)' });
+    room.spectators.set(client.id, { name, client });
+    client.room = code;
+    client.send({
+      t: 'joined', code, id: client.id, host: room.host, color: -1, level: room.level, phase: room.phase,
+      spectate: true,
+      players: [...room.players].map(([id, p]) => ({ id, name: p.name, color: p.color })),
+      collected: [...room.collected], transit: room.transit || null,
+    });
+    broadcast(room, { t: 'pj', id: client.id, name, color: -1, spectate: true }, client.id);
+    return;
+  }
   const used = new Set([...room.players.values()].map(p => p.color));
   let color = (Number.isInteger(wantColor) && wantColor >= 0 && wantColor <= 3 && !used.has(wantColor)) ? wantColor : 0;
   while (used.has(color)) color++;
@@ -287,6 +307,11 @@ function handle(client, m) {
     case 'emote':
       if (room) broadcast(room, { t: 'emote', id: client.id, e: m.e | 0 }, client.id);
       break;
+    // v1.2 (Step 10.1): Online Soft Pause - any crewmate can call it, so it's just relayed, not host-gated
+    // like the enemy-authority messages above (there's no simulation state to protect, only a shared UI flag).
+    case 'softpause':
+      if (room) broadcast(room, { t: 'softpause', on: !!m.on, by: String(m.by || '').slice(0, 16) }, client.id);
+      break;
     case 'd': { // transit mini-game relay (Hotbox Highway + the 5 brief-v1.1 transit games): {t:'d', k, p, to?}
       if (!room) return;
       const out = { t: 'd', k: String(m.k || '').slice(0, 24), p: m.p, id: client.id };
@@ -302,8 +327,10 @@ function leave(client) {
   const room = rooms.get(client.room);
   client.room = null;
   if (!room) return;
+  const wasSpectator = room.spectators && room.spectators.has(client.id) && !room.players.has(client.id);
   room.players.delete(client.id); room.fin.delete(client.id); room.ready.delete(client.id);
-  broadcast(room, { t: 'pl', id: client.id });
+  if (room.spectators) room.spectators.delete(client.id);
+  broadcast(room, { t: 'pl', id: client.id, spectate: wasSpectator });
   if (room.host === client.id && room.players.size) { room.host = room.players.keys().next().value; broadcast(room, { t: 'host', id: room.host }); }
   // v1.2 fix (Step 2.3): if the host bails mid-ride, nobody will ever send transit-end - clear it so a
   // future joiner doesn't get stuck waiting forever, and free any live waiters immediately.

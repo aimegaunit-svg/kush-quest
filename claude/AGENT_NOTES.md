@@ -1067,3 +1067,109 @@ prior regression script (1/2/6/7/8/9/9online) - all still pass. `node --check` c
 
 Pushed to `main`. Next: Step 10 (Co-op and personality), Step 11 (Replay and sharing), Step 12 (Final
 full-game test).
+
+## STEP 10 (FIX_STEPS.md): Co-op and personality - real slice landed, several items scoped out
+
+`public/game.js` + `server.js`. Step 10 is a huge brief item (drop-in, soft pause, spectator, team chests,
+loot vote, Blunt Bat launch, YOINK, emote combos, enemy chatter, weapon KO lines, DJ Dank roasts, voice
+barks, 4:20, fake siren, spoof signs, results NEW: highlights, farm growth, boss/farm music) - built the
+parts that are real, scoped-testable slices this pass, and disclosed the rest below rather than shipping
+thin stubs for all of it.
+
+**10.1 Co-op fundamentals:**
+- **Drop-in mid-fight, for real.** Previously a mid-play joiner's `startLevel()` call spawned them at the
+  level's own start point (`lvl.spawn`), potentially several screens behind wherever the crew actually was
+  - the camera would eventually snap to the locked zone (via `applySnapshot`'s existing `lvl.locked`/`zi`
+  sync) but the player's own character was stuck back at spawn with no way to catch up on foot. `startGame()`
+  now passes a `dropIn` flag through to `startLevel(n, dropIn)`, which skips the brief entirely, goes
+  straight to `'play'`, and grants ~2.5s invincibility; `applySnapshot()` consumes a new `lvl.dropInPending`
+  flag on the very first snapshot it receives and warps the joiner's `me.x/z` (and `camX`) to the crew's
+  actual zone, instead of leaving that fix to chance.
+- **Online Soft Pause.** A genuinely new, opt-in, crew-wide freeze - unlike the personal ESC menu (which,
+  by design since Step 1, never blocks anyone else), this is a real `softpause` message any crewmate can
+  send and any crewmate can lift (menu option "SOFT PAUSE (FREEZES EVERYONE)" / "RESUME FOR THE CREW"),
+  server-relayed (new `case 'softpause':` in `server.js`, un-gated since there's no simulation state to
+  protect, only a shared UI flag). `update()` halts combat/physics/hostUpdate for everyone while it's set;
+  a HUD banner ("PAUSED BY X") makes it obvious to the whole crew, not just the caller.
+- **Spectator for a 5th+ player.** `server.js`'s `enter()` no longer flat-out rejects a room past 4 players -
+  it offers up to 4 more as read-only Spectators (`room.spectators`, separate from `room.players` so they
+  never count toward `checkProgress()`'s ready/finished gates or ever become host). `broadcast()` now also
+  reaches spectators, so they see literally everything a real player does (enemy snapshots, chat, positions,
+  soft pause, etc). Client-side, a Spectator gets a real `me` (so they can freely move the camera around),
+  but `me.spectator` makes `attack()`/`hurt()` true no-ops and `playersList()` excludes both self and any
+  spectator remote, so they can never trigger zone fights, hazards, or crew-lives math just by existing on
+  screen. `crewLives`/boss-HP-scaling now read a new `realRemotes()` helper (real crewmates only) instead of
+  raw `remotes.size`, so a spectator joining doesn't quietly change the difficulty or crew-lives pool.
+
+**10.2 Co-op moves:**
+- **Team chests: already worked, confirmed rather than rebuilt.** Turned out breaking a chest already
+  shares its loot with the whole crew as a side effect of the existing `collect()`/`applyCollected()` sync
+  path - every online client independently runs `breakProp(p, true) -> openChest(c)` on the same collect
+  broadcast, mutating their OWN save. Verified with 2 real tabs (both got Resin from the same chest). While
+  verifying this I hit a real, reproducible crash: `openChest()`'s Resin-loot branch called `rand()`, which
+  is `buildLevel()`'s own seeded-PRNG closure variable and was never in scope in this top-level function -
+  ANY chest that rolled Resin loot (a very common roll) crashed the game for whoever opened it. Fixed with
+  `Math.random()` (this amount never needed to be seed-identical across clients, only a real grant on each).
+- **YOINK** (new `yoink` action, default `Y`, rebindable like every other action): instantly pulls the
+  single nearest un-taken ground pickup to you from further away than a normal walk-up grab, so the crew
+  can race for drops. Reuses the existing `pickUp()`/`collect()` path, no new network message.
+- **Emote combos**: the crew matching the SAME emote within ~1.5s of each other (checked in both directions
+  - self-then-remote and remote-then-self, via a small rolling log `emoteComboLog`) grants each participant
+  +10 coins and an "EMOTE COMBO!" banner - the "crew is vibing" moment the brief describes.
+- **Scoped out, disclosed rather than guessed at**: the boss loot vote (needs a real multi-choice UI flow
+  on the results screen, not a small addition) and the Blunt Bat launching CREWMATES specifically (the
+  existing `bluntbat` Wild weapon already launches enemies into other enemies - a new ally-targeting mode
+  plus "a secret that needs it" is real level-design work, not just a mechanic). Neither landed this pass.
+
+**10.3 Personality:**
+- **Weapon knockout lines + full enemy-kind coverage.** `KO_LINE` covered only 5 of ~13 enemy kinds before;
+  now every kind has a real line (`ranger`/`guard`/`suit`/`rat`/`raccoon`/`badtrip`/`paranoia` added). A new
+  `WEAPON_KO_WORD` appends a small per-Core-weapon flourish on ordinary (non-boss/mini) kills, e.g. "CRACKED!
+  +3 (TOASTED)" for the Lighter - reads off `weaponDef().id`, so it's the CORE weapon's flavor even when the
+  actual killing blow was a Wild weapon (a disclosed simplification, not worth a bigger refactor for a text
+  flourish).
+- **DJ Dank roasts.** `djDankLine(made, grade, best, cookedPct, livesLost)` picks a real line off the same
+  run stats the results screen already shows (S grade = praise, 3+ lives lost = a roast, a 15+ combo = 
+  praise, Ultra Cooked = praise, a C grade or a failed run = a roast) - shown under the coins/cooked/kills
+  line on the results screen.
+- **"NEW:" highlights.** `toResults()` now collects a real `newThings` array (first-ever clear of this
+  level, a new best grade, a daily bonus, a secret found this run) and the results screen lists whichever
+  actually applied - not a static banner, genuinely different per run.
+- **Scope trim**: enemy idle chatter, background gags beyond the one below, and distinct per-homie voice
+  bark TONES (as opposed to the existing shared SFX cues) did not land this pass - each is its own small
+  content-authoring task (a line/cue per enemy kind or per homie) rather than a mechanic, and there wasn't
+  room to do all of them for real in one pass.
+
+**10.4 Stoner touches:**
+- **The 4:20 moment, checked against the real clock** (not a level timer) - once per real occurrence per
+  level (`me.saw420`, fresh every level via `makePlayer()`). Hits `getHours() % 12 === 4 && getMinutes() ===
+  20` and grants a real bonus (+420 coins, +20% Cooked) with its own banner - both halves the brief asks for.
+- **"DID YOU HEAR THAT?"** - a rare (15% chance every ~40s), purely ambient ghost-siren popup with no real
+  cop and no gameplay effect, exactly the ambient ("fake siren") stoner-touch gag the brief names.
+- **Spoof signs.** `buildLevel()` now seeds 2 background signpost decorations per level (`lvl.signs`, same
+  seeded-per-level-replay pattern the rest of `buildLevel` already uses) from a `SPOOF_SIGNS` pool (TACO
+  BONG, KUSH & CARRY, etc - the brief's own example plus 9 more), drawn as a small non-interactive prop in
+  `drawScene()`.
+
+**10.5 Results/farm:**
+- **The farm visibly grows.** The Farm hub screen (`drawFarmHub()`) now draws a row of small plant sprites
+  along the bottom whose count scales with how much you've actually invested in the farm (filled plots +
+  farm upgrades owned + cosmetics owned) - ambient growth, not a stat readout.
+- **Separate boss/farm music themes: already existed**, not built this pass - `SONGS.boss` and `SONGS.farm`
+  (distinct from `fight`/`calm`) and `wantedMusic()`'s branch selecting them by boss-alive/farm-hub state
+  were already in place from an earlier session (their own comments say "Phase 8"). Confirmed by reading the
+  code, not re-verified with new tests since nothing changed.
+
+**Testing:** `kq_step10_test.js` (same-page) - YOINK, emote combos, DJ Dank's line varying with stats,
+Spectator no-ops (attack/hurt/playersList), Soft Pause flag toggling, spoof-sign decoration present on every
+level, results "NEW:" highlights + roast on a real first-ever clear. `kq_step10_online.js` (5 real tabs) -
+a 5th joiner becomes a real Spectator (not rejected); Soft Pause is a real broadcast every crewmate sees and
+any of them can lift; a mid-play join is briefly invincible and gets warped to the crew's real position on
+the next snapshot. `kq_step10_teamchest.js` (2 real tabs) - confirmed team chests already worked, and caught
++ fixed the `rand()`-out-of-scope crash along the way. Re-ran every prior regression script
+(1/2/6/7/8/9/9b/9online) - all still pass. `node --check` clean on `game.js` and `server.js`.
+
+Pushed to `main`. Next: Step 11 (Replay and sharing) and Step 12 (Final full-game test) - Step 10's
+scoped-out items (boss loot vote, Blunt Bat crewmate-launch + its secret, enemy chatter, per-homie voice
+bark tones, more background gags) remain open and can be picked up in a future pass whenever there's room
+for them; none of them block Step 11/12.

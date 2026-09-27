@@ -239,8 +239,8 @@ function startMusic() {
 // ============================================================
 const K = { left: false, right: false, up: false, down: false, jump: false, run: false, attack: false, enter: false };
 // ---- settings (saved in this browser): volumes, toggles, custom key bindings ----
-const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT', block: 'ControlLeft', give: 'KeyG' };
-const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT', block: 'BLOCK (TAP=PARRY, HOLD+DIR=ROLL)', give: 'GIVE (HERE BRO) - HANDS A HOMIE YOUR QUICK ITEM' };
+const DEFAULT_KEYS = { toke: 'KeyV', up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', attack: 'KeyJ', throw: 'KeyK', run: 'ShiftLeft', munchie: 'KeyE', quick: 'KeyC', weapon: 'KeyQ', throwsel: 'KeyR', bag: 'Tab', chat: 'KeyT', block: 'ControlLeft', give: 'KeyG', yoink: 'KeyY' };
+const ACTION_NAMES = { toke: 'SMOKE (TAP=SMALL, HOLD=BIG)', up: 'MOVE UP', down: 'MOVE DOWN', left: 'MOVE LEFT', right: 'MOVE RIGHT', jump: 'JUMP', attack: 'SWING', throw: 'THROW', run: 'RUN', munchie: 'MUNCHIES / REVIVE', quick: 'QUICK ITEM', weapon: 'SWITCH WEAPON', throwsel: 'SWITCH THROWABLE', bag: 'BAG', chat: 'CHAT', block: 'BLOCK (TAP=PARRY, HOLD+DIR=ROLL)', give: 'GIVE (HERE BRO) - HANDS A HOMIE YOUR QUICK ITEM', yoink: 'YOINK - YANKS THE NEAREST DROP TO YOU' };
 let settings = { music: 0.7, sfx: 0.8, shake: true, blood: true, bigText: false, reduceFlash: false, colorblind: false, muteHidden: false, holdAttack: false, keys: { ...DEFAULT_KEYS } };
 try { const st = JSON.parse(localStorage.getItem('kq_settings')); if (st) settings = { ...settings, ...st, keys: { ...DEFAULT_KEYS, ...(st.keys || {}) } }; } catch (e) {}
 function saveSettings() { try { localStorage.setItem('kq_settings', JSON.stringify(settings)); } catch (e) {} if (master) master.gain.value = settings.sfx; }
@@ -295,6 +295,7 @@ addEventListener('keydown', e => {
     if (a === 'munchie') { K.use = true; if (![...remotes.values()].some(r => r.b & 8 && Math.abs(r.x - me.x) < 18)) useMunchies(); return; }
     if (a === 'quick') { useItem(save.quick || 'brownie'); return; }
     if (a === 'give') { giveItem(); return; }
+    if (a === 'yoink') { yoink(); return; }
     if (a === 'throw') { K.throwPressed = true; return; }
     if (a === 'toke') { K.toke = true; return; }
     if (a === 'block') { if (!K.block) me.parryT = 8; K.block = true; return; }
@@ -1401,6 +1402,9 @@ function missionName(n, remix) {
   return [label, th.name + (remix ? ' REMIX' : '')];
 }
 let LEN = 0;
+// v1.2 (Step 10.4): stoner-touch background gags for buildLevel()'s new `signs` array - see drawScene()'s
+// `for (const s of lvl.signs)` loop for the actual drawing.
+const SPOOF_SIGNS = ['TACO BONG', 'KUSH & CARRY', 'BUDS BEFORE STUDS', 'THE STONED AGE', 'ROLL WITH IT', 'GRASS IS ALWAYS GREENER', 'WEED LIKE TO WELCOME YOU', 'JOINT VENTURE CAPITAL', 'HIGH-WAY TO SAVINGS', 'BAKED GOODS (LITERALLY)'];
 function buildLevel(n, remix) {
   const themeKey = themeKeyFor(n), theme = THEMES[themeKey];
   const diff = Math.min(n, 12) + (remix ? 4 : 0);
@@ -1448,7 +1452,7 @@ function buildLevel(n, remix) {
       enemies.push({ id: enemies.length, kind, ai: BASE_AI[kind] || kind, zone: zi, hp, maxHp: hp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60 + Math.floor(rand() * 60), flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0 });
     }
     if (zi === zoneCount - 1) { // the boss arrives after its crew
-      const bd = bossDataFor(n), mega = !!bd[4], mini = !!bd[5], crewN = Net.online ? remotes.size + 1 : 1, bhp = Math.round((14 + n * 3) * (mega ? 2.2 : mini ? 1.5 : 1) * (1 + 0.4 * (crewN - 1)));
+      const bd = bossDataFor(n), mega = !!bd[4], mini = !!bd[5], crewN = Net.online ? realRemotes() + 1 : 1, bhp = Math.round((14 + n * 3) * (mega ? 2.2 : mini ? 1.5 : 1) * (1 + 0.4 * (crewN - 1)));
       ids.push(enemies.length);
       const boss = { id: enemies.length, kind: bd[1], ai: BASE_AI[bd[1]] || bd[1], boss: true, mega, mini, bname: bd[0], skill: bd[2], quote: bd[3], zone: zi, hp: bhp, maxHp: bhp, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 90, flash: 0, spawned: false, alive: true, stolen: 0, tx: 0, tz: 0, th: 0, summons: [] };
       enemies.push(boss);
@@ -1487,8 +1491,12 @@ function buildLevel(n, remix) {
   // ESCORT: a homie NPC with their own HP walks the level with you and must be kept alive.
   const chase = type === 'CHASE';
   const escort = type === 'ESCORT' ? { x: 60, z: 20, hp: 12, maxHp: 12, alive: true } : null;
+  // v1.2 (Step 10.4): spoof signs - a stoner-touch background gag (brief's own "TACO BONG etc." example),
+  // purely decorative like the PLANT `deco` array above, just with a joke on it. Seeded so they're the
+  // same signs in the same spots on a replay of the same level, same as every other seeded pick here.
+  const signs = [{ x: 280, text: pick(SPOOF_SIGNS) }, { x: LEN - 260, text: pick(SPOOF_SIGNS) }];
   return {
-    n, themeKey, theme, name: missionName(n, remix), items, props, enemies, zones, deco, legend, spot, chestLoot, remix,
+    n, themeKey, theme, name: missionName(n, remix), items, props, enemies, zones, deco, signs, legend, spot, chestLoot, remix,
     zi: -1, locked: false, spawn: { x: 40, z: 30 }, eshots: [], bodies: [], decals: [], clouds: [],
     type, chase, chaseX: 0, escort,
     // v1.1 A6: SUBURBIA mousetraps - a few placed on the ground in each fight area, telegraphed by being visible before they trigger
@@ -1624,6 +1632,9 @@ let finInfo = null, hurryT = 0, results = null, shopSel = 0, readyInfo = null;
 // the level's very start. At 0 lives the whole level restarts and the crew keeps half their coins/Resin.
 let crewLives = 3, checkpoint = null;
 const remotes = new Map();
+// v1.2 (Step 10.1): real (non-spectator) remote crewmates only - crew lives and boss HP scaling should
+// never count a 5th+ Spectator as a fighting player.
+const realRemotes = () => { let n = 0; for (const r of remotes.values()) if (!r.spectate) n++; return n; };
 const isHost = () => Net.online ? Net.hostId === Net.id : !Net.reconnecting;
 
 function makePlayer() {
@@ -1634,17 +1645,27 @@ function makePlayer() {
     earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0, crit: 0, dash: 0 }, legendT: 0,
     color: Net.color, name: Net.name, emote: null, stealCd: {},
     wildOn: false, // v1.2 fix: true = the held Wild weapon (me.envWeapon) is the active weapon; false = the Core weapon is active. Q toggles this - see cycleWeapon().
+    // v1.2 (Step 10.1): a Spectator (5th+ joiner, room's 4 crew slots were full) - a harmless permanently
+    // invincible ghost. attack()/hurt() no-op for them (checked at the top of each), and playersList()
+    // filters spectator remotes out so they never trigger zone fights or count toward crew lives.
+    spectator: Net.spectate,
   };
 }
-function startLevel(n) {
+function startLevel(n, dropIn) {
+  softPause = null; // v1.2 (Step 10.1): never carry a stale crew-wide pause into a new level
   lvl = buildLevel(n, save.spots >= TOTAL_LEVELS && n < save.spots); // REMIX: once you've beaten every level, replaying an old one is harder + pays out more
   me = makePlayer();
+  // v1.2 (Step 10.1): dropping into a level the crew is already mid-fight in (see startGame()'s `dropIn`
+  // arg) - skip the level's usual brief/spawn-at-the-start flow, go straight to 'play', and mark this
+  // client to warp to the crew's actual position + go briefly invincible the instant the host's next
+  // enemy-state snapshot tells us where that is (applySnapshot() consumes `lvl.dropInPending`).
+  if (dropIn) { lvl.dropInPending = true; me.inv = 150; }
   if (farmHas('giggle')) me.cooked = 10; // GIGGLE GAS: start every mission at +10% Cooked
   if (save.pet === 'munchkin' && save.munchie < 1) save.munchie = 1; // MUNCHKIN: a free munchie every mission start
-  camX = 0; state = 'brief'; briefT = Net.online ? ([...new Set(lvl.theme.enemies)].some(k => !save.met.includes(k) && k === 'karen') ? 480 : 240) : 1200; particles = []; popups = []; shots = [];
+  camX = 0; state = dropIn ? 'play' : 'brief'; briefT = Net.online ? ([...new Set(lvl.theme.enemies)].some(k => !save.met.includes(k) && k === 'karen') ? 480 : 240) : 1200; particles = []; popups = []; shots = [];
   finInfo = null; hurryT = 0; results = null; readyInfo = null; invOpen = false;
-  banner = null;
-  crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; // v1.1 A5: reset the crew-lives pool + checkpoint for the new level
+  banner = dropIn ? { t: 150, a: 'DROPPING IN...', b: "CATCHING UP TO THE CREW - YOU'RE BRIEFLY INVINCIBLE" } : null;
+  crewLives = Net.online && realRemotes() > 0 ? 5 : 3; checkpoint = null; // v1.1 A5: reset the crew-lives pool + checkpoint for the new level
   lvl.startFrame = frame; lvl.livesStart = crewLives; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): grade inputs
   if (n === 0 && save.spots === 0) me.tipT = 900;
   persist();
@@ -1749,7 +1770,12 @@ function openChest(c) {
   const loot = lvl.chestLoot || MISSION_LOOT[lvl.n % MISSION_LOOT.length];
   SFX.power(); shake = 5;
   if (loot === 'resin') {
-    const amt = 6 + Math.floor(rand() * 6);
+    // v1.2 (Step 10 bugfix): this crashed every time a chest's rolled loot was Resin - `rand()` is
+    // buildLevel()'s own seeded PRNG closure, out of scope here (openChest() is a top-level function).
+    // Found while testing that chest loot is shared with the whole crew (breakProp() runs openChest() on
+    // every client via the existing collect-sync path - see AGENT_NOTES). Math.random() is fine here since
+    // this amount only needs to be a real grant on each client, not identical bit-for-bit across clients.
+    const amt = 6 + Math.floor(Math.random() * 6);
     save.resin += amt; persist();
     banner = { t: 220, a: 'FOUND: ' + amt + ' RESIN!', b: 'SPEND IT ON WILD WEAPONS OR CORE-WEAPON UPGRADES AT THE HEAD SHOP' };
     return;
@@ -1794,7 +1820,7 @@ function pickUp(it) {
   }
 }
 function hurt(dmg = 1, cookedLoss = 0, fromX) {
-  if (me.inv > 0 || me.star > 0 || state !== 'play') return;
+  if (me.spectator || me.inv > 0 || me.star > 0 || state !== 'play') return;
   if (me.parryT > 0 && dmg > 0) { // BLOCK tapped just before the hit: PARRY - no damage, attacker's stunned & knocked back
     me.parryT = 0; popup(me.x - 16, sy(me.z) - 38, 'PARRY!', '#ffd84a'); shake = 8; hitstop = 6; SFX.power();
     puff(me.x, sy(me.z, me.h) - 10, 8, ['#ffd84a', '#ffffff']);
@@ -1848,7 +1874,7 @@ function restartLevelOutOfLives() {
   const n = lvl.n;
   lvl = buildLevel(n, lvl.remix);
   me = makePlayer();
-  crewLives = Net.online && remotes.size > 0 ? 5 : 3; checkpoint = null; camX = 0;
+  crewLives = Net.online && realRemotes() > 0 ? 5 : 3; checkpoint = null; camX = 0;
   lvl.startFrame = frame; lvl.livesStart = crewLives; lvl.secretFoundThisRun = false; // v1.2 (Step 7.1): restart resets the grade window too
   // v1.2 fix (Step 1.2): send the actual reset lives count so non-host clients apply the real number
   // instead of a hardcoded 5 (which drifted from this formula the moment it stopped always being 5).
@@ -1856,7 +1882,17 @@ function restartLevelOutOfLives() {
   banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL - LOST HALF YOUR COINS + RESIN' };
   SFX.bump();
 }
-function emote(i) { me.emote = { e: i, t: 120 }; Net.send({ t: 'emote', e: i }); tone(660, 0.08, 'square', 0.04); tone(880, 0.1, 'square', 0.04, 0.08); }
+function emote(i) { me.emote = { e: i, t: 120 }; Net.send({ t: 'emote', e: i }); tone(660, 0.08, 'square', 0.04); tone(880, 0.1, 'square', 0.04, 0.08); checkEmoteCombo(i, Net.id); }
+// v1.2 (Step 10.2): emote combos - the crew matching the SAME emote within ~1.5s of each other (a real "the
+// crew is vibing" moment, brief's own framing) gets a small shared coin bonus. A rolling log rather than a
+// per-emote timestamp table since either self or any remote can trigger/complete a combo in either order.
+let emoteComboLog = [];
+function checkEmoteCombo(i, who) {
+  emoteComboLog = emoteComboLog.filter(e => frame - e.frame < 90);
+  const matched = emoteComboLog.some(e => e.i === i && e.id !== who);
+  emoteComboLog.push({ i, id: who, frame });
+  if (matched && Net.online && state === 'play') { addCoins(10); banner = { t: 110, a: 'EMOTE COMBO!', b: 'THE CREW IS VIBING - +10 COINS EACH' }; SFX.power(); }
+}
 // v1.1 A4 (scoped): trimmed from 5 consumables to Munchies (cap 3, was 5) + 2 others (brownie/soda),
 // dropping preroll and gold as a disclosed cut, and flagging the "pass the plate" shared brownie buff +
 // a GIVE key as follow-up work rather than rushed.
@@ -1911,6 +1947,19 @@ function giveItem() {
   save[id]--; persist();
   popup(me.x - 14, sy(me.z) - 36, 'HERE BRO', '#fff6b0'); SFX.buy();
   Net.send({ t: 'give', to: bestId, id });
+}
+// v1.2 (Step 10.2): YOINK - a fun co-op grab move, not a stealth mechanic: instantly yanks the single
+// nearest un-taken pickup on the ground (coin/item/envweapon/resin/anything spawnDrops() or a chest can
+// drop) to you from further away than you could normally walk-and-grab it, so the crew can race for drops
+// instead of just whoever's standing closest. No network message needed - `pickUp()` already runs the
+// same local-only + `collect()`-broadcast path every ordinary walk-up grab uses.
+function yoink() {
+  if (me.spectator || state !== 'play') { SFX.bump(); return; }
+  let best = null, bestD = 90;
+  for (const it of lvl.items) { if (it.taken) continue; const d = Math.abs(it.x - me.x) + Math.abs(it.z - me.z); if (d < bestD) { bestD = d; best = it; } }
+  if (!best) { popup(me.x - 14, sy(me.z) - 34, 'NOTHING TO YOINK', '#b0a8c0'); SFX.bump(); return; }
+  best.x = me.x; best.z = me.z; best.h = Math.max(best.h || 0, 6);
+  pickUp(best); SFX.coin(0); popup(me.x - 14, sy(me.z) - 36, 'YOINK!', '#ffd84a');
 }
 function useMunchies() {
   useItem('munchie');
@@ -2142,12 +2191,23 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
     const pool = WILD_POOL_BY_THEME[lvl.theme.base || lvl.themeKey] || WILD_POOL_BY_THEME.park;
     lvl.items.push({ id: 'w' + e.id + '_' + frame, kind: 'envweapon', x: e.x, z: e.z, h: 14, vh: 1.6, taken: false, sub: pool[Math.floor(Math.random() * pool.length)] });
   }
-  const KO_LINE = { crab: 'CRACKED!', lawnmower: 'MOWED DOWN!', segway: 'WIPED OUT!', owl: 'GROUNDED!', securitybot: 'SHUT DOWN!' };
-  popup(e.x - 14, sy(e.z) - 34, (KO_LINE[e.kind] || { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' }[e.ai]) + ' +' + reward, '#ffffff');
+  // v1.2 (Step 10.3): every enemy kind now has its own real KO line (was only 5 of the ~13 kinds), plus a
+  // per-Core-weapon flourish word appended on non-boss kills so the same enemy dying to the Joint vs. the
+  // Bong reads a little different - small, but it's the kind of personality touch the brief means by
+  // "weapon knockout lines".
+  const KO_LINE = {
+    crab: 'CRACKED!', lawnmower: 'MOWED DOWN!', segway: 'WIPED OUT!', owl: 'GROUNDED!', securitybot: 'SHUT DOWN!',
+    ranger: 'TICKETED!', guard: 'OFF DUTY!', suit: 'FIRED!', rat: 'SCRAM!', raccoon: 'TRASHED!',
+    badtrip: 'BUMMER!', paranoia: 'PARANOIA FADES!',
+  };
+  const AI_KO_LINE = { cop: 'COP DOWN!', karen: 'KAREN DENIED!', mouse: 'SQUEAK!', squirrel: 'NUTS!' };
+  const WEAPON_KO_WORD = { joint: 'PUFF', lighter: 'TOASTED', bong: 'GONG', grinder: 'GROUND UP' };
+  const flourish = (!e.boss && !e.mini) ? ' (' + (WEAPON_KO_WORD[weaponDef().id] || 'BONKED') + ')' : '';
+  popup(e.x - 14, sy(e.z) - 34, (KO_LINE[e.kind] || AI_KO_LINE[e.ai] || 'DOWN!') + ' +' + reward + flourish, '#ffffff');
   e.stolen = 0;
 }
 function attack(charged) {
-  if ((me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
+  if (me.spectator || (me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
   const wildActive = !!(me.envWeapon && me.wildOn);
   const w = wildActive ? ENV_WEAPONS[me.envWeapon.id] : weaponDef(), wi = wildActive ? 0 : WEAPONS.indexOf(w);
   if (me.puffed) { // exhale a smoke blast from the cloud
@@ -2374,6 +2434,14 @@ function update() {
   // everyone back to the map together.
   if (state === 'transit-wait') { clearIn(); return; }
   if (updateTrans()) { clearIn(); return; }
+  // v1.2 (Step 10.1): Online Soft Pause - freezes combat/physics/hostUpdate for the WHOLE crew (unlike the
+  // personal menu, which by design never blocks anyone else). Anyone can lift it (Enter/jump, or opening
+  // the menu and picking RESUME FOR THE CREW) - it's "soft" in that no one player owns the lock.
+  if (softPause && !menu && (state === 'play' || state === 'sitting')) {
+    if (K.enterPressed || K.jumpPressed) toggleSoftPause(false);
+    K.jumpPressed = K.enterPressed = K.attackPressed = K.throwPressed = false; K.nav = nextNav(); K.upPressed = K.downPressed = false;
+    return;
+  }
   if (dialog) { updateDialogue(); clearIn(); return; }
   if (menu) { updateMenu(); clearIn(); if (!Net.online || !menu) return; }
   if (state === 'story') { updateStory(); clearIn(); return; }
@@ -2457,6 +2525,21 @@ function animFrame(p) {
 function updatePlayer() {
   // the Cooked meter slowly fades - not mid-boss-fight, and not once you're already chilling at the spot
   if (frame % 180 === 0 && me.cooked > 0 && !(lvl.boss && lvl.boss.alive) && state === 'play') addCooked(-1);
+  // v1.2 (Step 10.4): the in-game 4:20 moment - checked against the REAL clock (not a level timer), once
+  // per real occurrence per level (me.saw420, reset fresh by makePlayer() every level). A genuine, if
+  // silly, real-world Easter egg with a real bonus, exactly as the brief asks for both halves of it.
+  if (!me.saw420 && state === 'play') {
+    const d = new Date();
+    if (d.getHours() % 12 === 4 && d.getMinutes() === 20) {
+      me.saw420 = true; addCoins(420); me.cooked = Math.min(100, me.cooked + 20);
+      banner = { t: 260, a: "IT'S 4:20!", b: 'BONUS +420 COINS AND +20% COOKED - BLAZE ON' }; SFX.power();
+    }
+  }
+  // v1.2 (Step 10.4): "DID YOU HEAR THAT?" - a purely ambient stoner-touch gag (brief's own example), a
+  // rare ghost-siren cue with no cop, no real gameplay effect, cosmetic-only so it needs no network sync.
+  if (frame % 2500 === 1250 && Math.random() < 0.15 && state === 'play' && !(lvl.boss && lvl.boss.alive)) {
+    popup(me.x - 24, sy(me.z) - 40, 'DID YOU HEAR THAT?', '#b0a8c0'); SFX.bump();
+  }
   if (me.down > 0) { // waiting for a revive
     me.vx = me.vz = 0; me.atkT = 0;
     if (--me.down <= 0) { me.inv = 0; knockedOutFinal(); }
@@ -2677,26 +2760,47 @@ function saveBestGrade(n, grade) { // v1.2 (Step 7.2): the best grade earned for
   save.grades = save.grades || {};
   if (!save.grades[n] || GRADE_RANK[grade] > GRADE_RANK[save.grades[n]]) save.grades[n] = grade;
 }
+// v1.2 (Step 10.3): DJ Dank's results-screen roast/praise. Picked from the same run stats the results
+// screen already shows (grade, combo, cooked%, lives lost, deaths this run) - not new tracking, just a
+// new line of commentary read off the existing numbers.
+function djDankLine(made, grade, best, cookedPct, livesLost) {
+  if (!made) return "DJ DANK: \"...AND THAT'S WHY WE DON'T SKIP LEG DAY. OR ANY DAY.\"";
+  if (grade === 'S') return 'DJ DANK: "OKAY OKAY, WE GOT A PRO OVER HERE!"';
+  if (livesLost >= 3) return 'DJ DANK: "MAN GOT MORE LIVES LOST THAN A HORROR MOVIE EXTRA."';
+  if (best >= 15) return 'DJ DANK: "THAT COMBO WAS DISGUSTING. RESPECT."';
+  if (cookedPct >= 100) return 'DJ DANK: "ULTRA COOKED AND STILL STANDING. LEGENDARY."';
+  if (grade === 'C') return 'DJ DANK: "IT WASN\'T PRETTY BUT WE MADE IT, FOLKS."';
+  return 'DJ DANK: "SOLID RUN. GRAB A SNACK, YOU EARNED IT."';
+}
 function toResults() {
   if (state === 'results') return;
   const made = state === 'sitting';
   const ultraBonus = made && ultra() ? Math.round(me.earned * 0.25) : 0; // v1.2 fix (Step 1.3): was a full x2 (+100%) of earned coins - brief calls for +25%
   const spotBonus = made ? 50 + lvl.n * 10 : 0;
   addCoins(ultraBonus + spotBonus);
+  const wasFirstClear = made && lvl.n >= save.spots; // v1.2 (Step 10.3): "NEW:" highlight input - never cleared before
   if (made && !lvl.daily && !lvl.remix) save.spots = Math.max(save.spots, lvl.n + 1); // daily challenges + remix replays don't advance world progress
   let dailyBonus = 0;
   if (made && lvl.daily && save.dailyDate !== todayStr()) { dailyBonus = 200; save.dailyDate = todayStr(); addCoins(dailyBonus); }
   save.stats.kills += me.kills; save.stats.bestCombo = Math.max(save.stats.bestCombo, me.best);
-  let grade = null, isNewBest = false;
+  let grade = null, isNewBest = false, livesLost = 0;
   if (made) {
-    const livesLost = Math.max(0, (lvl.livesStart == null ? crewLives : lvl.livesStart) - crewLives);
+    livesLost = Math.max(0, (lvl.livesStart == null ? crewLives : lvl.livesStart) - crewLives);
     grade = computeGrade(lvl.n, { frames: frame - (lvl.startFrame || frame), livesLost, secretFound: !!lvl.secretFoundThisRun, coinsEarned: me.earned, bestCombo: me.best });
     const prevBest = save.grades && save.grades[lvl.n];
     saveBestGrade(lvl.n, grade);
     isNewBest = !prevBest || GRADE_RANK[grade] > GRADE_RANK[prevBest];
   }
+  // v1.2 (Step 10.3): "NEW:" highlights - every genuinely first-time thing this run unlocked or achieved,
+  // collected in one array so drawShop's results screen can just list whatever's actually in it.
+  const newThings = [];
+  if (wasFirstClear) newThings.push('NEW: LEVEL CLEARED');
+  if (isNewBest && grade) newThings.push('NEW: GRADE ' + grade + (grade === 'S' ? ' (BEST POSSIBLE!)' : ''));
+  if (dailyBonus > 0) newThings.push('NEW: DAILY BONUS +' + dailyBonus);
+  if (made && lvl.secretFoundThisRun) newThings.push('NEW: SECRET FOUND');
+  const roast = djDankLine(made, grade, me.best, Math.round(me.cooked), livesLost);
   persist();
-  results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, dailyBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs, grade, isNewBest };
+  results = { made, earned: me.earned, lost: me.lost, spotBonus, ultraBonus, dailyBonus, cooked: Math.round(me.cooked), kills: me.kills, best: me.best, nugs: me.nugs, grade, isNewBest, newThings, roast };
   state = 'results'; shopSel = 0; hurryT = 0; banner = null;
 }
 
@@ -2704,8 +2808,10 @@ function toResults() {
 //  ENEMY AI (runs on the host's screen, synced to the crew)
 // ============================================================
 function playersList() {
-  const list = [{ id: Net.id, x: me.x, z: me.z, h: me.h, ok: state === 'play' && me.inv < 60 && !(me.down > 0) }];
-  for (const [id, r] of remotes) if (r.l === lvl.n && r.tx > -500 && !(r.b & 12)) list.push({ id, x: r.x, z: r.z, h: r.h, ok: true });
+  // v1.2 (Step 10.1): a Spectator (self or remote) never counts as a real crewmate here - excluded from
+  // both entries below so they can't trigger zone fights, hazards, or crew-lives math just by being on screen.
+  const list = me.spectator ? [] : [{ id: Net.id, x: me.x, z: me.z, h: me.h, ok: state === 'play' && me.inv < 60 && !(me.down > 0) }];
+  for (const [id, r] of remotes) if (!r.spectate && r.l === lvl.n && r.tx > -500 && !(r.b & 12)) list.push({ id, x: r.x, z: r.z, h: r.h, ok: true });
   return list;
 }
 function bossAI(e, tgt, dx, dz, cloud) {
@@ -3014,6 +3120,15 @@ function applySnapshot(m) {
   if (!lvl || m.l !== lvl.n) return;
   lvl.zi = m.zi; lvl.locked = !!m.lk;
   lvl.zones.forEach((z, i) => { z.started = i <= m.zi; z.cleared = i < m.zc; });
+  // v1.2 (Step 10.1): the first real snapshot after a drop-in join tells us where the crew actually is -
+  // warp straight there (the active zone if one's locked, else however far camX would put us) instead of
+  // leaving the joiner stranded back at the level's own spawn point, off-screen behind everyone.
+  if (lvl.dropInPending) {
+    lvl.dropInPending = false;
+    const z = lvl.zones[m.zi];
+    me.x = lvl.locked && z ? z.x0 + 20 : Math.max(me.x, m.zc * ZW * 0.5);
+    me.z = 30; camX = Math.max(0, me.x - W * 0.4);
+  }
   for (const i of m.sk || []) { const e = lvl.enemies[i]; if (e && !e.spawned) { e.skipped = true; e.alive = false; } }
   for (const [id, x, z, h, st, dir, hp, sn] of m.e) {
     const e = lvl.enemies[id]; if (!e) continue;
@@ -3381,6 +3496,10 @@ function menuOptions() {
   const o = [{ label: 'RESUME', act: closeMenu }];
   if (Net.online) o.push({ label: 'COPY INVITE LINK', act: copyInvite });
   if (Net.online) o.push({ label: 'CHAT (' + keyLabel(settings.keys.chat) + ')', act: () => { closeMenu(); openChat(); } });
+  // v1.2 (Step 10.1): Online Soft Pause - unlike the personal menu above (which never blocks the rest of
+  // the crew, by design, since Step 1), this is an explicit, visible, opt-in "freeze it for everyone" that
+  // any crewmate can call and any crewmate can lift - see softPause/toggleSoftPause() and its check in update().
+  if (Net.online && (state === 'play' || state === 'sitting')) o.push({ label: softPause ? 'RESUME FOR THE CREW' : 'SOFT PAUSE (FREEZES EVERYONE)', act: () => { closeMenu(); toggleSoftPause(!softPause); } });
   o.push({ label: 'SETTINGS', act: () => { menu.page = 'settings'; menu.sel = 0; } });
   o.push({ label: 'CONTROLS', act: () => { menu.page = 'controls'; menu.sel = 0; } });
   if (!Net.online && (state === 'play' || state === 'brief' || state === 'sitting')) o.push({ label: 'RESTART MISSION', act: () => { closeMenu(); go(() => startLevel(lvl.n)); } });
@@ -3394,6 +3513,11 @@ function copyInvite() {
 }
 function openMenu() { menu = { page: 'main', sel: 0, msg: '' }; if (!Net.online) paused = true; else if (me && state === 'play') me.inv = Math.max(me.inv, 120); }
 function closeMenu() { menu = null; paused = false; rebinding = null; }
+// v1.2 (Step 10.1): Online Soft Pause - one shared boolean, broadcast so every crewmate's update() halts
+// at the same instant (see the check right after the transit/dialog/menu gates in update()). Optimistic-set
+// locally so the caller doesn't wait a round trip to see their own pause take effect.
+let softPause = null;
+function toggleSoftPause(on) { softPause = on ? { by: Net.name } : null; if (Net.online) Net.send({ t: 'softpause', on, by: Net.name }); }
 function menuPick(i) { const o = menuOptions()[i]; if (!o) return; SFX.tick(); if (o.act) o.act(); else if (o.adj) o.adj(1); }
 function updateMenu() {
   const o = menuOptions(), n = o.length;
@@ -3487,6 +3611,14 @@ function drawScene() {
   for (let X = -Math.floor(((camX % 64) + 64) % 64); X < W; X += 64) ctx.drawImage(th.floor, X, FLOOR_Y - 12);
   if (th.floorTint) { ctx.globalAlpha = th.floorTint[1]; ctx.fillStyle = th.floorTint[0]; ctx.fillRect(0, FLOOR_Y - 12, W, H); ctx.globalAlpha = 1; }
   for (const x of lvl.deco) draw_(PLANT, x, FLOOR_Y - 24);
+  // v1.2 (Step 10.4): spoof signs - purely decorative, drawn as a little roadside signpost with the joke
+  // text on it (world-space, so they scroll with everything else, same offset math as draw_() above).
+  for (const s of lvl.signs || []) {
+    const sx = Math.round(s.x - camX); if (sx < -60 || sx > W + 60) continue;
+    R(ctx, '#8a5024', sx - 1, FLOOR_Y - 38, 2, 26); const tw = s.text.length * 4 + 4;
+    R(ctx, '#3a2a1a', sx - tw / 2, FLOOR_Y - 40, tw, 9); R(ctx, '#ffd84a', sx - tw / 2, FLOOR_Y - 40, tw, 1);
+    text(s.text, sx, FLOOR_Y - 38, '#ffffff', 1, 'center');
+  }
   drawSpot();
   drawHazard();
   // fight area edges
@@ -3606,6 +3738,14 @@ function drawScene() {
 }
 function drawHUD() {
   if (state === 'results') return;
+  // v1.2 (Step 10.1): Spectator HUD - no hearts/Cooked/weapon UI (none of it applies to a read-only
+  // ghost), just a persistent label and the same crew-position info everyone else's HUD shows.
+  if (me.spectator) {
+    ctx.fillStyle = 'rgba(42,24,56,.6)'; ctx.fillRect(0, 0, W, 12);
+    text('SPECTATING', 3, 3, '#e4b3ff', 1);
+    if (Net.online) text('ROOM ' + Net.code, W - 4, 3, '#e4b3ff', 1, 'right');
+    return;
+  }
   ctx.fillStyle = 'rgba(42,24,56,.6)'; ctx.fillRect(0, 0, W, 17);
   const mh = maxHp();
   for (let i = 0; i < mh; i++) ctx.drawImage(i < me.hp ? (i >= 4 ? HEART_A : HEART) : HEART_E, 3 + i * 8, 3);
@@ -3709,6 +3849,13 @@ function drawHUD() {
     text('THE CREW IS WAITING! ' + Math.ceil(hurryT / 60) + 'S', W / 2, 28, '#ffd84a', 1, 'center');
     text('GET TO THE SMOKE SPOT', W / 2, 36, '#ffffff', 1, 'center');
   }
+  // v1.2 (Step 10.1): Online Soft Pause overlay - drawn over everything else so it's obvious the WHOLE
+  // crew is frozen, not just this client.
+  if (softPause) {
+    ctx.fillStyle = 'rgba(20,10,30,.7)'; ctx.fillRect(0, 60, W, 30);
+    text('PAUSED BY ' + softPause.by, W / 2, 68, '#ffd84a', 2, 'center');
+    if (frame % 40 < 26) text('ENTER/JUMP TO RESUME FOR THE CREW', W / 2, 82, '#c8ffa0', 1, 'center');
+  }
 
 }
 
@@ -3798,6 +3945,11 @@ function updateFarmHub() {
 }
 function drawFarmHub() {
   R(ctx, '#2a4a1e', 0, 0, W, H);
+  // v1.2 (Step 10.5): the farm visibly grows - a row of little plants along the bottom that gets denser
+  // the more you've invested in it (filled plots + farm upgrades + cosmetics owned), drawn behind
+  // everything else so it reads as ambient growth rather than a stat display.
+  { const growth = save.farmPlots.filter(Boolean).length + FARM_UPGRADES.filter(u => farmUpgradeHas(u.id)).length + FARM_COSMETICS.filter(c => farmCosmeticHas(c.id)).length;
+    for (let i = 0; i < growth; i++) ctx.drawImage(PLANT, 6 + i * 20, H - 18); }
   text('THE FARM', W / 2, 6, '#ffd84a', 2, 'center');
   text('4 PLOTS GROW STRAINS THAT GIVE PASSIVE BUFFS - CLICK TO CYCLE', W / 2, 22, '#c8ffa0', 1, 'center');
   // v1.2 (Step 7.6): Astral Plane unlock condition - S grade on all 6 world bosses. The Astral Plane
@@ -3927,6 +4079,10 @@ function drawShop() {
   // v1.2 (Step 7.1/7.2): show this run's grade + a "NEW BEST!" callout when it raised the saved best
   if (r.made && r.grade) { const gCol = { S: '#ffd84a', A: '#c8ffa0', B: '#7ac8ff', C: '#b0a8c0' }[r.grade]; text('GRADE ' + r.grade + (r.isNewBest ? '!' : ''), W - 6, 4, gCol, 2, 'right'); }
   text('COINS +' + r.earned + '   STOLEN/LOST -' + r.lost + '   COOKED ' + r.cooked + '%   KOS ' + r.kills + (r.ultraBonus ? '   ULTRA +25%!' : '') + (r.dailyBonus ? '   DAILY BONUS +' + r.dailyBonus + '!' : ''), W / 2, 18, '#ffffff', 1, 'center');
+  // v1.2 (Step 10.3): "NEW:" highlights + DJ Dank's roast/praise line - both computed once in toResults()
+  // and just read off here.
+  if (r.newThings && r.newThings.length) text(r.newThings.join('   '), W / 2, 26, '#ffd84a', 1, 'center');
+  if (r.roast) text(r.roast, W / 2, 33, '#e4b3ff', 1, 'center');
   }
   drawMap(38);
   // tabs
@@ -4798,6 +4954,7 @@ const Net = {
         clearTimeout(timer);
         this.ws = ws; this.online = true; this.reconnecting = false;
         this.code = m.code; this.color = m.color; this.level = m.level; this.phase = m.phase; this.id = m.id; this.hostId = m.host;
+        this.spectate = !!m.spectate; // v1.2 (Step 10.1): the crew's 4 slots were full - watch, read-only
         this.transit = m.transit || null; // v1.2 fix (Step 2.3): a ride already in progress when we joined - see startGame()
         remotes.clear(); m.players.forEach(addRemote);
         ws.onmessage = e2 => { try { onNet(JSON.parse(e2.data)); } catch (err) { console.error(err); } };
@@ -4837,7 +4994,7 @@ const Net = {
     setTimeout(attempt, 1000);
   }
 };
-function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null, hp: 5, mh: 5, cl: 1 }); }
+function addRemote(p) { remotes.set(p.id, { name: p.name, color: p.color, spectate: !!p.spectate, x: -1000, z: 30, h: 0, tx: -1000, tz: 30, th: 0, f: 1, a: 0, b: 0, l: -1, w: 0, c: 0, atkT: 0, emote: null, hp: 5, mh: 5, cl: 1 }); }
 function onNet(m) {
   switch (m.t) {
     case 's': { const r = remotes.get(m.id); if (!r) return; if (r.tx < -500 || r.l !== m.l) { r.x = m.x; r.z = m.y; r.h = m.h; } Object.assign(r, { tx: m.x, tz: m.y, th: m.h, f: m.f, a: m.a, b: m.b, l: m.l, w: m.w, c: m.c, hp: m.hp, mh: m.mh, cl: m.cl || 1 }); break; }
@@ -4871,7 +5028,7 @@ function onNet(m) {
     case 'rev': if (m.who === Net.id && me.down > 0) { me.down = 0; me.hp = Math.ceil(maxHp() / 2); me.inv = 90; addCooked(10); banner = { t: 90, a: 'REVIVED!', b: 'YOUR HOMIE PASSED IT TO YOU' }; SFX.power(); } break;
     // v1.1 A5: non-host crewmates follow the host's authoritative life count / wipe-restart so everyone agrees.
     case 'lives': if (!isHost() && m.l === lvl.n) crewLives = m.n; break;
-    case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); crewLives = typeof m.n === 'number' ? m.n : (Net.online && remotes.size > 0 ? 5 : 3); checkpoint = null; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
+    case 'wipe': if (!isHost() && m.l === lvl.n) { const n = lvl.n, remix = lvl.remix; lvl = buildLevel(n, remix); me = makePlayer(); crewLives = typeof m.n === 'number' ? m.n : (Net.online && realRemotes() > 0 ? 5 : 3); checkpoint = null; camX = 0; banner = { t: 220, a: 'CREW WIPED OUT!', b: 'BACK TO THE START OF THE LEVEL' }; SFX.bump(); } break;
     case 'pass': if (m.who === Net.id) { addCooked(20); popup(me.x - 24, sy(me.z) - 36, 'PUFF PUFF PASS!', '#e4b3ff'); SFX.power(); } break;
     // v1.2 (Step 9.1): "pass the plate" (brownie) - an AoE broadcast every client checks themselves against
     // (see useItem's comment), and GIVE - a targeted item hand-off (see giveItem's comment).
@@ -4880,7 +5037,7 @@ function onNet(m) {
     case 'chat': { const r = remotes.get(m.id); if (r) { addChat(r.name, m.msg, SHIRTS[r.color]); r.say = { msg: m.msg.toUpperCase(), t: 300 }; } break; }
     case 'boss': if (m.l === lvl.n) bossIntro(lvl.enemies[m.i]); break;
     case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break;
-    case 'pj': addRemote(m); popup(camX + W / 2 - 30, 60, m.name + ' JOINED!', '#c8ffa0'); SFX.cp(); break;
+    case 'pj': addRemote(m); popup(camX + W / 2 - 30, 60, m.name + (m.spectate ? ' IS SPECTATING' : ' JOINED!'), '#c8ffa0'); SFX.cp(); break;
     // v1.2 fix (Step 2.2): also forward player-left to Drive - it tracks its own crew list for Hotbox
     // Highway (drive.js is a singleton that may be running for someone else when this player leaves).
     case 'pl': { const r = remotes.get(m.id); if (r) popup(camX + W / 2 - 30, 60, r.name + ' LEFT', '#b0a8c0'); remotes.delete(m.id); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break; }
@@ -4923,7 +5080,8 @@ function onNet(m) {
     case 'level': go(() => startLevel(m.n)); break;
     case 'map': go(openMap); readyInfo = null; if (Net.readySet) Net.readySet.clear(); break;
     case 'mapsel': Net.mapCursor = m.i; Net.mapWorld = m.w; break;
-    case 'emote': { const r = remotes.get(m.id); if (r) r.emote = { e: m.e % EMOTES.length, t: 120 }; break; }
+    case 'emote': { const r = remotes.get(m.id); if (r) r.emote = { e: m.e % EMOTES.length, t: 120 }; checkEmoteCombo(m.e % EMOTES.length, m.id); break; }
+    case 'softpause': softPause = m.on ? { by: m.by } : null; break;
     case 'kicked': persist(); banner = { t: 99999, a: 'REMOVED FROM THE ROOM', b: 'BY THE HOST - CLICK HERE TO GO TO THE MENU' }; Net.online = false; Net.kicked = true; break;
   }
 }
@@ -4983,7 +5141,10 @@ function startGame() {
   $('menu').style.display = 'none';
   document.body.classList.add('playing');
   running = true;
-  if (Net.online && Net.phase === 'play') startLevel(Net.level);
+  // v1.2 (Step 10.1): joining a level the crew is already mid-fight in - startLevel's own dropIn arg
+  // spawns this client at the camera/action edge with brief invincibility instead of the level's own
+  // spawn point (which could be several screens behind wherever the crew actually is by now).
+  if (Net.online && Net.phase === 'play') startLevel(Net.level, true);
   else if (Net.online && Net.phase === 'shop') { results = { made: false, earned: 0, lost: 0, spotBonus: 0, ultraBonus: 0, cooked: 0, kills: 0, best: 0, msg: 'CREW IS SHOPPING - JOIN THEM' }; state = 'results'; }
   else if (Net.online && Net.phase === 'lobby') openLobby();
   else if (!save.intro && !Net.online) { state = 'story'; storyPage = 0; storyT = 0; }
@@ -5027,7 +5188,7 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) { $('code').value = urlRoom.toUpperCase().slice(0, 5); $('slotHint').textContent = 'YOUR FRIEND INVITED YOU TO ROOM ' + urlRoom.toUpperCase().slice(0, 5) + ' - PICK A SAVE TO PLAY WITH'; }
 
 fit(); lvl = buildLevel(0); me = makePlayer(); camX = 0; draw();
-window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; },
+window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; rebinding = r; }, get camX() { return camX; }, get me() { return me; }, get lvl() { return lvl; }, get state() { return state; }, set state(v) { state = v; }, get save() { return save; }, get mouseG() { return mouseG; }, get dialog() { return dialog; }, get results() { return results; }, K, remotes, Net, startLevel, toResults, openMap, openFarmHub: () => { results = { shopOnly: true, farmHub: true }; state = 'results'; farmSel = 0; },
   openFarmScene: () => { results = { shopOnly: true, farmScene: true, endingStats: true }; state = 'results'; }, startDaily, mapClick, get mapSel() { return mapSel; }, get MAP_NODES() { return MAP_NODES; }, persist, checkAchv, get ACHV() { return ACHV; }, hurt,
   // v1.1 B1 debug hooks (used by the automated smoke tests; also handy for future debugging)
   buildLevel, mapNodes, bossDataFor, levelType, worldOf, levelInWorld, missionName, WORLDS, WORLD_START, TOTAL_LEVELS, isSecretLevel, setWorld, get curWorld() { return curWorld; },
@@ -5049,5 +5210,9 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   ITEMS, useItem, giveItem, itemCap,
   // v1.2 (Step 9.3) debug hooks: Gravity Bong Cannon / Smoke Cloak / farm upgrades+cosmetics, for the
   // automated same-page test.
-  FARM_UPGRADES, FARM_COSMETICS, farmUpgradeHas, farmCosmeticHas };
+  FARM_UPGRADES, FARM_COSMETICS, farmUpgradeHas, farmCosmeticHas,
+  // v1.2 (Step 10) debug hooks: drop-in join, Online Soft Pause, Spectator, emote combos, YOINK - for the
+  // automated same-page + 2-tab tests.
+  attack, emote, checkEmoteCombo, yoink, giveItem, toggleSoftPause, get softPause() { return softPause; },
+  playersList, realRemotes, applySnapshot, addCoins, djDankLine };
 })();

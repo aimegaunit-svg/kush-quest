@@ -1,0 +1,52 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>W1–W2 Asset Preview</title>
+<style>
+:root{--bg:#1a1026;--card:#2a1838;--ink:#fff6b0;--dim:#b0a8c0;--acc:#ffd84a}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 ui-monospace,Menlo,Consolas,monospace;padding:16px}
+h1{font-size:20px;margin:0 0 4px;color:var(--acc)} h2{margin:28px 0 10px;font-size:16px;color:var(--acc);border-bottom:1px solid #4a3a5a;padding-bottom:4px}
+p.lede{color:var(--dim);margin:0 0 12px;max-width:70ch}
+.bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+button{background:var(--card);color:var(--ink);border:1px solid #5a4a6a;border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card{background:var(--card);border-radius:10px;padding:10px}
+.card b{color:var(--acc)} .note{color:var(--dim);font-size:12px;margin-top:6px}
+.frames{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
+.fr{text-align:center;font-size:11px;color:var(--dim)}
+canvas{image-rendering:pixelated;display:block;background:repeating-conic-gradient(#221630 0 25%,#2c1e3c 0 50%) 0 0/12px 12px;border-radius:4px}
+.anim{outline:2px solid var(--acc)}
+</style></head><body>
+<h1>KUSH QUEST: World 1 + 2 asset pack</h1>
+<p class="lede">Every sprite in <code>assets-w12.js</code>, drawn with the game's own palette and <code>sprite()</code> function. The outlined box on each card plays the frames as an animation. Open this file next to <code>assets-w12.js</code> in <code>public/</code>.</p>
+<div class="bar"><span>Scale</span><button data-s="3">3×</button><button data-s="4">4×</button><button data-s="6">6×</button><label><input type="checkbox" id="flip"> flip (facing left)</label></div>
+<div id="out"></div>
+<script src="assets-w12.js"></script>
+<script>
+const P = {k:'#2a1838',s:'#ffd9b8',S:'#e8a888',g:'#3fae5a',G:'#7fe07a',L:'#c8ffa0',y:'#ffd84a',Y:'#fff6b0',O:'#d8961a',r:'#ff5a6a',R:'#c83048',o:'#ff9a3a',w:'#ffffff',W:'#e8e4f4',d:'#3a6ad8',D:'#28448e',E:'#8a8aa8',e:'#5a5a78',p:'#c070ff',q:'#8a40c8',n:'#9a6a42',N:'#6a4428',m:'#b0a8c0',M:'#7a7290',c:'#ff9ab8',h:'#f0d060',H:'#c8a030',t:'#c87a3a',T:'#8a5024',u:'#ffb8d8',v:'#7ac8ff'};
+function sprite(rows, pal = P) { const h = rows.length, w = Math.max(...rows.map(r => r.length)); const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) { const col = pal[r[i]]; if (col) { g.fillStyle = col; g.fillRect(i, j, 1, 1); } } }); return c; }
+const IMG = KQ_W12.build(sprite, P), A = KQ_W12.assets;
+const GROUPS = [['enemy','Regular enemies'],['boss','Mini-bosses and bosses'],['proj','Projectiles'],['prop','Props'],['icon','Wild weapon icons (10×10)'],['held','Held Wild weapons (new)']];
+let S = 4, flip = false; const anims = [];
+function scaled(src, s) { const c = document.createElement('canvas'); c.width = src.width * s; c.height = src.height * s; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; if (flip) { g.translate(c.width, 0); g.scale(-1, 1); } g.drawImage(src, 0, 0, c.width, c.height); return c; }
+function render() {
+  const out = document.getElementById('out'); out.innerHTML = ''; anims.length = 0;
+  for (const [g, title] of GROUPS) {
+    const h = document.createElement('h2'); h.textContent = title; out.appendChild(h);
+    const grid = document.createElement('div'); grid.className = 'grid'; out.appendChild(grid);
+    for (const id in A) { if (A[id].group !== g) continue;
+      const a = A[id], fr = IMG[id], sc = g === 'boss' ? Math.max(2, S - 1) : S;
+      const card = document.createElement('div'); card.className = 'card';
+      card.innerHTML = `<b>${id}</b> <span class="note">${fr[0].width}×${fr[0].height}</span>`;
+      const row = document.createElement('div'); row.className = 'frames';
+      fr.forEach((f, i) => { const d = document.createElement('div'); d.className = 'fr'; d.appendChild(scaled(f, sc)); d.append(a.frameNames[i] || 'f' + i); row.appendChild(d); });
+      if (fr.length > 1) { const d = document.createElement('div'); d.className = 'fr'; const c = scaled(fr[0], sc); c.classList.add('anim'); d.appendChild(c); d.append('anim'); row.appendChild(d); anims.push({ c, fr, sc }); }
+      card.appendChild(row); const n = document.createElement('div'); n.className = 'note'; n.textContent = a.note; card.appendChild(n); grid.appendChild(card);
+    }
+  }
+}
+let t = 0; setInterval(() => { t++; for (const a of anims) { const g = a.c.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.clearRect(0, 0, a.c.width, a.c.height); g.imageSmoothingEnabled = false; if (flip) { g.translate(a.c.width, 0); g.scale(-1, 1); } g.drawImage(a.fr[t % a.fr.length], 0, 0, a.c.width, a.c.height); } }, 220);
+document.querySelectorAll('button[data-s]').forEach(b => b.onclick = () => { S = +b.dataset.s; render(); });
+document.getElementById('flip').onchange = e => { flip = e.target.checked; render(); };
+render();
+</script>
+</body></html>

@@ -2814,6 +2814,34 @@ function toResults() {
   state = 'results'; shopSel = 0; hurryT = 0; banner = null;
 }
 
+// v1.2 (Step 11.2): share card - composites a snapshot of the current game canvas (whatever's on screen -
+// the results screen when called from there, or the farm hub when called from farmSnapshot() below) onto
+// a bigger card with a title/stat strip, then downloads it as a real PNG via canvas.toBlob(). No server
+// round-trip needed - it's just compositing what's already drawn.
+function shareCard() {
+  try {
+    const scale = 2, pad = 10, stripH = 34;
+    const c = document.createElement('canvas'); c.width = cv.width * scale + pad * 2; c.height = cv.height * scale + pad * 2 + stripH;
+    const g = c.getContext('2d');
+    g.fillStyle = '#1a1028'; g.fillRect(0, 0, c.width, c.height);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(cv, pad, pad, cv.width * scale, cv.height * scale);
+    g.fillStyle = '#c8ffa0'; g.font = 'bold 16px monospace'; g.textAlign = 'center';
+    const r = results;
+    const line1 = 'KUSH QUEST - SMOKE SPOT ' + (lvl.n + 1) + ' REACHED' + (r && r.grade ? ' - GRADE ' + r.grade : '');
+    g.fillText(line1, c.width / 2, c.height - stripH + 16);
+    g.fillStyle = '#ffd84a'; g.font = '11px monospace';
+    const line2 = r ? ('COINS +' + r.earned + '   COOKED ' + r.cooked + '%   KOS ' + r.kills) : 'KUSHQUEST.ONRENDER.COM';
+    g.fillText(line2, c.width / 2, c.height - stripH + 30);
+    c.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = url; a.download = 'kush-quest-run.png'; document.body.appendChild(a); a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    }, 'image/png');
+  } catch (e) { console.error('shareCard failed', e); }
+}
+
 // ============================================================
 //  ENEMY AI (runs on the host's screen, synced to the crew)
 // ============================================================
@@ -3976,6 +4004,10 @@ function drawFarmHub() {
   // v1.2 (Step 7.6): Astral Plane unlock condition - S grade on all 6 world bosses. The Astral Plane
   // content itself is Step 8's job; this just surfaces whether the condition is currently met.
   if (astralUnlocked()) text('ASTRAL PLANE: UNLOCKED (S ON EVERY WORLD BOSS)', W / 2, 30, '#e4b3ff', 1, 'center');
+  // v1.2 (Step 11.2): farm snapshot - the brief's other `canvas.toBlob()` ask, same shareCard() function,
+  // just triggered from the farm hub instead of the results screen (no run stats to show, so the strip
+  // just carries the game's name/URL).
+  hot(W - 46, 2, 44, 8, () => shareCard()); text('[ SNAPSHOT ]', W - 6, 4, '#ffd84a', 1, 'right');
   const list = farmHubEntries();
   for (let i = 0; i < 4; i++) {
     const y = 34 + i * 16, id = save.farmPlots[i], s = STRAINS.find(st => st.id === id);
@@ -4110,6 +4142,10 @@ function drawShop() {
     text((lvl.daily ? "TODAY'S SMOKE RUN" : 'LEVEL') + ' TOP ' + Math.min(3, leaderboard.list.length) + ': ' +
       leaderboard.list.slice(0, 3).map((e, i) => (i + 1) + '. ' + e.name + ' ' + e.score).join('   '), W / 2, 40, '#7ac8ff', 1, 'center');
   }
+  // v1.2 (Step 11.2): share card - a real downloadable PNG snapshot of this run (see buildShareCard()),
+  // not just a "share" button that does nothing. Only offered on a real clear, since a share card for a
+  // wipe isn't much of a brag.
+  if (r.made) { hot(W / 2 - 30, 46, 60, 8, () => shareCard()); text('[ SHARE CARD ]', W / 2, 48, '#ffd84a', 1, 'center'); }
   }
   drawMap(38);
   // tabs
@@ -5304,5 +5340,7 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   // v1.2 (Step 10) debug hooks: drop-in join, Online Soft Pause, Spectator, emote combos, YOINK - for the
   // automated same-page + 2-tab tests.
   attack, emote, checkEmoteCombo, yoink, giveItem, toggleSoftPause, get softPause() { return softPause; },
-  playersList, realRemotes, applySnapshot, addCoins, djDankLine };
+  playersList, realRemotes, applySnapshot, addCoins, djDankLine,
+  // v1.2 (Step 11) debug hooks: share card / leaderboard / armor visuals, for the automated Step 11 tests.
+  shareCard, get leaderboard() { return leaderboard; }, submitScore, lbKeyFor, armorTier, todaySeed };
 })();

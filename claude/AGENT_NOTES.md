@@ -1237,3 +1237,26 @@ all still pass. `node --check` clean on both files.
 **Not yet done this step** (down from the earlier list): weapon-skin cosmetics (armor got a real visual;
 weapon skins did not), the share card + farm snapshot (`canvas.toBlob`), and an animated title screen.
 Continuing with these next.
+
+## STEP 11 continued: share card + farm snapshot (canvas.toBlob)
+
+**11.2 Share card / farm snapshot:** `shareCard()` composites the live game canvas (whatever's currently on
+screen - the results screen for a run recap, or the farm hub for a farm snapshot) onto a bigger card with a
+title/stat strip drawn on top (run coins/cooked%/kills + grade, or just the game's name on the farm), then
+calls `canvas.toBlob()` for a real PNG and triggers a browser download - not a fake "share" button, an
+actual file. Wired to a `[ SHARE CARD ]` hotspot on a real level clear's results screen and a `[ SNAPSHOT ]`
+hotspot on the farm hub (both use the same function - the brief's two asks, E and the farm snapshot, are
+really the same feature from two entry points).
+
+**Testing:** `kq_step11_sharecard_test.js` - intercepts the actual browser download after calling
+`shareCard()` from the results screen, confirms it's a non-trivial (20KB+) real PNG (checked the PNG magic
+bytes, not just "a file exists"). Re-ran the full suite (`kq_step10_test/online/teamchest`,
+`kq_step11_armor_online`, `kq_step11_server_test`) - all still pass. `node --check` clean.
+
+**Step 11 status now:** Smoke Runs leaderboard, cosmetics-shown-online (armor), share card + farm snapshot,
+public rooms/FIND A CREW, `/stats`, and client error reporting are all done and tested. Only remaining
+brief item: weapon-skin cosmetics specifically (armor got the visual treatment; distinct weapon skins as a
+separate cosmetic slot did not - scoping this out for now as its own small content-authoring task, same
+kind of trim as Step 10's) and the animated title screen (also scoped out - a real title-screen animation
+is its own small art/timing task, not a mechanic, and there wasn't room to do it justice alongside the six
+items above). Moving to Step 12 (final full-game test) next; these two can be picked up in a future pass.

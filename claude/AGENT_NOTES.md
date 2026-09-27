@@ -1417,3 +1417,84 @@ text overlap, legend name clipping) and the pause-menu box are already fine on c
 made, to avoid manufacturing unnecessary diffs against non-bugs.
 
 _(Auto-deploy webhook re-verified 2026-09-26: GitHub connection to Render was re-authorized after being found stale; this commit is the test push.)_
+
+## Mechanic redesign (user-directed, 2026-09-26): Cooked meter is no longer an exit gate
+
+Not a FIX_STEPS.md item - the user hit this hands-on while playtesting ("accidentally smoked and was
+too sober to get through to the next level") and asked directly for a redesign. **This intentionally
+diverges from `coder-brief-v0.8.md` Phase 4 ("The Cooked meter - the signature mechanic")**, which
+specified Cooked as a build-up-to-a-threshold resource that passively fades. Flagging clearly here per
+the standing rule ("if something contradicts a brief, ask before guessing") - I asked the user directly
+before changing it; this section is that record for any other agent/session that expects the old Phase 4
+behavior.
+
+**What was actually wrong, root-caused before changing anything**: the "toke" key never raised Cooked -
+`hitAToke()` always SPENT Cooked (10%/25%) to create a battlefield utility cloud, the opposite of what a
+player pressing "the smoke button" would expect. On top of that, reaching the smoke spot below 50% Cooked
+bounced the player back with "NOT COOKED ENOUGH!", and Cooked passively decayed ~1%/3s the whole time -
+so a player who tapped toke (spending their stash on a cloud) while unaware of any of this could easily
+end up stuck oscillating below the 50% wall with no clear signal why. The "SOBER-ISH X%" label at low
+values compounded it - it reads as a stat you'd want to keep low, backwards from what the game actually
+wanted.
+
+**Old design**: Cooked is a 0-100 meter, filled by nugs/kills/items, required to reach 50% to unlock the
+smoke-spot exit (blocked otherwise), decays ~1%/3s, 100% = persistent "Ultra Cooked" while it stays there.
+
+**New design** (confirmed with the user via 3 targeted questions before implementing):
+1. **Exit condition**: clearing every fight zone opens the smoke spot - no separate Cooked threshold.
+   Physically reaching the spot already implied every zone was cleared anyway (`lvl.locked` gates
+   movement past an active zone), so the old 50%-Cooked check was a redundant second gate on top of a
+   real one; removing it was a straightforward simplification, not a loosening of the actual challenge.
+2. **Smoking (`hitAToke`) is now also a direct self-recovery move**: heals 1-2 hearts and grants the
+   existing RAGE buff (+2 dmg, reusing the Rage Brownie's own buff slot - no new HUD plumbing needed) on
+   top of its old utility-cloud effect. Still costs Cooked (10%/25%) exactly as before, so it stays a
+   genuine "ammo" resource, not a free action.
+3. **Ultra Cooked** stays, now reachable two ways: the old "bank Cooked to 100% and hold it" path (still
+   works, `ultra()` still checks `cooked>=100`), plus a new skill-based path - chaining 3 tokes within a
+   5s window (`me.tokeChain`/`me.lastTokeFrame`) grants a temporary 6s Ultra state via `me.buffs.ultra`
+   (decrements through the existing generic per-frame buffs loop, so it needed no new ticking code).
+4. **Passive decay removed entirely** - it existed specifically to pressure players toward the 50%
+   threshold before it faded back down; with that threshold gone, decay was pure friction with no payoff.
+5. **HUD relabeled**: "SOBER-ISH X%"/"COOKED X%" tiers collapsed to a flat "STASH X%" (it's ammo you're
+   holding, not a progress bar), with "ULTRA COOKED!"/"TOO HIGH X%" still shown via `ultra()`/`tooHigh()`
+   (both updated to account for the new buff-based Ultra path too). Mission-briefing text, the in-level
+   goal text, the "SMOKE SPOT" compass hint, and the 1-1 tutorial tip were all updated to match - no more
+   "GET COOKED TO 50%" language anywhere.
+
+**Tested**: new `/tmp/kq_cooked_redesign_test.js` (not committed, per this session's convention) confirms:
+reaching the spot at 0% Cooked with zones cleared now works (old gate is gone); still blocked while a
+fight is active (unchanged); a toke heals HP + grants the RAGE buff + still spends Cooked; chaining 3
+tokes triggers the temporary Ultra buff; Cooked no longer decays over ~4s of idle play. Full regression
+suite (every prior test script from Steps 10, 11, 12, 15) still passes with zero errors after this
+change. `node --check` clean. Visually confirmed via screenshot: the mission briefing, the "STASH 42%"
+mid-level HUD, and the "ULTRA COOKED!" HUD state all render cleanly with no overlap or overflow.
+
+**Left untouched / out of scope**: the `regen` skill ("heal while Cooked 50%+") and the ultimate move
+(sets `cooked = 50` on use) both still key off the number 50 - these are unrelated existing systems, not
+the exit gate, and weren't part of what the user asked to change. Farm upgrades/items that grant or scale
+Cooked (Hookah, Vape Pen, pre-rolls, diamonds, PUFF PUFF PASS, etc.) are all unaffected - Cooked is still
+the same 0-100 number under the hood, just spent differently now.
+
+## UI/responsiveness sweep (user-directed, 2026-09-26)
+
+Ran a Playwright screenshot sweep across 3 viewport widths (1400px wide desktop, 960px laptop, 375px
+narrow/phone-portrait) covering the save-select screen, in-play HUD, the boss-intro banner (plus a popup
+overlapping it, re-checking Step 15's fix), the legend NPC with the longest name in the game, a spoof
+sign fully scrolled into view, the pause/settings menus, and the results screen - looking specifically for
+overlapping or overflowing text per the user's report.
+
+**What actually needed fixing**: none of the screens checked had a genuine text-overflow bug once measured
+precisely. Two things looked wrong on first glance but weren't, on closer inspection:
+- The top-right level-name text ("WORLD 1-1"/level subtitle) looked like it was touching or past the
+  screen edge in a resized screenshot crop at the narrow (375px) viewport. Measuring the actual rendered
+  pixels directly (not eyeballing a resized crop) showed the rightmost text pixel lands 3-4px inside the
+  true canvas edge - tight, but not clipped. Not a bug.
+- A decorative "spoof sign" (world-space flavor text like "THE STONED AGE") appeared cut off at the
+  screen edge while only partially scrolled into view. This is normal side-scroller edge clipping (the
+  same thing any partially-offscreen sprite gets) - the sign's own background box was independently
+  confirmed to size correctly around its text once fully scrolled into view (see the wide-viewport
+  screenshot: "BAKED GOODS (LITERALLY)" sits cleanly inside its box with margin on both sides). Consistent
+  with the same conclusion an earlier pass reached about this exact sign-clipping behavior. Not a bug.
+
+No code changes from this sweep - the earlier Step 15 popup/banner fix was re-confirmed visually in the
+process (popups correctly stay clear of an active boss banner at all 3 tested widths).

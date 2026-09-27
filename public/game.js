@@ -1645,7 +1645,7 @@ function makePlayer() {
     x: lvl.spawn.x + (Net.color || 0) * 10, z: lvl.spawn.z - 12 + (Net.color || 0) * 10, h: 0, vx: 0, vz: 0, vh: 0, face: 1, w: 10,
     puffed: false, flaps: 0, jumpBuf: 0, inv: 60, walkT: 0, sq: 0, star: 0,
     hp: maxHp(), cooked: 0, combo: 0, comboT: 0, best: 0, atkCd: 0, atkT: 0, chain: 0, chainT: 0,
-    earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0, crit: 0, dash: 0 }, legendT: 0,
+    earned: 0, lost: 0, kills: 0, nugs: 0, buffs: { speed: 0, magnet: 0, power: 0, rage: 0, soda: 0, crit: 0, dash: 0, ultra: 0 }, legendT: 0, tokeChain: 0, lastTokeFrame: -999,
     color: Net.color, name: Net.name, emote: null, stealCd: {},
     wildOn: false, // v1.2 fix: true = the held Wild weapon (me.envWeapon) is the active weapon; false = the Core weapon is active. Q toggles this - see cycleWeapon().
     // v1.2 (Step 10.1): a Spectator (5th+ joiner, room's 4 crew slots were full) - a harmless permanently
@@ -1698,8 +1698,10 @@ function puff(x, y, n, cols, spd = 1, g = 0.02) {
 }
 function popup(x, y, str, col = '#fff') { popups.push({ x, y, str, col, t: 60 }); }
 function collect(id) { Net.send({ t: 'col', id, l: lvl.n }); }
-const ultra = () => me.cooked >= 100;
-const tooHigh = () => me.cooked >= 90 && me.cooked < 100;
+// v1.3 (mechanic redesign, requested 2026-09-26): Ultra now also triggers as a temporary buff from
+// chaining tokes (see hitAToke) on top of the original "banked to 100%" path - both still work.
+const ultra = () => me.cooked >= 100 || me.buffs.ultra > 0;
+const tooHigh = () => me.cooked >= 90 && me.cooked < 100 && me.buffs.ultra <= 0;
 function addCombo(x, y) {
   me.combo++; me.comboT = 120; me.best = Math.max(me.best, me.combo);
   if (me.combo === 5 || me.combo === 10 || me.combo === 20) {
@@ -1733,7 +1735,9 @@ function addCooked(k) {
   if (k > 0 && farmUpgradeHas('hookah')) k = Math.round(k * 1.05);
   if (k < 0 && farmHas('chill')) k = Math.round(k * 0.7); // CHILL KUSH: fades 30% slower
   const was = me.cooked; me.cooked = Math.max(0, Math.min(100, me.cooked + k));
-  if (k > 0 && was < 50 && me.cooked >= 50) { banner = { t: 120, a: 'YOU ARE COOKED!', b: 'THE SMOKE SPOT IS OPEN - KEEP GOING FOR ULTRA' }; SFX.power(); }
+  // v1.3: the 50%-to-unlock-the-spot banner is gone with the gate itself (see updateSpot) - Cooked is
+  // now a stash you spend by smoking, not a progress bar toward the exit. Banking to 100% naturally is
+  // still a valid (if slower) path to Ultra, alongside chaining tokes (see hitAToke).
   if (k > 0 && was < 100 && me.cooked >= 100) { banner = { t: 160, a: 'ULTRA COOKED!!', b: 'STRONGER HITS + INFINITE FLOAT + +25% COINS AT THE SPOT' }; SFX.power(); shake = 8; puff(me.x, sy(me.z) - 20, 40, ['#c070ff', '#c8ffa0', '#ffffff', '#ff9ab8'], 2.4); }
 }
 function spawnDrops(p) {
@@ -1998,6 +2002,21 @@ function hitAToke(big) {
   lvl.clouds.push(c); SFX.exhale(); shake = big ? 6 : 4;
   Net.send({ t: 'fx', k: 9, x: Math.round(c.x), y: Math.round(c.z), f: (c.heal ? 1 : 0) | (c.hot ? 2 : 0), h: c.r });
   if (hasSkill('bongrip')) for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - c.x) < c.r && Math.abs(e.z - c.z) < c.r * 0.6) hitEnemy(e, 2, Math.sign(e.x - c.x) || 1, true, { stun: 70 });
+  // v1.3 (mechanic redesign, requested 2026-09-26): smoking is now a direct self recovery move too, not
+  // just a battlefield utility cloud for the crew - a real "post-fight, take a hit" payoff like the brief
+  // gap the player flagged. Heals a bit and grants a short RAGE-style damage buff (same buff the Rage
+  // Brownie/pass-the-plate already use, so no new HUD plumbing needed).
+  if (me.hp < maxHp()) { me.hp = Math.min(maxHp(), me.hp + (big ? 2 : 1)); popup(me.x - 12, sy(me.z) - 40, '+' + (big ? 2 : 1) + ' HEART', '#ff9ab8'); }
+  me.buffs.rage = Math.max(me.buffs.rage, big ? 420 : 240);
+  // Chaining tokes within a 5s window stacks toward a temporary Ultra Cooked state - a faster, skill-based
+  // path to Ultra alongside the older "bank Cooked up to 100% and just sit on it" route.
+  me.tokeChain = (frame - me.lastTokeFrame < 300) ? me.tokeChain + 1 : 1;
+  me.lastTokeFrame = frame;
+  if (me.tokeChain >= 3 && me.buffs.ultra <= 0) {
+    me.tokeChain = 0; me.buffs.ultra = 360;
+    banner = { t: 160, a: 'ULTRA COOKED!!', b: 'STRONGER HITS + INFINITE FLOAT + +25% COINS AT THE SPOT' };
+    SFX.power(); shake = 8; puff(me.x, sy(me.z) - 20, 40, ['#c070ff', '#c8ffa0', '#ffffff', '#ff9ab8'], 2.4);
+  }
 }
 function breathFire() {
   for (let i = 0; i < 6; i++) particles.push({ x: me.x + me.face * (12 + i * 6), y: sy(me.z, me.h) - 14 + (Math.random() - .5) * 8, vx: me.face * (1.5 + Math.random()), vy: -0.3, life: 16, col: ['#ff5a6a', '#ff9a3a', '#ffd84a'][i % 3], s: 3, g: -0.02 });
@@ -2534,8 +2553,10 @@ function animFrame(p) {
 }
 
 function updatePlayer() {
-  // the Cooked meter slowly fades - not mid-boss-fight, and not once you're already chilling at the spot
-  if (frame % 180 === 0 && me.cooked > 0 && !(lvl.boss && lvl.boss.alive) && state === 'play') addCooked(-1);
+  // v1.3 (mechanic redesign, requested 2026-09-26): Cooked no longer passively fades. It used to drain
+  // ~1%/3s to pressure players into hitting a 50% threshold before it decayed back down - but the 50%
+  // exit gate is gone (see updateSpot), so that pressure had no payoff left, just friction: banked Cooked
+  // is now a stash you spend on purpose (see hitAToke), so it should stay put until you use it.
   // v1.2 (Step 10.4): the in-game 4:20 moment - checked against the REAL clock (not a level timer), once
   // per real occurrence per level (me.saw420, reset fresh by makePlayer() every level). A genuine, if
   // silly, real-world Easter egg with a real bonus, exactly as the brief asks for both halves of it.
@@ -2732,14 +2753,18 @@ function updatePlayer() {
   }
   if (p.legendT > 0) p.legendT--;
   // the smoke spot
+  // v1.3 (mechanic redesign, requested 2026-09-26): the exit used to require Cooked >= 50%, bouncing the
+  // player back with "NOT COOKED ENOUGH!" if they arrived short - the exact wall the player got stuck on.
+  // Reaching the spot already means every fight zone is cleared (lvl.locked gates movement past an active
+  // zone - see updateCamera/the zone-trigger code), so that was a redundant second gate on top of a real
+  // one. Dropping it: clearing the level is what opens the spot now, not a resource-bar threshold.
   const spot = lvl.spot;
   if (p.x > spot.x && p.x < spot.x + spot.w + 20) {
-    if (p.cooked >= 50) sitDown();
+    if (!lvl.locked) sitDown();
     else if (!p.spotWarnT || frame > p.spotWarnT) {
       p.spotWarnT = frame + 120;
-      banner = { t: 100, a: 'NOT COOKED ENOUGH!', b: 'YOU NEED 50% - GRAB NUGS, RINGS, KNOCK OUT BUZZKILLS' };
+      banner = { t: 100, a: 'STILL FIGHTING!', b: 'CLEAR THE CURRENT FIGHT FIRST' };
     }
-    if (p.cooked < 50) { p.x = spot.x - 2; p.vx = -1.5; }
   }
 }
 function sitDown() {
@@ -3789,7 +3814,7 @@ function drawScene() {
     text('GO', W - 30, 60, '#ffd84a', 2); R(ctx, '#ffd84a', W - 12, 62, 4, 6); R(ctx, '#ffd84a', W - 8, 64, 2, 2);
   }
   if (me.tipT > 0 && state === 'play' && !banner) {
-    const tips = ['WASD MOVE   SPACE JUMP   CLICK / ' + KL('attack') + ' SWING (3-HIT COMBO)', 'AIM WITH YOUR MOUSE   HOLD SHIFT TO RUN + LUNGE   JUMP AGAIN TO FLOAT', KL('throw') + ' OR RIGHT-CLICK TO THROW   ' + KL('munchie') + ' FOR MUNCHIES/REVIVE', 'GET COOKED TO 50%, THEN REACH THE SMOKE SPOT + PRESS SPACE TO CALL THE CREW'];
+    const tips = ['WASD MOVE   SPACE JUMP   CLICK / ' + KL('attack') + ' SWING (3-HIT COMBO)', 'AIM WITH YOUR MOUSE   HOLD SHIFT TO RUN + LUNGE   JUMP AGAIN TO FLOAT', KL('throw') + ' OR RIGHT-CLICK TO THROW   ' + KL('munchie') + ' FOR MUNCHIES/REVIVE', 'TAP ' + KL('toke') + ' TO SMOKE: HEALS + BOOSTS YOUR HITS   CLEAR THE FIGHTS, THEN REACH THE SMOKE SPOT'];
     const tip = tips[Math.floor((900 - me.tipT) / 225) % tips.length];
     ctx.fillStyle = 'rgba(42,24,56,.8)'; ctx.fillRect(Math.max(4, W / 2 - tip.length * 2 - 6), 174, Math.min(W - 8, tip.length * 4 + 12), 13);
     text(tip, W / 2, 180, '#fff6b0', 1, 'center');
@@ -3817,13 +3842,17 @@ function drawHUD() {
   text(crewLives + ' LIFE' + (crewLives === 1 ? '' : 'S'), 40, 10, crewLives <= 1 ? '#ff8a8a' : '#c8ffa0'); // v1.1 A5
   // v1.2 (Step 6.1): GAUNTLET survive-timer readout
   { const gz = lvl.zones[lvl.zi]; if (gz && gz.gauntlet && gz.started && !gz.cleared && gz.timer != null) text('SURVIVE: ' + Math.ceil(gz.timer / 60) + 's', W - 4, 3, '#ffd84a', 1, 'right'); }
-  // cooked meter
+  // v1.3 (mechanic redesign, requested 2026-09-26): relabeled from a "SOBER-ISH/COOKED X%" progress-bar
+  // reading (which read as something to keep LOW, backwards from what it actually did, and implied a
+  // threshold you needed to cross) to a plain "STASH X%" - it's ammo you're holding for smoking, not a
+  // meter you're filling toward a goal. ULTRA! shows separately whenever ultra() is true, whether that's
+  // from banking to 100% or from chaining tokes (see hitAToke).
   const mx = 72, c = Math.round(me.cooked);
   ctx.drawImage(LEAF_ICON, mx, 2);
   R(ctx, P.k, mx + 9, 3, 62, 7); R(ctx, '#4a3a60', mx + 10, 4, 60, 5);
-  R(ctx, c >= 100 ? (settings.reduceFlash ? '#e4b3ff' : ['#c070ff', '#c8ffa0', '#ff9ab8', '#ffd84a'][Math.floor(frame / 5) % 4]) : c >= 50 ? '#7fe07a' : '#c8b890', mx + 10, 4, Math.round(60 * c / 100), 5);
+  R(ctx, ultra() ? (settings.reduceFlash ? '#e4b3ff' : ['#c070ff', '#c8ffa0', '#ff9ab8', '#ffd84a'][Math.floor(frame / 5) % 4]) : c >= 50 ? '#7fe07a' : '#c8b890', mx + 10, 4, Math.round(60 * c / 100), 5);
   R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 30, 3, 1, 7); R(ctx, settings.colorblind ? '#1a1026' : '#ffffff', mx + 54, 3, 1, 7);
-  text(c >= 100 ? 'ULTRA COOKED!' : c >= 90 ? 'TOO HIGH ' + c + '%' : c >= 50 ? 'COOKED ' + c + '%' : 'SOBER-ISH ' + c + '%', mx + 9, 11, c >= 100 ? '#e4b3ff' : c >= 90 ? '#ff9a3a' : c >= 50 ? '#c8ffa0' : '#d8c8b0');
+  text(ultra() ? 'ULTRA COOKED!' : tooHigh() ? 'TOO HIGH ' + c + '%' : 'STASH ' + c + '%', mx + 9, 11, ultra() ? '#e4b3ff' : tooHigh() ? '#ff9a3a' : '#c8ffa0');
   // weapon + items
   const wildOnHud = !!(me.envWeapon && me.wildOn), w = wildOnHud ? ENV_WEAPONS[me.envWeapon.id] : weaponDef();
   R(ctx, P.k, 146, 2, 14, 14); R(ctx, wildOnHud ? '#7a2fc0' : '#4a3a60', 147, 3, 12, 12);
@@ -3870,10 +3899,10 @@ function drawHUD() {
   }
   if (me.combo < 3 && state === 'play' && !banner) {
     const next = lvl.zones.find(z => !z.cleared);
-    const goal = lvl.locked ? 'BEAT THE WAVE!' : me.cooked < 50 ? 'GOAL: GET COOKED (' + Math.round(me.cooked) + '/50%)' : !next ? 'GOAL: REACH THE SMOKE SPOT' : 'GOAL: KEEP MOVING - SMOKE SPOT AHEAD';
+    const goal = lvl.locked ? 'BEAT THE WAVE!' : !next ? 'GOAL: REACH THE SMOKE SPOT' : 'GOAL: KEEP MOVING - SMOKE SPOT AHEAD';
     const gs = settings.bigText ? 2 : 1, gw = goal.length * 4 * gs + 8; R(ctx, 'rgba(26,16,38,.75)', Math.round(W / 2 - gw / 2), 19, gw, 11 * gs);
     text(goal, W / 2, 22, lvl.locked ? '#ff8a8a' : '#fff6b0', gs, 'center');
-    if (me.cooked >= 50 && !lvl.locked && lvl.spot.x > camX + W && frame % 30 < 20) { text('SMOKE SPOT', W - 44, 96, '#c8ffa0', 1, 'center'); R(ctx, '#c8ffa0', W - 10, 95, 4, 7); R(ctx, '#c8ffa0', W - 6, 97, 2, 3); }
+    if (!lvl.locked && lvl.spot.x > camX + W && frame % 30 < 20) { text('SMOKE SPOT', W - 44, 96, '#c8ffa0', 1, 'center'); R(ctx, '#c8ffa0', W - 10, 95, 4, 7); R(ctx, '#c8ffa0', W - 6, 97, 2, 3); }
   }
   // v1.2 (Step 9.3): the BLACKLIGHT farm upgrade's perk - an off-screen compass hint toward this level's
   // unbroken secret stash, same off-screen-arrow shape the SMOKE SPOT hint above already uses.
@@ -4937,8 +4966,8 @@ function drawBrief() {
   R(ctx, 'rgba(42,24,56,.9)', 30, 34, W - 60, 118); R(ctx, '#c8ffa0', 30, 34, W - 60, 1); R(ctx, '#c8ffa0', 30, 151, W - 60, 1);
   text(lvl.name[0], W / 2, 40, '#b0a8c0', 1, 'center');
   text(lvl.name[1], W / 2, 50, '#c8ffa0', 2, 'center');
-  text('1. GET COOKED TO 50% - NUGS, SMOKE RINGS, KNOCKOUTS', 40, 72, '#ffffff');
-  text('2. BEAT EACH WAVE OF BUZZKILLS', 40, 82, '#ffffff');
+  text('1. BEAT EACH WAVE OF BUZZKILLS', 40, 72, '#ffffff');
+  text('2. SMOKE (' + KL('toke') + ') TO HEAL + HIT HARDER - IT\'S NOT A REQUIREMENT', 40, 82, '#ffffff');
   text('3. CHILL AT THE SMOKE SPOT AT THE END', 40, 92, '#ffffff');
   { const bd = bossDataFor(lvl.n); text((bd[4] ? 'MEGA BOSS: ' : bd[5] ? 'MINI-BOSS: ' : 'BOSS: ') + bd[0] + ' - BEAT HIM TO LEARN ' + SKILLS[bd[2]].name, 40, 104, bd[4] ? '#ff8a8a' : bd[5] ? '#ff9a5a' : '#e4b3ff'); }
   const fresh = [...new Set(th.enemies)].find(k => !save.met.includes(k) && k !== 'mouse' && k !== 'squirrel' && k !== 'cop');
@@ -5390,5 +5419,8 @@ window.__KQ = { openMenu: () => openMenu(), setMenu: (p, r) => { menu.page = p; 
   get finInfo() { return finInfo; }, set finInfo(v) { finInfo = v; },
   // v1.2 (Step 15) debug hooks: banner/popups access + a direct popup() call, for testing the
   // popup-vs-banner overlap fix without needing to drive a real kill/pickup to generate one.
-  get banner() { return banner; }, set banner(v) { banner = v; }, get popups() { return popups; }, popup, bossIntro, get TQ() { return TQ; } };
+  get banner() { return banner; }, set banner(v) { banner = v; }, get popups() { return popups; }, popup, bossIntro, get TQ() { return TQ; },
+  // v1.3 (mechanic redesign) debug hook: trigger a toke directly, for the automated test covering the
+  // new heal+buff/chain-Ultra behavior without needing to drive real keyboard input.
+  hitAToke, ultra, tooHigh };
 })();

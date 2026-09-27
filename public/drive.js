@@ -708,7 +708,7 @@ function updateDrive(rdt) {
   // ---- steering (baked lag/drift/sway) ----
   const lvl = bakedLevel();
   let steer = (any('a', 'arrowleft') ? -1 : 0) + (any('d', 'arrowright') ? 1 : 0);
-  if (S.scramble > 0) { S.scramble -= dt; steer = -steer + Math.sin(S.t * 9) * 0.6; }
+  if (S.scramble > 0) { S.scramble -= dt; steer = -steer + Math.sin(S.t * 9) * 0.3; }
   const lag = [0, 0.1, 0.18, 0.22][lvl] * Math.max(0.4, 1 - 0.25 * S.tireLv);
   S.lastSteer += (steer - S.lastSteer) * Math.min(1, dt / (0.02 + lag));
   S.drift = [0, 0.18, 0.35, 0.4][lvl] * Math.sin(S.t * 0.7) * Math.max(0.4, 1 - 0.25 * S.tireLv);
@@ -1002,7 +1002,7 @@ function project(p, camX, camY, camZ) {
 function shade(hex, k) { const n = parseInt(hex.slice(1, 7).padEnd(6, '0'), 16); const f = v => Math.max(0, Math.min(255, Math.round(v * k))); if (hex.length === 4) { const r = parseInt(hex[1] + hex[1], 16), g = parseInt(hex[2] + hex[2], 16), b = parseInt(hex[3] + hex[3], 16); return 'rgb(' + f(r) + ',' + f(g) + ',' + f(b) + ')'; } return 'rgb(' + f(n >> 16) + ',' + f(n >> 8 & 255) + ',' + f(n & 255) + ')'; }
 function poly(x1, y1, w1, x2, y2, w2, col) {
   ctx.fillStyle = col; ctx.beginPath();
-  ctx.moveTo(x1 - w1, y1); ctx.lineTo(x2 - w2, y2); ctx.lineTo(x2 + w2, y2); ctx.lineTo(x1 + w1, y1); ctx.closePath(); ctx.fill();
+  ctx.moveTo(x1 - w1, y1 + 1); ctx.lineTo(x2 - w2, y2); ctx.lineTo(x2 + w2, y2); ctx.lineTo(x1 + w1, y1 + 1); ctx.closePath(); ctx.fill();
 }
 const hue = (h, s = 90, l = 55) => `hsl(${h | 0},${s}%,${l}%)`;
 
@@ -1293,6 +1293,17 @@ function drawHUD() {
     text('TEST DRIVE ' + (S.pstep + 1) + '/' + PSTEPS.length + ': ' + PSTEPS[S.pstep][0], W / 2, 33, '#8ef0b0', 1, 'center');
     text(PSTEPS[S.pstep][1], W / 2, 43, '#fff', 1, 'center');
     text('TAB: SKIP TEST DRIVE', W - 4, H - 16, '#9f8fc0', 1, 'right');
+  }
+  if (S.mode === 'drive' && !S.practice && !S.swapped && S.swapAt) {
+    const eta = (S.swapAt * SEG - S.pos) / Math.max(S.speed, MAXSP * 0.3);
+    if (eta > 0 && eta < 5) {
+      const n = Math.ceil(eta), fl = Math.floor(S.t * 6) % 2;
+      ctx.fillStyle = 'rgba(26,16,38,0.8)'; ctx.fillRect(W / 2 - 90, 96, 180, 30);
+      text(S.solo ? 'SOMETHING IS COMING...' : 'SEAT SWAP INCOMING!', W / 2, 99, fl ? '#ffd23f' : '#fff', 1, 'center');
+      text(String(n), W / 2, 107, n <= 2 ? '#ff3b3b' : '#ffd23f', 2, 'center');
+      if (S.solo) text('GET STRAIGHT. CONTROLS WILL FLIP.', W / 2, 118, '#c8c8e0', 1, 'center');
+      if (!S.warnBeep || S.warnBeep !== n) { S.warnBeep = n; tone(n <= 2 ? 880 : 660, 0.08, 'square', 0.04); }
+    }
   }
   if (S.scramble > 0) text('CONTROLS SCRAMBLED ' + S.scramble.toFixed(1), W / 2, 96, '#ff3b3b', 1, 'center');
   if (S.paused && !S.net) {

@@ -419,7 +419,7 @@ function setupDrive() {
     snacks: 20 + 12 * (S.crew.length - 1) + 10 * (up.stash || 0), coins: 0, heat: 0, lockT: 0, caught: 0, crashes: [0, 0], shaken: [0, 0], dists: [0, 0],
     cops: [], traffic: [], shots: [], fx: [], route: null, swapped: false, scramble: 0, freeze: 0, banner: null,
     hitCd: 0, throwCd: 0, drift: 0, sway: 0, blur: 0, siren: 0, damage: shit ? 3 : 0, sirensSlow: 0, backfireT: 5 + Math.random() * 8,
-    nextCop: 4, nextTraffic: 2, nextBlock: 25, lastSteer: 0, pc, stats: {}, got: [], extra: [], allGot: [], allExtra: [], out: [], inq: [], stT: 0, lastSt: S.t,
+    nextCop: 4, nextTraffic: 2, nextBlock: 25, nextHaz: 6, lost: 0, lastSteer: 0, pc, stats: {}, got: [], extra: [], allGot: [], allExtra: [], out: [], inq: [], stT: 0, lastSt: S.t,
     drivers: [S.seats[0], null],
   });
   driveCount[S.seats[0]] = (driveCount[S.seats[0]] || 0) + 1;
@@ -569,6 +569,7 @@ function applyState(p) {
     else if (ev[0] === 's') SFX[ev[1]] && SFX[ev[1]]();
     else if (ev[0] === 'shot') S.shots.push({ t: 0, x0: W / 2, y0: 150, side: ev[1] });
     else if (ev[0] === 'puff') puff(W / 2 + 34, 150, 14, '#cfcfcf');
+    else if (ev[0] === 'pop') S.fx.push({ x: W / 2, y: 130, vx: 0, vy: -30, t: 1, col: ev[2], txt: ev[1] });
   }
 }
 function snapshot() {
@@ -633,7 +634,7 @@ function commonFx(dt) {
   if (S.splat > 0) S.splat -= dt;
   if (S.spectating && !S.seats.includes(S.me)) text('SPECTATING - YOU JOIN AT THE NEXT LEVEL', W / 2, H - 22, '#9f8fc0', 1, 'center');
   if (S.youDrive > 0) S.youDrive -= dt;
-  for (const p of S.fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.t -= dt; }
+  for (const p of S.fx) { p.x += p.vx * dt; p.y += p.vy * dt; if (p.g) p.vy += p.g * dt; p.t -= dt; }
   S.fx = S.fx.filter(p => p.t > 0);
   if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 8);
   if (S.blur > 0) S.blur -= dt;
@@ -663,7 +664,7 @@ function grabTick(id) {
   const segIdx = Math.floor(S.pos / SEG);
   for (let i = segIdx; i < segIdx + 3; i++) {
     const sg = S.segs[i % S.segs.length];
-    sg.items.forEach((it, j) => { if (!it.got && it.k === 'coin' && Math.abs(it.x - S.x) < 0.75 && takeItem(sg.i, j)) { S.coins += coinMul(); stat(id).grabs++; sfx('coin'); } });
+    sg.items.forEach((it, j) => { if (!it.got && it.k === 'coin' && Math.abs(it.x - S.x) < 1.1 && takeItem(sg.i, j)) { S.coins += coinMul(); pop("GRAB +" + coinMul(), "#ffd23f"); stat(id).grabs++; sfx('coin'); } });
   }
 }
 function updateDrive(rdt) {
@@ -696,9 +697,9 @@ function updateDrive(rdt) {
   const lvl = bakedLevel();
   let steer = (any('a', 'arrowleft') ? -1 : 0) + (any('d', 'arrowright') ? 1 : 0);
   if (S.scramble > 0) { S.scramble -= dt; steer = -steer + Math.sin(S.t * 9) * 0.6; }
-  const lag = [0, 0.18, 0.3, 0.35][lvl] * Math.max(0.4, 1 - 0.25 * S.tireLv);
+  const lag = [0, 0.1, 0.18, 0.22][lvl] * Math.max(0.4, 1 - 0.25 * S.tireLv);
   S.lastSteer += (steer - S.lastSteer) * Math.min(1, dt / (0.02 + lag));
-  S.drift = [0, 0.25, 0.5, 0.55][lvl] * Math.sin(S.t * 0.7) * Math.max(0.4, 1 - 0.25 * S.tireLv);
+  S.drift = [0, 0.18, 0.35, 0.4][lvl] * Math.sin(S.t * 0.7) * Math.max(0.4, 1 - 0.25 * S.tireLv);
   S.sway = [0, 3, 7, 10][lvl];
 
   const boost = any('w', 'arrowup', ' '), brake = any('s', 'arrowdown');
@@ -738,12 +739,14 @@ function updateDrive(rdt) {
   if (S.spin > 0) { S.spin -= rdt; S.x += Math.sin(S.spin * 12) * dt * 2; }
 
   // ---- pickups ----
+  // coin magnet: coins just ahead drift toward the car so driving "through" a coin line always feels right
+  for (let i = segIdx + 1; i < segIdx + 6; i++) for (const it of S.segs[i % S.segs.length].items) if (it.k === 'coin' && !it.got && Math.abs(it.x - S.x) < 0.8) it.x += (S.x - it.x) * Math.min(1, dt * 5);
   for (let i = segIdx; i < segIdx + 2; i++) {
     const s2 = S.segs[i % S.segs.length];
     s2.items.forEach((it, j) => {
-      if (it.got || it.k === 'block' || Math.abs(it.x - S.x) > 0.3) return;
+      if (it.got || HAZ[it.k] || Math.abs(it.x - S.x) > (it.k === 'coin' ? 0.5 : 0.35)) return;
       if (!takeItem(s2.i, j)) return;
-      if (it.k === 'coin') { S.coins += coinMul(); sfx('coin'); }
+      if (it.k === 'coin') { const v = coinMul(); S.coins += v; stat(S.seats[0]).grabs++; sfx('coin'); pop('+' + v, '#ffd23f'); }
       else if (it.k === 'snacks') { S.snacks += 8; sfx('pickup'); banner('+8 SNACKS', '', '#ffd23f', 1, true); }
       else if (it.k === 'incense') { addHeat(-25); sfx('pickup'); banner('INCENSE: HEAT DOWN', '', '#b45cff', 1, true); }
       else if (it.k === 'fresh') { addHeat(-15); sfx('pickup'); banner('AIR FRESHENER', '', '#8ef0b0', 1, true); }
@@ -751,8 +754,26 @@ function updateDrive(rdt) {
       else if (it.k === 'secret') { S.coins += 25; S.secret = true; sfx('banner'); banner('SECRET STASH!', '+25 COINS', '#ffd23f', 2); }
     });
   }
-  // roadblocks
-  S.segs[segIdx % S.segs.length].items.forEach((c, j) => { if (c.k === 'block' && !c.got && Math.abs(c.x - S.x) < 0.4 && takeItem(segIdx % S.segs.length, j)) { crash(null); addHeat(10); } });
+  // hazards: roadblocks, cones, potholes, oil
+  for (let i = segIdx; i < segIdx + 2; i++) {
+    const si = i % S.segs.length;
+    S.segs[si].items.forEach((c, j) => {
+      const hz = HAZ[c.k]; if (!hz || c.got || Math.abs(c.x - S.x) > hz.w || !takeItem(si, j)) return;
+      if (c.k === 'block') { crash(null, 'ROADBLOCK!'); loseCoins(5); addHeat(10); }
+      else if (c.k === 'cone') { S.shake = Math.max(S.shake, 2); S.speed *= 0.85; loseCoins(1); sfx('splat'); for (let k = 0; k < 6; k++) S.fx.push({ x: W / 2 + Math.random() * 20 - 10, y: 150, vx: Math.random() * 160 - 80, vy: -80 - Math.random() * 60, g: 260, t: 0.9, col: k % 2 ? '#f80' : '#fff', r: 4 }); }
+      else if (c.k === 'pothole') { S.shake = 5; S.speed *= 0.6; S.damage++; loseCoins(2); sfx('crash'); banner('POTHOLE!', '', '#ff6b6b', 0.8, true); }
+      else if (c.k === 'oil') { S.spin = 1.1; sfx('horn'); banner('OIL SLICK!', 'HOLD ON...', '#b45cff', 1, true); }
+    });
+  }
+  // off-road: trees, lamps, houses hurt
+  if (Math.abs(S.x) > 1.25 && S.speed > S.maxSp * 0.25) for (const pr of sg.props) if (pr.k !== 'bush' && Math.abs(pr.x - S.x) < 0.35) { crash(null, 'OUCH! STAY ON THE ROAD'); loseCoins(3); S.x *= 0.8; }
+  S.nextHaz -= dt;
+  if (!S.practice && S.nextHaz <= 0 && segIdx < S.segs.length - 100) {
+    S.nextHaz = 2.5 + Math.random() * 3 / (1 + 0.3 * bakedLevel());
+    const k = ['cone', 'cone', 'pothole', 'oil'][Math.random() * 4 | 0], bi = segIdx + 70 + (Math.random() * 20 | 0);
+    if (k === 'cone') { const lx = [-0.6, 0, 0.6][Math.random() * 3 | 0]; for (let q = 0; q < 3; q++) addItem(bi + q * 2, 'cone', lx + (q - 1) * 0.12); }
+    else addItem(bi, k, Math.random() * 1.4 - 0.7);
+  }
 
   // ---- traffic ----
   S.nextTraffic -= dt;
@@ -760,7 +781,10 @@ function updateDrive(rdt) {
   for (const c of S.traffic) {
     c.z += c.sp * dt;
     c.rel = c.z - S.pos;
-    if (c.rel > 0 && c.rel < SEG * 0.8 && Math.abs(c.x - S.x) < 0.35 && S.speed > c.sp) crash(c);
+    const dx = Math.abs(c.x - S.x);
+    if (c.rel > -SEG * 0.3 && c.rel < SEG * 0.8 && dx < 0.38) { crash(c, 'CRASH!'); loseCoins(3 + Math.floor(S.coins * 0.1)); }
+    else if (!c.passed && c.rel < 0 && dx < 0.7 && S.speed > S.maxSp * 0.6) { c.passed = true; S.coins += 1; sfx('sel'); pop('CLOSE CALL +1', '#8ef0b0'); }
+    if (c.rel < -SEG) c.passed = true;
   }
   S.traffic = S.traffic.filter(c => c.rel > -SEG * 4 && c.rel < SEG * DRAW);
 
@@ -795,7 +819,7 @@ function updateDrive(rdt) {
       addHeat(dt * 2);
       if (c.t > (S.solo ? 5 : 3.5)) { c.stage = 'ram'; c.t = 0; }
     } else if (c.stage === 'ram') {
-      if (c.t > 0.4 && !c.rammed) { c.rammed = true; S.shake = 5; S.damage++; S.coins = Math.max(0, S.coins - 2); addHeat(8); sfx('crash'); S.x += c.side * -0.4; }
+      if (c.t > 0.4 && !c.rammed) { c.rammed = true; S.shake = 5; S.damage++; loseCoins(4); addHeat(8); pop('RAMMED!', '#ff3b3b'); sfx('crash'); S.x += c.side * -0.4; }
       if (c.t > 1.5) { c.stage = 'side'; c.t = 0; c.rammed = false; }
     }
     S.siren = Math.max(S.siren, Math.max(0, 1 + c.rel / 900));
@@ -826,8 +850,8 @@ function updateDrive(rdt) {
     S.lockT -= dt;
     if (!S.cops.length) { S.lockT = 0; S.heat = 60; banner('SHOOK THEM!', '', '#8ef0b0', 1.5); }
     else if (S.lockT <= 0) {
-      S.caught++; S.coins = Math.max(0, S.coins - 10); S.sirensSlow = 3; S.heat = 50; S.cops.length = 0;
-      sfx('caught'); banner('BUSTED!', '-10 COINS EACH. SIRENS...', '#ff3b3b', 2.5);
+      S.caught++; loseCoins(10 + Math.floor(S.coins * 0.15)); S.sirensSlow = 3; S.heat = 50; S.cops.length = 0;
+      sfx('caught'); banner('BUSTED!', 'COINS CONFISCATED. SIRENS...', '#ff3b3b', 2.5);
     }
   }
   if (S.sirensSlow > 0) S.sirensSlow -= dt;
@@ -839,11 +863,21 @@ function updateDrive(rdt) {
   if (S.practice) { if (S.pos >= S.trackLen - SEG * 60) S.pos = SEG * 40; }
   else if (S.pos >= S.trackLen - SEG * 40) endDrive(false);
 }
-function crash(car) {
+const HAZ = { block: { w: 0.4 }, cone: { w: 0.3 }, pothole: { w: 0.3 }, oil: { w: 0.35 } };
+// floating text popup above the car
+function pop(txt, col) { S.fx.push({ x: W / 2 + Math.random() * 16 - 8, y: 130, vx: 0, vy: -30, t: 1, col, txt }); if (S.auth && S.net) S.out.push(['pop', txt, col]); }
+// lose coins: they spray out of the windows, and about half land on the road ahead so you can win them back
+function loseCoins(n) {
+  n = Math.min(Math.floor(S.coins), n); if (n <= 0) return;
+  S.coins -= n; S.lost += n; pop('-' + n + ' COINS', '#ff6b6b');
+  for (let i = 0; i < Math.min(14, n * 2); i++) S.fx.push({ x: W / 2 + Math.random() * 30 - 15, y: 150, vx: Math.random() * 200 - 100, vy: -90 - Math.random() * 80, g: 300, t: 1.1, col: '#ffd23f', r: 4 });
+  if (!S.practice) { const si = Math.floor(S.pos / SEG) + 25, lx = Math.random() * 1.2 - 0.6; for (let j = 0; j < Math.ceil(n / 2); j++) addItem(si + j * 3, 'coin', lx + Math.sin(j) * 0.2); }
+}
+function crash(car, why) {
   if (S.crashCd > S.t) return;
-  S.crashCd = S.t + 0.8;
+  S.crashCd = S.t + 1.2; if (why) banner(why, '', '#ff6b6b', 0.8, true);
   S.speed *= 0.35; S.shake = 4; S.damage++; S.crashes[half()]++; addHeat(12); sfx('crash');
-  if (car) car.z += SEG * 2;
+  if (car) { car.z += SEG * 2; car.x += (car.x > S.x ? 1 : -1) * 0.3; }
   puff(W / 2, 150, 10, '#888');
 }
 
@@ -853,7 +887,7 @@ const PSTEPS = [
   ['STEER', 'A / D  OR  LEFT / RIGHT'],
   ['BOOST AND BRAKE', 'HOLD W OR SPACE, THEN TAP S'],
   ['THROW A SNACK', 'J OR CLICK AT THE CONE-COP'],
-  ['GRAB A COIN', 'PRESS K WHEN A COIN FLOATS BESIDE YOU'],
+  ['GRAB COINS', 'DRIVE THROUGH THE COIN LINE'],
   ['TAKE A HIT', 'PRESS H. FEEL THE WOBBLE.'],
   ['SEAT SWAP DEMO', 'HALFWAY THROUGH EVERY DRIVE SOMETHING HAPPENS...'],
 ];
@@ -870,7 +904,7 @@ function practiceStep(dt, segIdx, boost, brake) {
     for (const c of S.cops) c.t = -99; // cone-cop never rams
   }
   else if (st === 3) {
-    if (!S.pCoin || S.pT > 4) { S.pT = 0; S.pCoin = true; const lx = Math.max(-0.9, Math.min(0.9, S.x + 0.55)); for (let j = 0; j < 4; j++) addItem(segIdx + 12 + j * 2, 'coin', lx); }
+    if (!S.pCoin || S.pT > 4) { S.pT = 0; S.pCoin = true; const lx = Math.max(-0.7, Math.min(0.7, S.x + 0.4)); for (let j = 0; j < 4; j++) addItem(segIdx + 12 + j * 2, 'coin', lx); }
     ok = (stat(S.me).grabs || 0) > 0;
   }
   else if (st === 4) ok = (stat(S.me).hits || 0) > 0 && S.pT > 1.5;
@@ -1019,8 +1053,13 @@ function draw() {
     drawCop(c, sx, 172, 1.05);
     text(c.side < 0 ? '<' : '>', c.side < 0 ? 6 : W - 10, 120, '#ff3b3b', 3);
   }
-  // van
-  drawPlayer();
+  // aim marker: which cop your next throw hits
+  if (S.mode === 'drive' && S.cops.length && (S.solo || mySeat() > 0)) {
+    const tg = pickTarget(S.solo ? 0 : mySeat(), null);
+    if (tg && tg.stage !== 'tail') { const tx = W / 2 + tg.side * 70, ty = 176, b = Math.floor(S.t * 6) % 2 ? 2 : 0; ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.strokeRect(tx - 34 - b, ty - 58 - b, 68 + b * 2, 58 + b * 2); text('J', tx, ty - 70, '#ffd23f', 1, 'center'); }
+  }
+  // van (blinks while recovering from a crash)
+  if (!(S.crashCd > S.t && Math.floor(S.t * 12) % 2)) drawPlayer();
   // shots
   for (const s of S.shots) {
     const tx = s.side === 0 ? W / 2 : W / 2 + s.side * 70, ty = s.side === 0 ? 14 : 160;
@@ -1028,7 +1067,7 @@ function draw() {
     ctx.fillStyle = '#e8a33a'; ctx.fillRect(s.x0 + (tx - s.x0) * k - 2, s.y0 + (ty - s.y0) * k - 10 * Math.sin(k * Math.PI) - 2, 4, 4);
   }
   // fx
-  for (const p of S.fx) { ctx.globalAlpha = Math.min(1, p.t); ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, p.r, p.r); }
+  for (const p of S.fx) { ctx.globalAlpha = Math.min(1, p.t); if (p.txt) { text(p.txt, p.x, p.y, p.col, 1, 'center'); continue; } ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, p.r, p.r); }
   ctx.globalAlpha = 1;
   // siren wash
   if (S.siren > 0.2) { ctx.globalAlpha = 0.12 * S.siren; ctx.fillStyle = Math.floor(S.t * 6) % 2 ? '#f00' : '#03f'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
@@ -1072,25 +1111,59 @@ function drawItem(it, x, y, sc) {
   else if (it.k === 'fresh') { r(-6, 6 + bob, 12, 16, '#3fae5a'); r(-1, 22 + bob, 2, 6, '#fff'); }
   else if (it.k === 'nug') { r(-7, 6 + bob, 14, 12, '#8ef0b0'); r(-4, 9 + bob, 4, 4, '#3fae5a'); }
   else if (it.k === 'secret') { r(-10, 4 + bob, 20, 16, '#b45cff'); r(-4, 8 + bob, 8, 8, '#ffd23f'); }
+  else if (it.k === 'cone') { r(-7, 0, 14, 3, '#f60'); r(-5, 3, 10, 5, '#f80'); r(-4, 8, 8, 3, '#fff'); r(-3, 11, 6, 5, '#f80'); r(-1, 16, 2, 2, '#f80'); }
+  else if (it.k === 'pothole') { r(-24, 0, 48, 5, '#1a1a1a'); r(-18, 1, 36, 3, '#000'); r(-26, 4, 6, 2, '#777'); r(20, 4, 6, 2, '#777'); }
+  else if (it.k === 'oil') { const sh = Math.floor(S.t * 4) % 3; r(-26, 0, 52, 5, '#111'); r(-16, 1, 30, 3, ['#6a2a8a', '#2a6a8a', '#2a8a4a'][sh]); r(-6, 1, 8, 2, '#c8c'); }
   else if (it.k === 'block') { r(-40, 0, 80, 20, '#fff'); for (let i = 0; i < 4; i++) r(-40 + i * 20, 0, 10, 20, '#d33'); r(-4, 20, 8, 6, Math.floor(S.t * 6) % 2 ? '#f00' : '#03f'); }
 }
 function drawCar(x, y, sc, col, cop) {
   const s = Math.max(0.1, sc);
   const r = (ox, oy, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(Math.round(x + ox * s), Math.round(y - (oy + h) * s), Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))); };
-  r(-44, 0, 88, 8, '#111'); r(-40, 6, 80, 22, col); r(-30, 26, 60, 16, col); r(-26, 28, 52, 12, '#223');
-  r(-38, 12, 10, 5, '#f33'); r(28, 12, 10, 5, '#f33');
+  r(-44, 0, 88, 8, '#111'); r(-40, 6, 80, 22, col); r(-40, 6, 80, 3, '#0005'); r(-30, 26, 60, 16, col); r(-26, 28, 52, 12, '#223'); r(-22, 36, 16, 3, '#446');
+  r(-38, 12, 10, 5, '#f33'); r(28, 12, 10, 5, '#f33'); r(-8, 10, 16, 6, '#eee');
   if (cop) { r(-12, 42, 12, 5, Math.floor(S.t * 8) % 2 ? '#f00' : '#600'); r(0, 42, 12, 5, Math.floor(S.t * 8) % 2 ? '#006' : '#03f'); }
 }
 function drawCop(c, x, y, sc) {
   if (c.type === 'cone') { ctx.fillStyle = '#f80'; ctx.beginPath(); ctx.moveTo(x, y - 40); ctx.lineTo(x - 14, y); ctx.lineTo(x + 14, y); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(x - 8, y - 20, 16, 4); ctx.fillStyle = '#03f'; ctx.fillRect(x - 4, y - 46, 8, 5); text('COP', x, y - 56, '#fff', 1, 'center'); return; }
+  const r = (ox, oy, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(x + ox * sc), Math.round(y - (oy + h) * sc), Math.max(1, Math.round(w * sc)), Math.max(1, Math.round(h * sc))); };
+  const fl = Math.floor(S.t * 8) % 2, red = fl ? '#ff2a2a' : '#6a0000', blu = fl ? '#10206a' : '#2a6aff';
+  const face = c.side || 1; // which way the cop leans (toward the van)
+  const rage = c.stage === 'ram';
   if (c.type === 'moto') {
-    const r = (ox, oy, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(x + ox * sc), Math.round(y - (oy + h) * sc), Math.round(w * sc), Math.round(h * sc)); };
-    r(-4, 0, 8, 14, '#111'); r(-7, 12, 14, 12, '#eee'); r(-5, 24, 10, 10, '#224'); r(-4, 34, 8, 7, '#fff');
-    r(-8, 20, 4, 3, Math.floor(S.t * 8) % 2 ? '#f00' : '#03f');
-  } else drawCar(x, y, sc * (c.type === 'suv' ? 0.95 : 0.8), c.type === 'suv' ? '#222' : '#e8e8f0', true);
-  if (c.type === 'suv') text('BUZZKILL', x, y - 34 * sc, '#ff3b3b', 1, 'center');
-  if (c.blind > 0) { ctx.fillStyle = '#e8a33a'; ctx.fillRect(x - 14, y - 38 * sc, 28, 10); }
-  for (let i = 0; i < c.hp; i++) { ctx.fillStyle = '#f33'; ctx.fillRect(x - c.hp * 3 + i * 6, y - 56 * sc, 4, 3); }
+    // bike, rear 3/4
+    r(-5, 0, 10, 12, '#111'); r(-3, 2, 6, 8, '#333');                // rear wheel
+    r(-9, 10, 18, 8, '#e8e8f0'); r(-9, 10, 18, 2, '#1a3a8a');         // fairing + stripe
+    r(-11, 14, 4, 3, red); r(7, 14, 4, 3, blu);                       // saddlebag lights
+    r(-3, 18, 6, 3, '#f33');                                          // tail light
+    // rider
+    r(-7, 20, 14, 14, '#1a2a5a'); r(-7, 28, 14, 2, '#ffd23f');        // jacket + badge stripe
+    r(face > 0 ? -12 : 7, 24, 5, 3, '#1a2a5a');                       // arm pointing
+    r(-6, 34, 12, 10, '#f0f0f0'); r(-6, 37, 12, 4, '#222');           // helmet + visor
+    r(-2, 44, 4, 2, blu);
+  } else {
+    const suv = c.type === 'suv';
+    const body = suv ? '#161618' : '#f0f0f4', trim = suv ? '#b00' : '#111', wide = suv ? 48 : 44;
+    r(-wide, 0, wide * 2, 8, '#0c0c0c');                              // tyres/shadow
+    r(-wide + 3, 3, 8, 6, '#222'); r(wide - 11, 3, 8, 6, '#222');
+    r(-wide + 2, 6, wide * 2 - 4, 20, body);                          // lower body
+    r(-wide + 2, 12, wide * 2 - 4, 7, trim);                          // door band (black&white / red stripe)
+    r(-12, 8, 24, 7, '#f6f0c0'); text(suv ? 'BUZZKILL' : 'BUZZ PD', x, y - 14 * sc, suv ? '#fff' : '#111', 1, 'center');
+    r(-wide + 4, 20, 10, 5, '#f33'); r(wide - 14, 20, 10, 5, '#f33'); // tail lights
+    r(-wide + 10, 26, wide * 2 - 20, suv ? 20 : 16, body);            // cabin
+    r(-wide + 14, 28, wide * 2 - 28, suv ? 14 : 11, '#1c2a3c');       // rear window
+    // cop in the window, leaning out on the van's side
+    r(face > 0 ? wide - 22 : -wide + 14, 30, 8, 8, '#e0a878'); r(face > 0 ? wide - 22 : -wide + 14, 36, 8, 3, '#1a2a5a');
+    r(face > 0 ? wide - 20 : -wide + 16, 33, 2, 1, '#000'); r(face > 0 ? wide - 16 : -wide + 20, 33, 2, 1, '#000');
+    if (rage) r(face > 0 ? wide - 21 : -wide + 15, 30, 6, 1, '#600');
+    // light bar
+    const lb = suv ? 26 : 22, top = suv ? 46 : 42;
+    r(-lb, top, lb * 2, 3, '#333'); r(-lb, top + 3, lb - 2, 4, red); r(2, top + 3, lb - 2, 4, blu);
+    if (fl) { ctx.globalAlpha = 0.25; ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(x - lb / 2 * sc, y - (top + 5) * sc, 14 * sc, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+    else { ctx.globalAlpha = 0.25; ctx.fillStyle = '#26f'; ctx.beginPath(); ctx.arc(x + lb / 2 * sc, y - (top + 5) * sc, 14 * sc, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  }
+  if (c.blind > 0) { ctx.fillStyle = '#e8a33a'; ctx.fillRect(x - 16, y - 40 * sc, 32, 10); ctx.fillStyle = '#b5651d'; ctx.fillRect(x - 6, y - 38 * sc, 4, 4); }
+  if (rage && Math.floor(S.t * 10) % 2) text('!', x, y - 70 * sc, '#ff3b3b', 2, 'center');
+  for (let i = 0; i < c.hp; i++) { ctx.fillStyle = '#f33'; ctx.fillRect(x - c.hp * 3 + i * 6, y - 60 * sc, 4, 3); }
 }
 function drawPlayer() {
   const shit = S.car === 'shitbox';
@@ -1164,8 +1237,9 @@ function drawHUD() {
   // seats
   const occ = [0, 1, 2, 3].filter(i => S.seats[i] != null);
   occ.forEach((si, k) => { const id = S.seats[si]; text(SEAT_SHORT[si] + ' ' + nameOf(id) + (id === S.me ? ' <' : ''), 4, H - 10 - (occ.length - 1 - k) * 8, si === 0 ? '#ffd23f' : id === S.me ? '#fff' : '#c8ffa0'); });
+  if (S.mode === 'drive' && mySeat() === 0 && !S.practice && S.dist < SEG * 400) text('A/D STEER  W BOOST  S BRAKE' + (S.solo ? '  J/CLICK THROW' : '') + '  DRIVE THROUGH COINS', W / 2, 50, '#fff', 1, 'center');
   if (S.youDrive > 0) text("YOU'RE DRIVING NOW!", W / 2, 100, Math.floor(S.t * 6) % 2 ? '#ffd23f' : '#fff', 2, 'center');
-  if (!S.solo && mySeat() > 0 && S.mode === 'drive') text('YOU: ' + SEAT_NAMES[mySeat()] + '  J THROW  K GRAB  H HIT', W / 2, H - 22, '#9f8fc0', 1, 'center');
+  if (!S.solo && mySeat() > 0 && S.mode === 'drive') text('YOU: ' + SEAT_NAMES[mySeat()] + '  J/CLICK THROW  K GRAB  H HIT', W / 2, H - 22, '#9f8fc0', 1, 'center');
   // banner
   if (S.banner) {
     ctx.globalAlpha = Math.min(1, S.banner.t * 2);
@@ -1221,7 +1295,8 @@ function drawCard() {
     S.solo ? 'YOU ARE DRIVING (SOLO)' : 'YOU ARE DRIVING!',
     'A/D  STEER      W/SPACE  BOOST     S  BRAKE',
     S.solo ? 'J/CLICK  THROW SNACK AT NEAREST COP' : 'YOUR CREW THROWS SNACKS. YOU DRIVE.',
-    S.solo ? 'K  GRAB COIN OUT THE WINDOW' : 'SEATS SWAP HALFWAY. BE READY.',
+    'DRIVE THROUGH COINS. CRASHES SPILL THEM!',
+    S.solo ? 'CARS, CONES, POTHOLES, OIL + COPS COST COINS' : 'SEATS SWAP HALFWAY. BE READY.',
     'H  TAKE A HIT (+COOKED, WOBBLIER, COINS WORTH MORE)',
     'ESC  PAUSE',
     '',
@@ -1230,7 +1305,7 @@ function drawCard() {
     'YOU: ' + SEAT_NAMES[seat] + '   DRIVER: ' + nameOf(S.seats[0]),
     'J OR CLICK  THROW SNACKS AT COPS ON YOUR SIDE',
     seat === 2 ? 'YOU AIM THROUGH THE REAR-VIEW MIRROR' : S.crew.length === 2 ? 'YOU COVER BOTH SIDES + THE MIRROR (CLICK TO AIM)' : S.crew.length === 3 ? 'CLICK THE MIRROR TO HIT COPS BEHIND' : 'WATCH FOR ARROWS ON YOUR SIDE',
-    'K  GRAB COINS FLOATING BY THE WINDOW',
+    'K  GRAB COINS THE DRIVER MISSES (WIDE REACH)',
     'H  TAKE A HIT (+COOKED FOR YOU)',
     '',
     'SEATS SWAP HALFWAY. YOU MIGHT END UP DRIVING.',

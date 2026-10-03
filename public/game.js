@@ -1649,6 +1649,11 @@ function buildLevel(n, remix) {
         en.summons = [];
         for (let d = 0; d < 4; d++) { en.summons.push(enemies.length); enemies.push({ id: enemies.length, kind: 'dog', ai: 'swarm', zone: zi, owner: en.id, reserve: true, hp: 1, maxHp: 1, x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 40, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); }
       }
+      // v1.4 (2026-10-02 fix): a knocked-off ATV rider now leaves a wreck + spawns a chaser (a TOURIST,
+      // already `ai:'cop'`) instead of an instant KO - per the brief. Pre-allocated as a reserve enemy the
+      // same way the dogwalker's dogs are above, so it's visible correctly on non-host clients too (a new
+      // mid-run `lvl.enemies` push would never reach them).
+      if (ai === 'rider') en.chaserId = (() => { const id = enemies.length; enemies.push({ id, kind: 'tourist', ai: 'cop', zone: zi, reserve: true, hp: 3 + Math.floor(diff / 3), maxHp: 3 + Math.floor(diff / 3), x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0, dir: -1, state: 0, t: 0, cd: 60, flash: 0, spawned: false, alive: false, stolen: 0, tx: 0, tz: 0, th: 0 }); return id; })();
     }
     if (zi === zoneCount - 1) { // the boss arrives after its crew
       const bd = bossDataFor(n), mega = !!bd[4], mini = !!bd[5], crewN = Net.online ? realRemotes() + 1 : 1, bhp = Math.round((14 + n * 3) * (mega ? 2.2 : mini ? 1.5 : 1) * (1 + 0.4 * (crewN - 1)));
@@ -1711,7 +1716,10 @@ function buildLevel(n, remix) {
     traps: (themeKey === 'suburb' || theme.base === 'suburb') ? zones.map(z => ({ x: z.x0 + 90 + Math.floor(rand() * 140), z: rz(), armed: true, flash: 0 })) : [],
     // v1.4 (Part 2.4): RANGER RICK's bear traps - a separate array from the SUBURBIA mousetraps above since
     // these are dropped live by his 'traps' pattern rather than placed at buildLevel time (see bossAI).
-    beartraps: []
+    beartraps: [],
+    // v1.4 (2026-10-02 fix): a knocked-off ATV rider's wrecked vehicle - a lightweight prop, same pattern
+    // as `beartraps` above, synced the same way via a `prop`/`k:'atvwreck'` message.
+    wrecks: []
   };
 }
 
@@ -2317,7 +2325,9 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (e.ai === 'grabber' && e.state === 75 && dmg > 0) { e.state = 72; e.t = 0; endGrab(e, false); popup(e.x - 16, sy(e.z, e.h) - 30, 'BRO, LET GO!', '#c8ffa0'); return; } // a crewmate hitting the bro once breaks his hold
   if (e.ai === 'rider') { // ATV: a jump attack/launch, or 4 total hits, knocks the rider off
     e.hitsTaken = (e.hitsTaken || 0) + (dmg > 0 ? 1 : 0);
-    if ((fx.air || fx.hr || e.hitsTaken >= 4) && dmg > 0) dmg = 999;
+    // v1.4 (2026-10-02 fix): per the brief, a knockdown leaves a wreck + spawns a chaser instead of an
+    // instant KO (was a forced dmg=999 lethal hit, same as any other enemy dying).
+    if ((fx.air || fx.hr || e.hitsTaken >= 4) && dmg > 0) { wreckRider(e); return; }
   }
   // v1.1 A6: DOWNTOWN riot shields - cops block frontal damage; hit them from behind, or stun them first (fx.stun), to get through
   if (e.ai === 'cop' && !e.boss && dmg > 0 && !fx.stun && e.state !== 4 && (lvl.theme.base || lvl.themeKey) === 'city' && dir === -e.dir) {
@@ -2875,6 +2885,7 @@ function update() {
   if (lvl.pendingTaken) { lvl.pendingTaken = lvl.pendingTaken.filter(id => { const it = lvl.items.find(i => i.id === id); if (it) { it.taken = true; return false; } return true; }); }
   for (const p of lvl.props) if (p.flash > 0) p.flash--;
   lvl.clouds = lvl.clouds.filter(c => --c.t > 0);
+  lvl.wrecks = lvl.wrecks.filter(w => --w.t > 0); // v1.4 (2026-10-02 fix): ATV wreck props, purely decorative on every client
   if (skillPop && --skillPop.t <= 0) skillPop = null;
   particles = particles.filter(p => { p.x += p.vx; p.y += p.vy; p.vy += p.g; return --p.life > 0; });
   popups = popups.filter(p => { p.y -= 0.4; return --p.t > 0; });
@@ -3479,6 +3490,22 @@ function summonAdds(e, k) {
     puff(a.x, sy(a.z) - 8, 8, ['#ffffff', '#ff9ab8'], 1.2);
   }
   if (n) popup(e.x - 20, sy(e.z) - 56, 'GET THEM!', '#ff8a8a');
+}
+// v1.4 (2026-10-02 fix): ATV rider knockdown - host-only, mirrors the bear-trap `prop` sanitize-and-relay
+// pattern (push to the local array, send the net message, non-host clients push the same thing off the
+// 'prop' case) since a wreck isn't tied to a single player id and doesn't need host-only re-decision later.
+function wreckRider(e) {
+  e.alive = false; // out of every e.spawned && e.alive collision/draw/target loop in the file - no AI, no collision-as-enemy
+  const wreck = { x: e.x, z: e.z, dir: e.dir || 1, t: 900 };
+  lvl.wrecks.push(wreck);
+  Net.send({ t: 'prop', k: 'atvwreck', l: lvl.n, x: Math.round(e.x), z: Math.round(e.z), id: 'wreck' + e.id });
+  puff(e.x, sy(e.z) - 6, 10, ['#7a7a6a', '#aaa', '#3a3a3a'], 1.2, -0.02);
+  popup(e.x - 20, sy(e.z) - 34, 'WRECKED!', '#ffb0b0');
+  spawnChaser(e);
+}
+function spawnChaser(e) { // releases the pre-allocated reserve TOURIST chaser next to the wreck (see buildLevel)
+  const c = e.chaserId != null ? lvl.enemies[e.chaserId] : null;
+  if (c && !c.alive && !c.spawned) { c.alive = true; c.spawned = true; c.entered = true; c.x = e.x + (e.dir > 0 ? -20 : 20); c.z = e.z; c.state = 0; puff(c.x, sy(c.z) - 8, 6, ['#ffffff', '#ff8a5a'], 1); }
 }
 function thiefFlee(e, k) { e.stolen += k; e.state = 6; e.t = 0; }
 // v1.4 (Part 3.3): the SEAGULL steals your quick consumable (not coins). Client-side like the coin-thief
@@ -4623,6 +4650,14 @@ function drawScene() {
     if (bt.flash > 0) { ctx.globalAlpha = Math.min(1, bt.flash / 50); ctx.fillStyle = bt.snapped ? '#ff5a6a' : '#ffffff'; circle(X, Y - 3, 11); ctx.globalAlpha = 1; }
     if (bt.snapped) return;
     R(ctx, '#3a3a48', X - 8, Y - 3, 16, 3); R(ctx, '#7a7a8a', X - 7, Y - 4, 14, 1); R(ctx, '#c8302a', X - 1, Y - 6, 2, 3); R(ctx, '#c8302a', X - 5, Y - 5, 2, 2); R(ctx, '#c8302a', X + 3, Y - 5, 2, 2);
+  } });
+  // v1.4 (2026-10-02 fix): ATV wreck prop - there's no dedicated wreck art in assets-w12.js, so this reuses
+  // the live ATV sprite itself, darkened/desaturated, plus an occasional smoke puff as a "smoking wreck"
+  // stand-in (documented simplification, see AGENT_NOTES).
+  for (const w of lvl.wrecks) list.push({ z: w.z, d: () => {
+    const img = ENEMY_IMG.atv && ENEMY_IMG.atv[0];
+    if (img) { ctx.filter = 'grayscale(0.7) brightness(0.55)'; draw_(img, w.x - img.width / 2, sy(w.z) - img.height, w.dir < 0); ctx.filter = 'none'; }
+    if (frame % 20 === 0) puff(w.x, sy(w.z) - 8, 1, ['#5a5a5a', '#aaaaaa'], .5, -0.03);
   } });
   for (const e of lvl.enemies) if (e.spawned && e.alive) list.push({ z: e.z, d: () => { const fogA = lvl.hazardFog ? Math.max(0.15, 1 - Math.max(0, Math.abs(e.x - me.x) - 46) / 90) : 1; ctx.globalAlpha = fogA; shadow(e.x, e.z, e.h, e.ai === 'mouse' ? 5 : 7); drawEnemyB(e); ctx.globalAlpha = 1; } });
   const lg = lvl.legend;
@@ -6151,7 +6186,11 @@ function onNet(m) {
     case 'bphase': { const e = lvl.enemies[m.id]; if (e) { e.kind = m.kind; e.ai = BASE_AI[m.kind] || e.ai; } break; }
     // v1.4 (Part 2.4): Ranger Rick's bear traps - non-host clients don't run bossAI, so they need telling
     // when one is dropped (visible on the ground, same as the SUBURBIA mousetraps) and when one snaps.
-    case 'prop': if (m.k === 'beartrap' && m.l === lvl.n) lvl.beartraps.push({ id: m.id || ('bt' + frame + Math.random()), x: m.x, z: m.z, armed: false, flash: 50, t: 600, snapped: false }); break;
+    case 'prop':
+      if (m.k === 'beartrap' && m.l === lvl.n) lvl.beartraps.push({ id: m.id || ('bt' + frame + Math.random()), x: m.x, z: m.z, armed: false, flash: 50, t: 600, snapped: false });
+      // v1.4 (2026-10-02 fix): ATV rider knockdown wreck prop, non-host echo (the host already pushed this locally in wreckRider())
+      else if (m.k === 'atvwreck' && m.l === lvl.n) lvl.wrecks.push({ x: m.x, z: m.z, dir: 1, t: 900 });
+      break;
     case 'propsnap': { const bt = lvl.beartraps.find(t => t.id === m.id); if (bt) { bt.armed = false; bt.snapped = true; bt.flash = 30; } if (m.who === Net.id) { me.rootT = Math.max(me.rootT || 0, 70); SFX.snap(); popup(me.x - 16, sy(me.z) - 34, 'TRAPPED!', '#c8ffa0'); } break; }
     // v1.4 (2026-10-02 fix): BEACH BRO's grab is now a real host->all `grab`/grabbed-player->host `mash`/
     // host->all `ungrab` round-trip instead of client-local mash-counting, so every client's `e.heldId`/

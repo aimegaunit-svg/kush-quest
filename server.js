@@ -326,12 +326,11 @@ function handle(client, m) {
     }
     // v1.4 (World 1-2 content pack, Part 2.7): new host->all boss/prop sync messages - `bphase` (a boss
     // swapping its own sprite/kind mid-fight, e.g. Pete's cart breaking down), and `prop`/`propsnap`
-    // (Ranger Rick's bear traps). `fine` is host->one-player (Pete's ticket coin penalty), same shape as
-    // the existing 'give'/'brownieshare' sanitize-and-relay cases just above.
+    // (Ranger Rick's bear traps), same shape as the existing 'give'/'brownieshare' sanitize-and-relay
+    // cases just above.
     case 'bphase': if (room && client.id === room.host) broadcast(room, { t: 'bphase', id: m.id | 0, kind: String(m.kind || '').slice(0, 20) }, client.id); break;
     case 'prop': if (room && client.id === room.host) broadcast(room, { t: 'prop', k: String(m.k || '').slice(0, 16), x: Math.round(+m.x || 0), z: Math.round(+m.z || 0), l: m.l | 0, id: String(m.id || '').slice(0, 24) }, client.id); break;
     case 'propsnap': if (room && client.id === room.host) broadcast(room, { t: 'propsnap', l: m.l | 0, id: String(m.id || ''), who: String(m.who || '').slice(0, 12) }, client.id); break;
-    case 'fine': if (room) { const to = room.players.get(String(m.to || '')); if (to) to.client.send({ t: 'fine', amt: Math.max(0, Math.min(50, m.amt | 0)) }); } break;
     case 'pick': // the host picks a level on the world map
       if (!room || room.phase !== 'map' || client.id !== room.host) return;
       startLevel(room, m.n);

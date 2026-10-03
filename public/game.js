@@ -6094,7 +6094,6 @@ function onNet(m) {
     // when one is dropped (visible on the ground, same as the SUBURBIA mousetraps) and when one snaps.
     case 'prop': if (m.k === 'beartrap' && m.l === lvl.n) lvl.beartraps.push({ id: m.id || ('bt' + frame + Math.random()), x: m.x, z: m.z, armed: false, flash: 50, t: 600, snapped: false }); break;
     case 'propsnap': { const bt = lvl.beartraps.find(t => t.id === m.id); if (bt) { bt.armed = false; bt.snapped = true; bt.flash = 30; } if (m.who === Net.id) { me.rootT = Math.max(me.rootT || 0, 70); SFX.snap(); popup(me.x - 16, sy(me.z) - 34, 'TRAPPED!', '#c8ffa0'); } break; }
-    case 'fine': { save.coins = Math.max(0, save.coins - (m.amt || 0)); popup(me.x - 16, sy(me.z) - 34, 'FINED! -' + m.amt, '#ffb0b0'); break; }
     case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break;
     case 'pj': addRemote(m); popup(camX + W / 2 - 30, 60, m.name + (m.spectate ? ' IS SPECTATING' : ' JOINED!'), '#c8ffa0'); SFX.cp(); break;
     // v1.2 fix (Step 2.2): also forward player-left to Drive - it tracks its own crew list for Hotbox

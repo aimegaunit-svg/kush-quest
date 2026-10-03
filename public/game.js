@@ -2664,6 +2664,14 @@ function attack(charged) {
       if (next) { hitEnemy(next.e, d, Math.sign(next.dx) || me.face, true, fx); popup(next.e.x - 16, sy(next.e.z) - 34, 'CHAIN CRIT!', '#9ae8ff'); }
     }
   }
+  // v1.4 (2026-10-02 fix): BEACH PATROL BARB's buoys reflect for bonus damage, per the brief - any attack
+  // landing on one mid-flight reverses it and bumps its damage, and it now hurts enemies (not players) on
+  // the way back (see the 'buoy' branch in updateShots). Checked with the same reach/zr this swing already
+  // used against enemies above, no new hitbox shape needed.
+  for (const s of lvl.eshots) if (s.k === 'buoy' && !s.reflected && Math.abs(s.x - me.x) < reach && Math.abs(s.z - me.z) < w.zr + 6 && Math.abs((s.h || 0) - me.h) < 20) {
+    s.reflected = true; s.dmg = 2; s.vx = -Math.sign(s.vx || 1) * Math.max(2.2, Math.abs(s.vx || 2.2));
+    popup(s.x - 10, sy(s.z) - 20, 'REFLECTED!', '#ffd84a'); SFX.power(); puff(s.x, sy(s.z) - 6, 4, ['#ffffff', '#9ae8ff'], .8);
+  }
   // fire touching a smoke cloud ignites it into a HOTBOX burst
   if (fx.burn > 0) for (const c of lvl.clouds) {
     if (c.ignited) continue;
@@ -2771,7 +2779,10 @@ function updateShots() {
     } else if (s.k === 'buoy') { // v1.4 Part 2.5: BEACH PATROL BARB's rolling buoy - bounces off the zone walls once, jump clears it
       const zb3 = lvl.zones[lvl.zi], bL = zb3 ? zb3.x0 + 10 : s.x - 200, bR = zb3 ? zb3.x0 + ZW - 10 : s.x + 200;
       if (!s.bounced && (s.x < bL || s.x > bR)) { s.vx *= -1; s.bounced = true; s.x = Math.max(bL, Math.min(bR, s.x)); }
-      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 8) { s.life = 0; hurt(1, 3, s.x); }
+      // v1.4 (2026-10-02 fix): per the brief, a reflected buoy (see the swing-hit check above) now damages
+      // enemies instead of players on its way back, at the bonus damage stamped on it when it was hit.
+      if (s.reflected) { for (const e2 of lvl.enemies) if (e2.spawned && e2.alive && e2.state !== 5 && Math.abs(e2.x - s.x) < 10 && Math.abs(e2.z - s.z) < 8) { s.life = 0; hitEnemy(e2, s.dmg || 2, Math.sign(e2.x - s.x) || 1, true, { kb: 1.3 }); break; } }
+      else if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 8) { s.life = 0; hurt(1, 3, s.x); }
     } else if (s.k === 'junk') { // v1.4 Part 1.2: METAL DETECTOR GUY's arcing junk lob
       s.h = (s.h == null ? 8 : s.h) + (s.vh = (s.vh == null ? 2.0 : s.vh) - 0.14);
       if (s.h <= 0) { s.h = 0; s.life = 0; puff(s.x, sy(s.z) - 4, 6, ['#7a7a6a', '#ffffff'], 1); if (state === 'play' && Math.abs(s.x - me.x) < 20 && Math.abs(s.z - me.z) < 14 && me.h < 18) hurt(1, 3, s.x); }

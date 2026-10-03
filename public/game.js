@@ -2314,7 +2314,7 @@ function damageEnemy(e, dmg, dir, strong, by, fx = {}) { // host only
   if (e.ai === 'charger' && e.state === 63 && dmg > 0) dmg += 1; // JOGGER recover: vulnerable, +1 damage
   if ((e.state === 92 || (e.kind === 'rangerrick_atv' && e.state === 87)) && dmg > 0) dmg *= 2; // pete_cart parked / Rick's ATV stalled: 2x damage while vulnerable
   if (e.ai === 'grabber' && e.armor && dmg > 0) { fx = { ...fx, kb: 0, stun: 0, hr: 0 }; popup(e.x - 10, sy(e.z, e.h) - 30, 'SUPER ARMOR!', '#ffd84a'); } // BEACH BRO flexing: takes damage, no knockback/stun/launch
-  if (e.ai === 'grabber' && e.state === 75 && dmg > 0) { e.state = 72; e.t = 0; popup(e.x - 16, sy(e.z, e.h) - 30, 'BRO, LET GO!', '#c8ffa0'); return; } // a crewmate hitting the bro once breaks his hold
+  if (e.ai === 'grabber' && e.state === 75 && dmg > 0) { e.state = 72; e.t = 0; endGrab(e, false); popup(e.x - 16, sy(e.z, e.h) - 30, 'BRO, LET GO!', '#c8ffa0'); return; } // a crewmate hitting the bro once breaks his hold
   if (e.ai === 'rider') { // ATV: a jump attack/launch, or 4 total hits, knocks the rider off
     e.hitsTaken = (e.hitsTaken || 0) + (dmg > 0 ? 1 : 0);
     if ((fx.air || fx.hr || e.hitsTaken >= 4) && dmg > 0) dmg = 999;
@@ -2490,12 +2490,41 @@ function onKill(e, by) { // everyone: death effect; the one who landed it gets t
   popup(e.x - 14, sy(e.z) - 34, (KO_LINE[e.kind] || AI_KO_LINE[e.ai] || 'DOWN!') + ' +' + reward + flourish, '#ffffff');
   e.stolen = 0;
 }
+// v1.4 (2026-10-02 fix): BEACH BRO's grab now round-trips through real `grab`/`mash`/`ungrab` net messages
+// instead of client-local mash-counting, so the host (who already owns e.state) is the one deciding when
+// the hold actually breaks - closing the window where the boss's own state could briefly look wrong on
+// other screens after the grabbed player broke free locally.
+function endGrab(e, thrown) { // host-only: announce the grab is over to every client in one shot
+  const who = e.heldId; e.heldId = null; e.mashCount = 0;
+  if (who != null) { Net.send({ t: 'ungrab', id: e.id, who, thrown: thrown ? 1 : 0, dir: e.dir || 1 }); applyUngrab(e.id, who, thrown, e.dir); }
+}
+function mashGrab(id) { // host-only: a grabbed player's attack press, counted toward the 8-mash break-free
+  const e = lvl.enemies[id];
+  if (!e || e.state !== 75) return;
+  e.mashCount = (e.mashCount || 0) + 1;
+  if (e.mashCount >= 8) { e.state = 72; e.t = 0; endGrab(e, false); }
+}
+// `applyGrab`/`applyUngrab` are the shared mutation+popup logic for both sides of the round trip: every
+// OTHER client runs them off the net message in onNet, but the host's own broadcast never echoes back to
+// itself (see server.js's broadcast() `except` param), so the host calls these directly too, right where
+// it sends.
+function applyGrab(id, who) {
+  const e = lvl.enemies[id]; if (e) e.heldId = who;
+  if (who === Net.id) { me.grabbedBy = id; popup(me.x - 16, sy(me.z) - 34, 'GRABBED!', '#ff9ab8'); SFX.bump(); }
+}
+function applyUngrab(id, who, thrown, dir) {
+  const e = lvl.enemies[id]; if (e) e.heldId = null;
+  if (who === Net.id) {
+    me.grabbedBy = null;
+    if (thrown) { me.vx = (dir || 1) * 6; me.vz = (Math.random() - .5) * 2; me.vh = 2; hurt(1, 2, me.x - (dir || 1) * 10); }
+    popup(me.x - 20, sy(me.z) - 34, 'BROKE FREE!', '#c8ffa0'); SFX.power();
+  }
+}
 function attack(charged) {
-  // v1.4 (Part 1.2): BEACH BRO's grab - "mashing attack 8 times" breaks it. This is a local-only escape (no
-  // dedicated net message, unlike the brief's literal `mash`/`ungrab`): it just clears me.grabbedBy on this
-  // client once the count is hit, exactly like the crewmate-hit break already does via the synced e.state
-  // dropping out of 75 (see updatePlayer) - a documented simplification, not a full host-authoritative mash.
-  if (me.grabbedBy != null) { me.mashN = (me.mashN || 0) + 1; if (me.mashN >= 8) { me.grabbedBy = null; popup(me.x - 20, sy(me.z) - 34, 'BROKE FREE!', '#c8ffa0'); SFX.power(); } return; }
+  if (me.grabbedBy != null) {
+    if (isHost()) mashGrab(me.grabbedBy); else Net.send({ t: 'mash', id: me.grabbedBy, l: lvl.n });
+    return;
+  }
   if (me.spectator || me.deadOut || (me.atkCd > 0 && !charged) || state !== 'play' || me.roll > 0) return;
   // v1.4 (user-directed, 2026-09-26): no more Q-toggle - a held Wild weapon (me.envWeapon) is ALWAYS the
   // active weapon; it auto-reverts to Core the instant its charge/ammo runs dry (see the gun branch and the
@@ -2939,13 +2968,13 @@ function updatePlayer() {
   // v1.4 (Part 2.6/3.2): wet status (Lance's surf dash/wave, the shallows) - purely a damage-multiplier flag
   // read at the hit-detection sites above (jellyfish/taserbolt), no movement effect of its own.
   if (me.wetT > 0) { me.wetT--; if (frame % 12 === 0) puff(me.x, sy(me.z, me.h) - 4, 1, ['#9ae8ff', '#ffffff'], .4, -0.01); }
-  // v1.4 (Part 1.2): BEACH BRO's grab hold - pins you near him and blocks input until he releases (his own
-  // state falling out of 75, whether from his 90-frame timer, your own mash count in attack(), or a
-  // crewmate's hit - see damageEnemy) or you're thrown (state 76).
+  // v1.4 (2026-10-02 fix): BEACH BRO's grab hold - pins you near him and blocks input. Release is now
+  // entirely driven by the host's `ungrab` net message (see onNet's 'ungrab' case), not by watching the
+  // boss's own synced state locally, so every client's bookkeeping changes in the same frame the host
+  // actually ends the hold (mash threshold, his own timer, or a crewmate's hit).
   if (me.grabbedBy != null) {
     const g = lvl.enemies[me.grabbedBy];
-    if (!g || !g.alive || (g.state !== 75 && g.state !== 76)) me.grabbedBy = null;
-    else if (g.state === 76 && !g.thrown76) { g.thrown76 = true; me.vx = (g.dir || 1) * 6; me.vz = (Math.random() - .5) * 2; me.vh = 2; hurt(1, 2, g.x); me.grabbedBy = null; }
+    if (!g || !g.alive) me.grabbedBy = null; // safety fallback if the enemy vanished without an ungrab
     else { me.x = g.x + (g.dir || 1) * 10; me.z = g.z; me.h = 0; }
   }
   const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1) * farmSpeedMul() * (me.slowT > 0 ? 0.5 : 1);
@@ -3092,8 +3121,6 @@ function updatePlayer() {
       }
     } else if (e.ai === 'swarm') {
       if (e.state === 69 && e.hitMe !== e.strikeN && Math.abs(dx) < 10 && Math.abs(dzp) < 8 && p.h < 10 && Math.random() < 0.5) { e.hitMe = e.strikeN; hurt(1, 1, e.x); }
-    } else if (e.ai === 'grabber') {
-      if (e.state === 74 && e.hitMe !== e.strikeN && Math.abs(dx) < 15 && Math.abs(dzp) < 9 && p.h < 12 && !me.roll) { e.hitMe = e.strikeN; me.grabbedBy = e.id; me.mashN = 0; popup(p.x - 16, sy(p.z) - 34, 'GRABBED!', '#ff9ab8'); SFX.bump(); }
     } else if (e.ai === 'planter' && e.kind === 'jellyfish') {
       if (e.state === 82 && e.hitMe !== e.strikeN && Math.abs(dx) < 16 && Math.abs(dzp) < 12) { e.hitMe = e.strikeN; hurt(me.wetT > 0 ? 2 : 1, 3, e.x); }
     } else if (e.ai === 'rider') {
@@ -3659,8 +3686,18 @@ function hostUpdate() {
         if ((e.flexCd = (e.flexCd == null ? 300 : e.flexCd) - 1) <= 0) { e.state = 73; e.t = 60; e.flexCd = 300; e.armor = true; SFX.flex(); }
         else if (Math.abs(dx) < 14 && Math.abs(dz) < 8 && tgt.h < 10) { e.state = 74; e.t = 20; e.strikeN = (e.strikeN || 0) + 1; e.thrown76 = false; }
       } else if (e.state === 73) { if (--e.t <= 0) { e.state = 72; e.armor = false; } }
-      else if (e.state === 74) { if (--e.t <= 0) { e.state = 75; e.t = 90; e.holdT = 0; } } // player hooks into the grab client-side, see updatePlayer
-      else if (e.state === 75) { if (--e.t <= 0) { e.state = 76; e.t = 14; } }
+      else if (e.state === 74) { // v1.4 (2026-10-02 fix): host decides the grab lands (host owns e.state and
+        // already knows every player's position via playersList()), then tells every client who got grabbed
+        // via a real 'grab' net message instead of each client guessing off its own local hitbox.
+        if (--e.t <= 0) {
+          if (Math.abs(dx) < 15 && Math.abs(dz) < 9 && tgt.h < 12) {
+            e.state = 75; e.t = 90; e.holdT = 0; e.mashCount = 0;
+            Net.send({ t: 'grab', id: e.id, who: tgt.id, l: lvl.n });
+            applyGrab(e.id, tgt.id);
+          } else e.state = 72;
+        }
+      }
+      else if (e.state === 75) { if (--e.t <= 0) { e.state = 76; e.t = 14; endGrab(e, true); } } // boss's own hold timer expired - release into the throw pose
       else if (e.state === 76) { if (--e.t <= 0) e.state = 72; }
     } else if (e.ai === 'planter') { // v1.4 Part 1.2: METAL DETECTOR GUY (77-79) / JELLYFISH (80-82)
       if (e.kind === 'jellyfish') {
@@ -6094,6 +6131,13 @@ function onNet(m) {
     // when one is dropped (visible on the ground, same as the SUBURBIA mousetraps) and when one snaps.
     case 'prop': if (m.k === 'beartrap' && m.l === lvl.n) lvl.beartraps.push({ id: m.id || ('bt' + frame + Math.random()), x: m.x, z: m.z, armed: false, flash: 50, t: 600, snapped: false }); break;
     case 'propsnap': { const bt = lvl.beartraps.find(t => t.id === m.id); if (bt) { bt.armed = false; bt.snapped = true; bt.flash = 30; } if (m.who === Net.id) { me.rootT = Math.max(me.rootT || 0, 70); SFX.snap(); popup(me.x - 16, sy(me.z) - 34, 'TRAPPED!', '#c8ffa0'); } break; }
+    // v1.4 (2026-10-02 fix): BEACH BRO's grab is now a real host->all `grab`/grabbed-player->host `mash`/
+    // host->all `ungrab` round-trip instead of client-local mash-counting, so every client's `e.heldId`/
+    // `me.grabbedBy` bookkeeping changes in the same frame the host (who owns `e.state`) actually
+    // starts/ends the hold.
+    case 'grab': if (!isHost()) applyGrab(m.id, m.who); break; // the host already applied this locally before sending (see grabber AI)
+    case 'mash': if (isHost() && m.l === lvl.n) mashGrab(m.id); break; // grabbed player -> host: host alone decides when the mash threshold breaks the hold
+    case 'ungrab': if (!isHost()) applyUngrab(m.id, m.who, m.thrown, m.dir); break; // ditto - host already applied this in endGrab()
     case 'host': Net.hostId = m.id; if (m.id === Net.id) popup(camX + W / 2 - 40, 50, 'YOU ARE NOW HOSTING', '#e4b3ff'); if (window.Drive && typeof window.Drive.onNet === 'function') try { window.Drive.onNet(m); } catch (e) {} break;
     case 'pj': addRemote(m); popup(camX + W / 2 - 30, 60, m.name + (m.spectate ? ' IS SPECTATING' : ' JOINED!'), '#c8ffa0'); SFX.cp(); break;
     // v1.2 fix (Step 2.2): also forward player-left to Drive - it tracks its own crew list for Hotbox

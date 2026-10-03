@@ -331,6 +331,12 @@ function handle(client, m) {
     case 'bphase': if (room && client.id === room.host) broadcast(room, { t: 'bphase', id: m.id | 0, kind: String(m.kind || '').slice(0, 20) }, client.id); break;
     case 'prop': if (room && client.id === room.host) broadcast(room, { t: 'prop', k: String(m.k || '').slice(0, 16), x: Math.round(+m.x || 0), z: Math.round(+m.z || 0), l: m.l | 0, id: String(m.id || '').slice(0, 24) }, client.id); break;
     case 'propsnap': if (room && client.id === room.host) broadcast(room, { t: 'propsnap', l: m.l | 0, id: String(m.id || ''), who: String(m.who || '').slice(0, 12) }, client.id); break;
+    // v1.4 (2026-10-02 fix): BEACH BRO's grab round trip - `grab`/`ungrab` are host->all (same shape as
+    // `bphase`/`prop` above), `mash` is grabbed-player->host only (same shape as `hit`/`steal`'s
+    // client->host relay below), since the host alone owns `e.state` and decides when the hold breaks.
+    case 'grab': if (room && client.id === room.host) broadcast(room, { t: 'grab', id: m.id | 0, who: String(m.who || '').slice(0, 12) }, client.id); break;
+    case 'ungrab': if (room && client.id === room.host) broadcast(room, { t: 'ungrab', id: m.id | 0, who: String(m.who || '').slice(0, 12), thrown: m.thrown ? 1 : 0, dir: Math.sign(+m.dir || 0) || 1 }, client.id); break;
+    case 'mash': if (room && client.id !== room.host) { const h = room.players.get(room.host); if (h) h.client.send({ t: 'mash', id: m.id | 0, l: m.l | 0 }); } break;
     case 'pick': // the host picks a level on the world map
       if (!room || room.phase !== 'map' || client.id !== room.host) return;
       startLevel(room, m.n);

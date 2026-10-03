@@ -2765,8 +2765,12 @@ function updateShots() {
     } else if (s.k === 'junk') { // v1.4 Part 1.2: METAL DETECTOR GUY's arcing junk lob
       s.h = (s.h == null ? 8 : s.h) + (s.vh = (s.vh == null ? 2.0 : s.vh) - 0.14);
       if (s.h <= 0) { s.h = 0; s.life = 0; puff(s.x, sy(s.z) - 4, 6, ['#7a7a6a', '#ffffff'], 1); if (state === 'play' && Math.abs(s.x - me.x) < 20 && Math.abs(s.z - me.z) < 14 && me.h < 18) hurt(1, 3, s.x); }
-    } else if (s.k === 'tube') { // v1.4 Part 2.6: LIFEGUARD LANCE's lasso/rescue tube - hits, stuns briefly (a simplified stand-in for a full pull+follow-up punch)
-      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 10) { s.life = 0; hurt(1, 3, s.x); me.stunT = Math.max(me.stunT || 0, 40); popup(me.x - 16, sy(me.z) - 34, 'LASSOED!', '#ff5a6a'); SFX.thud(); }
+    } else if (s.k === 'tube') { // v1.4 (2026-10-02 fix): LIFEGUARD LANCE's lasso/rescue tube - a real pull-then-punch per the brief
+      if (state === 'play' && Math.abs(s.x - me.x) < 9 && Math.abs(s.z - me.z) < 8 && me.h < 10 && !(me.reelT > 0)) {
+        s.life = 0;
+        if (K.block || me.parryT > 0) { me.parryT = 0; popup(me.x - 16, sy(me.z) - 34, 'BLOCKED!', '#9ac8ff'); SFX.bump(); } // brief: block/parry on contact cancels the pull
+        else { const lanceE = lvl.enemies.find(e2 => e2.kind === 'lance' && e2.alive); me.reelT = 25; me.reelEnemy = lanceE ? lanceE.id : null; popup(me.x - 16, sy(me.z) - 34, 'HOOKED!', '#ff5a6a'); SFX.bump(); }
+      }
     } else if (!s.k) { // plain purse throw
       if (state === 'play' && Math.abs(s.x - me.x) < 10 && Math.abs(s.z - me.z) < 8 && me.h < 7) { s.life = 0; hurt(1, 8, s.x); }
     }
@@ -2977,12 +2981,30 @@ function updatePlayer() {
     if (!g || !g.alive) me.grabbedBy = null; // safety fallback if the enemy vanished without an ungrab
     else { me.x = g.x + (g.dir || 1) * 10; me.z = g.z; me.h = 0; }
   }
+  // v1.4 (2026-10-02 fix): LIFEGUARD LANCE's lasso - a real pull-then-punch per the brief, not a straight
+  // hit+stun. `me.reelT` overrides this player's own movement the same way `me.rootT`/`me.grabbedBy`
+  // already do (see the ix/iz override just below) - position is per-player local-authoritative, so the
+  // pull is applied entirely on the reeled player's own client, same as every other player-movement
+  // status effect in this file.
+  if (me.reelT > 0) {
+    const e = lvl.enemies[me.reelEnemy];
+    if (e && e.alive) {
+      const tx = e.x + (e.dir || 1) * 20;
+      me.x += (tx - me.x) / me.reelT; me.z += (e.z - me.z) / me.reelT;
+    }
+    if (--me.reelT <= 0) { // pulled all the way in - Lance's follow-up punch lands
+      const ex = e && e.alive ? e.x : me.x;
+      hurt(1, 4, ex - (e && e.dir ? e.dir : 1) * 10);
+      me.stunT = Math.max(me.stunT || 0, 30);
+      popup(me.x - 16, sy(me.z) - 34, 'PUNCHED!', '#ff5a6a'); SFX.thud();
+    }
+  }
   const p = me, spd = (p.buffs.speed > 0 ? 1.45 : 1) * (hasSkill('sprint') ? 1.2 : 1) * farmSpeedMul() * (me.slowT > 0 ? 0.5 : 1);
   const highSlow = tooHigh() ? 0.9 : 1;
   const mx = (K.run ? 2.1 : 1.3) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow, mz = (K.run ? 1.3 : 0.9) * spd * (Net.color === 1 ? 1.1 : 1) * highSlow;
   let ix = (K.right ? 1 : 0) - (K.left ? 1 : 0), iz = (K.down ? 1 : 0) - (K.up ? 1 : 0);
   if (p.atkT > 6 && p.h === 0) { ix = 0; iz = 0; } // plant your feet while swinging
-  if (me.stunT > 0 || me.rootT > 0 || me.grabbedBy != null) { ix = 0; iz = 0; }
+  if (me.stunT > 0 || me.rootT > 0 || me.grabbedBy != null || me.reelT > 0) { ix = 0; iz = 0; }
   if (ix) p.face = ix; // v1.3 (control feedback 2026-09-26): WASD alone now decides facing - mouse-aim turning removed per playtest feedback
   if (p.roll > 0) { p.roll--; if (hasSkill('rollsmoke') && frame % 3 === 0) { puff(p.x, sy(p.z) - 6, 3, ['#ffffff', '#c8ffa0'], .6); for (const e of lvl.enemies) if (e.spawned && e.alive && e.state !== 5 && Math.abs(e.x - p.x) < 14 && Math.abs(e.z - p.z) < 10 && !(e.rollHit > frame)) { e.rollHit = frame + 30; hitEnemy(e, 1, Math.sign(e.x - p.x) || 1, false, { burn: 1 }); } } }
   else if (p.inv > 55) { /* knockback */ } else { p.vx += (ix * mx - p.vx) * 0.3; p.vz += (iz * mz - p.vz) * 0.3; }
